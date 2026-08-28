@@ -16,6 +16,21 @@ export const STARTING_CASH = 10_000;
 export const GUARDRAIL_TEXT =
   "Play money. Not real securities, not investment advice, nothing here can be bought, sold, or cashed out for real value.";
 
+/**
+ * The site's own absolute URL (share links, auth redirects, OG metadata).
+ * Resolution order — every branch must yield a parseable URL, since this
+ * feeds `new URL()` at build time and an empty env var must not crash it:
+ *   1. NEXT_PUBLIC_SITE_URL if set and non-empty (custom domains)
+ *   2. Vercel's stable production domain, then the per-deploy domain
+ *   3. localhost for local dev
+ */
 export function siteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (explicit && /^https?:\/\/.+/.test(explicit)) {
+    return explicit.replace(/\/+$/, "");
+  }
+  const vercel =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+  if (vercel) return `https://${vercel}`;
+  return "http://localhost:3000";
 }
