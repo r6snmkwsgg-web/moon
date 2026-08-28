@@ -1,0 +1,221 @@
+import { ImageResponse } from "next/og";
+import { changeFraction, livePrice } from "@/lib/pricing";
+import { APP_NAME } from "@/lib/config";
+
+export const runtime = "edge";
+export const alt = "Ticker chart card";
+export const size = { width: 1200, height: 630 };
+export const contentType = "image/png";
+
+/**
+ * The ad. When a founder shares their ticker link on X/Threads, this card is
+ * what people see: symbol, price, change %, sparkline, dark terminal styling.
+ * Public-read tables via the anon key — no service role on the edge.
+ */
+
+const BG = "#0a0e14";
+const PANEL = "#0f1520";
+const LINE = "#1c2533";
+const TEXT = "#e6edf3";
+const MUTED = "#8b98ab";
+const UP = "#22c55e";
+const DOWN = "#f43f5e";
+
+async function rest<T>(path: string): Promise<T | null> {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!base || !key) return null;
+  try {
+    const res = await fetch(`${base}/rest/v1/${path}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+function fmtPrice(v: number): string {
+  const decimals = v > 0 && v < 1 ? 4 : 2;
+  return "$" + v.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+export default async function OgImage({
+  params,
+}: {
+  params: Promise<{ symbol: string }>;
+}) {
+  const { symbol } = await params;
+  const sym = symbol.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6);
+
+  const tickers = await rest<
+    { id: string; symbol: string; name: string; sentiment: number }[]
+  >(`tickers?select=id,symbol,name,sentiment&symbol=eq.${sym}&limit=1`);
+  const ticker = tickers?.[0];
+
+  let price = 0;
+  let change = 0;
+  let spark: number[] = [];
+
+  if (ticker) {
+    const since = new Date(Date.now() - 30 * 86400_000)
+      .toISOString()
+      .slice(0, 10);
+    const [mrrRows, snapRows] = await Promise.all([
+      rest<{ mrr: number }[]>(
+        `mrr_updates?select=mrr&ticker_id=eq.${ticker.id}&order=month.desc&limit=1`
+      ),
+      rest<{ price: number }[]>(
+        `price_snapshots?select=price&ticker_id=eq.${ticker.id}&day=gte.${since}&order=day.asc`
+      ),
+    ]);
+    const mrr = Number(mrrRows?.[0]?.mrr ?? 0);
+    price = livePrice(mrr, Number(ticker.sentiment));
+    spark = [...(snapRows ?? []).map((s) => Number(s.price)), price];
+    if (spark.length >= 2) change = changeFraction(spark[0], price);
+  }
+
+  const up = change >= 0;
+  const accent = up ? UP : DOWN;
+  const changeLabel = `${change > 0 ? "+" : ""}${(change * 100).toFixed(1)}%`;
+
+  // Sparkline geometry
+  const CW = 1080;
+  const CH = 240;
+  const min = spark.length ? Math.min(...spark) : 0;
+  const max = spark.length ? Math.max(...spark) : 1;
+  const range = max - min || 1;
+  const points = spark
+    .map((v, i) => {
+      const x = (i / Math.max(spark.length - 1, 1)) * CW;
+      const y = 8 + (1 - (v - min) / range) * (CH - 16);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          backgroundColor: BG,
+          padding: "48px 60px",
+          fontFamily: "sans-serif",
+        }}
+      >
+        {/* header row */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <div
+              style={{
+                fontSize: 84,
+                fontWeight: 800,
+                color: TEXT,
+                letterSpacing: 2,
+              }}
+            >
+              ${ticker ? ticker.symbol : sym}
+            </div>
+            <div style={{ fontSize: 30, color: MUTED, marginTop: 4 }}>
+              {ticker ? ticker.name : "not listed"}
+            </div>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+            }}
+          >
+            <div style={{ fontSize: 72, fontWeight: 800, color: TEXT }}>
+              {fmtPrice(price)}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                fontSize: 36,
+                fontWeight: 700,
+                color: accent,
+                backgroundColor: PANEL,
+                border: `2px solid ${LINE}`,
+                borderRadius: 12,
+                padding: "4px 18px",
+                marginTop: 8,
+              }}
+            >
+              {up ? "▲" : "▼"} {changeLabel}
+            </div>
+          </div>
+        </div>
+
+        {/* sparkline */}
+        <div
+          style={{
+            display: "flex",
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            marginTop: 20,
+          }}
+        >
+          {spark.length >= 2 ? (
+            <svg width={CW} height={CH} viewBox={`0 0 ${CW} ${CH}`}>
+              <polyline
+                points={points}
+                fill="none"
+                stroke={accent}
+                strokeWidth="5"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            </svg>
+          ) : (
+            <div style={{ display: "flex", fontSize: 30, color: MUTED }}>
+              chart loading…
+            </div>
+          )}
+        </div>
+
+        {/* footer row */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            borderTop: `2px solid ${LINE}`,
+            paddingTop: 24,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              fontSize: 28,
+              fontWeight: 700,
+              color: UP,
+              letterSpacing: 4,
+            }}
+          >
+            ▲ listed on {APP_NAME}
+          </div>
+          <div style={{ display: "flex", fontSize: 22, color: MUTED }}>
+            play money — not real securities
+          </div>
+        </div>
+      </div>
+    ),
+    size
+  );
+}

@@ -1,0 +1,145 @@
+{
+  "_comment": "Example fixture tickers. mrr = last 6 months, oldest → newest, USD. Replace with real curated startups whose founders already share MRR publicly.",
+  "tickers": [
+    {
+      "symbol": "PRLA",
+      "name": "Pearla",
+      "pitch": "Screenshot-to-invoice for freelance designers.",
+      "founder_handle": "pearla_hq",
+      "mrr": [3800, 4300, 5100, 5600, 6900, 8200]
+    },
+    {
+      "symbol": "SNDR",
+      "name": "Sendrly",
+      "pitch": "Cold email warmup that doesn't get you blacklisted.",
+      "founder_handle": "sendrly",
+      "mrr": [11200, 11800, 12100, 12900, 13400, 14100]
+    },
+    {
+      "symbol": "KWST",
+      "name": "Keywordist",
+      "pitch": "SEO briefs written from SERP data, not vibes.",
+      "founder_handle": "keywordist",
+      "mrr": [7400, 8100, 8000, 8600, 9200, 9800]
+    },
+    {
+      "symbol": "FRMO",
+      "name": "Formojo",
+      "pitch": "Typeform alternative that loads in 40ms.",
+      "founder_handle": "formojo_app",
+      "mrr": [2100, 2600, 3400, 4500, 6100, 8400]
+    },
+    {
+      "symbol": "CHRN",
+      "name": "Churnbeacon",
+      "pitch": "Slack alert 14 days before a customer churns.",
+      "founder_handle": "churnbeacon",
+      "mrr": [15600, 15200, 14800, 15100, 14600, 14200]
+    },
+    {
+      "symbol": "PLSE",
+      "name": "Pulsedash",
+      "pitch": "One dashboard for every SaaS metric you pretend to check.",
+      "founder_handle": "pulsedash",
+      "mrr": [9800, 10400, 11500, 12200, 13800, 15600]
+    },
+    {
+      "symbol": "TSTM",
+      "name": "Testimonial.fm",
+      "pitch": "Turn customer calls into wall-of-love audio clips.",
+      "founder_handle": "testimonialfm",
+      "mrr": [4200, 4600, 4400, 4900, 5300, 5800]
+    },
+    {
+      "symbol": "INBX",
+      "name": "Inboxzero",
+      "pitch": "Shared inbox for two-person support teams.",
+      "founder_handle": "inboxzero_app",
+      "mrr": [22000, 22800, 23500, 24100, 25200, 26800]
+    },
+    {
+      "symbol": "SCRP",
+      "name": "Scrapling",
+      "pitch": "No-code monitors for competitor pricing pages.",
+      "founder_handle": "scrapling",
+      "mrr": [6800, 7200, 7900, 8800, 9600, 11200]
+    },
+    {
+      "symbol": "DOCK",
+      "name": "Dockpad",
+      "pitch": "Client portals that don't look like 2011.",
+      "founder_handle": "dockpad",
+      "mrr": [12800, 13100, 12600, 13400, 14200, 14800]
+    },
+    {
+      "symbol": "VOCL",
+      "name": "Vocalize",
+      "pitch": "Podcast show notes drafted before you hit stop.",
+      "founder_handle": "vocalize_fm",
+      "mrr": [3400, 3100, 2900, 3300, 3600, 4100]
+    },
+    {
+      "symbol": "LNCH",
+      "name": "Launchlist",
+      "pitch": "Waitlists with built-in referral loops.",
+      "founder_handle": "launchlist_io",
+      "mrr": [5600, 6400, 7800, 9200, 11800, 14600]
+    },
+    {
+      "symbol": "BLLW",
+      "name": "Billowline",
+      "pitch": "Usage-based billing for API-first startups.",
+      "founder_handle": "billowline",
+      "mrr": [18400, 19200, 20800, 21600, 23400, 24900]
+    },
+    {
+      "symbol": "NTFY",
+      "name": "Notifly",
+      "pitch": "Product update emails written from your changelog.",
+      "founder_handle": "notifly_app",
+      "mrr": [2800, 3200, 3100, 3600, 3900, 4400]
+    },
+    {
+      "symbol": "GRDN",
+      "name": "Guardrail",
+      "pitch": "Feature flags with a kill switch your PM can use.",
+      "founder_handle": "guardrail_dev",
+      "mrr": [8900, 9600, 10800, 11400, 12600, 13900]
+    },
+    {
+      "symbol": "SNPT",
+      "name": "Snippetly",
+      "pitch": "Team snippet library that lives in your IDE.",
+      "founder_handle": "snippetly",
+      "mrr": [4900, 4700, 5200, 5600, 5400, 5900]
+    },
+    {
+      "symbol": "MTRC",
+      "name": "Metricly",
+      "pitch": "Investor updates auto-drafted from Stripe + Plausible.",
+      "founder_handle": "metricly_hq",
+      "mrr": [7200, 7800, 8600, 9800, 10400, 11800]
+    },
+    {
+      "symbol": "CLDR",
+      "name": "Calendrix",
+      "pitch": "Scheduling links that respect deep-work blocks.",
+      "founder_handle": "calendrix",
+      "mrr": [16800, 16200, 15900, 16400, 17100, 17600]
+    },
+    {
+      "symbol": "PXLL",
+      "name": "Pixellate",
+      "pitch": "OG images generated from a Figma frame.",
+      "founder_handle": "pixellate_app",
+      "mrr": [1900, 2400, 3100, 4200, 5800, 7600]
+    },
+    {
+      "symbol": "ZNBD",
+      "name": "Zenboard",
+      "pitch": "Kanban for solo founders — no seats, no sprints.",
+      "founder_handle": "zenboard_app",
+      "mrr": [6200, 6600, 7100, 7400, 8200, 8800]
+    }
+  ]
+}

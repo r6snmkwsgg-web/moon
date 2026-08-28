@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-terminal-bg text-terminal-text;
+  }
+  body {
+    @apply antialiased;
+  }
+  ::selection {
+    @apply bg-terminal-accent/30;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-lg border border-terminal-line bg-terminal-panel;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .input {
+    @apply w-full rounded-md border border-terminal-line bg-terminal-bg px-3 py-2 text-sm text-terminal-text placeholder:text-terminal-muted/60 focus:border-terminal-accent focus:outline-none;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-buy {
+    @apply btn bg-terminal-up text-black hover:bg-terminal-up/80;
+  }
+  .btn-sell {
+    @apply btn bg-terminal-down text-white hover:bg-terminal-down/80;
+  }
+  .btn-ghost {
+    @apply btn border border-terminal-line text-terminal-text hover:border-terminal-muted;
+  }
+}
