@@ -127,7 +127,8 @@ export default async function OgImage({
                 letterSpacing: 2,
               }}
             >
-              ${ticker ? ticker.symbol : sym}
+              {/* satori: keep text as ONE child node (no `$…{expr}` mixing) */}
+              {"$" + (ticker ? ticker.symbol : sym)}
             </div>
             <div style={{ fontSize: 30, color: MUTED, marginTop: 4 }}>
               {ticker ? ticker.name : "not listed"}
@@ -146,6 +147,7 @@ export default async function OgImage({
             <div
               style={{
                 display: "flex",
+                alignItems: "center",
                 fontSize: 36,
                 fontWeight: 700,
                 color: accent,
@@ -156,7 +158,19 @@ export default async function OgImage({
                 marginTop: 8,
               }}
             >
-              {up ? "▲" : "▼"} {changeLabel}
+              {/* satori's bundled font has no ▲/▼ — draw the triangle */}
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                style={{ marginRight: 12 }}
+              >
+                <path
+                  d={up ? "M12 5 L21 19 L3 19 Z" : "M12 19 L21 5 L3 5 Z"}
+                  fill={accent}
+                />
+              </svg>
+              {changeLabel}
             </div>
           </div>
         </div>
@@ -202,13 +216,37 @@ export default async function OgImage({
           <div
             style={{
               display: "flex",
+              alignItems: "center",
               fontSize: 28,
               fontWeight: 700,
               color: UP,
               letterSpacing: 4,
             }}
           >
-            ▲ listed on {APP_NAME}
+            <svg
+              width="30"
+              height="30"
+              viewBox="0 0 32 32"
+              style={{ marginRight: 14 }}
+            >
+              <path
+                d="M5 22 L12 14 L17 18 L27 7"
+                stroke={UP}
+                strokeWidth="3"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M20 7 H27 V14"
+                stroke={UP}
+                strokeWidth="3"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {"listed on " + APP_NAME}
           </div>
           <div style={{ display: "flex", fontSize: 22, color: MUTED }}>
             play money — not real securities
