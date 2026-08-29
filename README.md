@@ -83,7 +83,7 @@ cp .env.example .env.local
 | `ADMIN_EMAILS` | Comma-separated emails allowed into `/admin` |
 | `NEXT_PUBLIC_SITE_URL` | Optional on Vercel (falls back to the Vercel domain); set for custom domains |
 | `CRON_SECRET` | Random string; Vercel sends it as a Bearer token to the cron route |
-| `STRIPE_KEY_ENCRYPTION_SECRET` | Encrypts founders' read-only Stripe keys at rest; required for verified listings |
+| `STRIPE_KEY_ENCRYPTION_SECRET` | Encrypts founders' read-only Stripe keys at rest. Optional — falls back to a key derived from `CRON_SECRET` |
 
 ### 3. Run
 

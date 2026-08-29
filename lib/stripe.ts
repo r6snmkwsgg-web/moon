@@ -161,19 +161,35 @@ export async function computeMrrFromStripe(key: string): Promise<number> {
 
 // ── encryption at rest ──────────────────────────────────────────────────────
 
+/**
+ * Key material for encrypting stored Stripe keys. Prefers the dedicated
+ * STRIPE_KEY_ENCRYPTION_SECRET; falls back to CRON_SECRET (server-only,
+ * high-entropy, already required) with a domain-separation prefix so the
+ * derived AES key can never collide with anything else using CRON_SECRET.
+ * Trade-off of the fallback: rotating CRON_SECRET then also orphans stored
+ * Stripe connections (founders just re-verify) — set the dedicated var to
+ * decouple them.
+ */
+function encryptionSecretRaw(): string | undefined {
+  const dedicated = process.env.STRIPE_KEY_ENCRYPTION_SECRET;
+  if (dedicated && dedicated.length >= 16) return dedicated;
+  const fallback = process.env.CRON_SECRET;
+  if (fallback && fallback.length >= 16) return `stripe-key-vault:${fallback}`;
+  return undefined;
+}
+
 function encryptionKey(): Buffer {
-  const secret = process.env.STRIPE_KEY_ENCRYPTION_SECRET;
-  if (!secret || secret.length < 16) {
+  const secret = encryptionSecretRaw();
+  if (!secret) {
     throw new Error(
-      "STRIPE_KEY_ENCRYPTION_SECRET is not set — Stripe verification is disabled until it is."
+      "Set STRIPE_KEY_ENCRYPTION_SECRET (or CRON_SECRET) — Stripe verification is disabled until then."
     );
   }
   return createHash("sha256").update(secret).digest();
 }
 
 export function stripeVerificationConfigured(): boolean {
-  const secret = process.env.STRIPE_KEY_ENCRYPTION_SECRET;
-  return Boolean(secret && secret.length >= 16);
+  return encryptionSecretRaw() !== undefined;
 }
 
 export function encryptStripeKey(key: string): string {
