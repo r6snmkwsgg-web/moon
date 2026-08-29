@@ -6,6 +6,8 @@ import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { fmtCompact, fmtMonth, fmtPct, fmtPrice, currentMonthISO } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import { changeFraction, SHARES_OUTSTANDING } from "@/lib/pricing";
+import { nextEarningsDate } from "@/lib/xp";
+import CountdownChip from "@/components/CountdownChip";
 import PriceChart from "@/components/PriceChart";
 import TradePanel from "@/components/TradePanel";
 import ShareButton from "@/components/ShareButton";
@@ -50,7 +52,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const data = await getTickerPage(symbol);
   if (!data) notFound();
 
-  const { quote, mrrHistory, snapshots, holdersCount } = data;
+  const { quote, mrrHistory, snapshots, holdersCount, watchersCount } = data;
   const t = quote.ticker;
   const user = await getUser();
   const isFounder = user !== null && t.claimed_by === user.id;
@@ -162,12 +164,19 @@ export default async function TickerPage({ params, searchParams }: Props) {
             {fmtPrice(quote.price)}
           </div>
           <ChangePct value={quote.dayChange} chip className="text-sm" />
-          <WatchStar
-            tickerId={t.id}
-            symbol={t.symbol}
-            watching={watching}
-            signedIn={user !== null}
-          />
+          <span className="flex items-center gap-1.5">
+            <WatchStar
+              tickerId={t.id}
+              symbol={t.symbol}
+              watching={watching}
+              signedIn={user !== null}
+            />
+            {watchersCount > 0 && (
+              <span className="font-mono text-[11px] text-terminal-muted">
+                👀 {watchersCount}
+              </span>
+            )}
+          </span>
         </div>
       </div>
 
@@ -215,9 +224,16 @@ export default async function TickerPage({ params, searchParams }: Props) {
               {fmtPct(mom)} MoM {mom >= 0 ? "beat" : "miss"}
             </span>
           )}
-          <span className="font-mono">
-            next report ~{nextReportLabel(latestUpdate.month)}
-          </span>
+          {t.stripe_verified ? (
+            <CountdownChip
+              target={nextEarningsDate().toISOString()}
+              prefix="next report in"
+            />
+          ) : (
+            <span className="font-mono">
+              next report ~{nextReportLabel(latestUpdate.month)}
+            </span>
+          )}
         </div>
       )}
 

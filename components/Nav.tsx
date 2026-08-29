@@ -68,7 +68,7 @@ export default async function Nav() {
             href="/tape"
             className="hidden rounded px-2 py-1 text-terminal-muted hover:text-terminal-text sm:block"
           >
-            Tape
+            Feed
           </Link>
           <Link
             href="/portfolio"
@@ -123,9 +123,10 @@ export default async function Nav() {
           ) : (
             <Link
               href="/login"
-              className="whitespace-nowrap rounded-md border border-terminal-up/50 bg-terminal-up/10 px-2.5 py-1 font-semibold text-terminal-up hover:bg-terminal-up/20"
+              className="whitespace-nowrap rounded-md bg-terminal-up px-2.5 py-1 font-bold text-black hover:bg-terminal-up/85"
             >
-              Sign in
+              <span className="sm:hidden">Get $10K</span>
+              <span className="hidden sm:inline">Get $10,000 free</span>
             </Link>
           )}
         </nav>

@@ -7,6 +7,7 @@ import {
   marketCap,
 } from "@/lib/pricing";
 import { STARTING_CASH } from "@/lib/config";
+import { computeXp, streakFromDays, type Streak } from "@/lib/xp";
 import type {
   Holding,
   MrrUpdate,
@@ -104,6 +105,7 @@ export async function getTickerPage(symbol: string): Promise<{
   mrrHistory: MrrUpdate[];
   snapshots: PriceSnapshot[];
   holdersCount: number;
+  watchersCount: number;
 } | null> {
   const supabase = await createSupabaseServerClient();
 
@@ -133,13 +135,19 @@ export async function getTickerPage(symbol: string): Promise<{
     ? Number(mrrHistory[mrrHistory.length - 1].mrr)
     : 0;
 
-  // Holders count crosses user rows, so it runs with the service role.
+  // Holder/watcher counts cross user rows, so they run with the service role.
   const admin = createSupabaseAdminClient();
-  const { count } = await admin
-    .from("holdings")
-    .select("*", { count: "exact", head: true })
-    .eq("ticker_id", ticker.id)
-    .gt("shares", 0);
+  const [holdersRes, watchersRes] = await Promise.all([
+    admin
+      .from("holdings")
+      .select("*", { count: "exact", head: true })
+      .eq("ticker_id", ticker.id)
+      .gt("shares", 0),
+    admin
+      .from("watchlists")
+      .select("*", { count: "exact", head: true })
+      .eq("ticker_id", ticker.id),
+  ]);
 
   return {
     quote: buildQuote(
@@ -149,7 +157,8 @@ export async function getTickerPage(symbol: string): Promise<{
     ),
     mrrHistory,
     snapshots,
-    holdersCount: count ?? 0,
+    holdersCount: holdersRes.count ?? 0,
+    watchersCount: watchersRes.count ?? 0,
   };
 }
 
@@ -392,6 +401,289 @@ export async function getPublicProfile(
     playerCount: all.length,
     history: (history ?? []) as PortfolioSnapshot[],
   };
+}
+
+// ── engagement layer (wire · feed · pulse · xp · streaks) ───────────────────
+
+export interface MarketPulse {
+  totalCap: number;
+  volume24h: number;
+  trades24h: number;
+  gainers: number;
+  losers: number;
+}
+
+/** The stat band: everything real, nothing fabricated. */
+export async function getMarketPulse(quotes: TickerQuote[]): Promise<MarketPulse> {
+  let volume24h = 0;
+  let trades24h = 0;
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from("trades")
+      .select("total")
+      .gte("created_at", new Date(Date.now() - 86400_000).toISOString());
+    for (const t of (data ?? []) as { total: number }[]) {
+      volume24h += Number(t.total);
+      trades24h += 1;
+    }
+  } catch {
+    // fine — band shows zeros
+  }
+  return {
+    totalCap: quotes.reduce((s, q) => s + q.marketCap, 0),
+    volume24h,
+    trades24h,
+    gainers: quotes.filter((q) => q.dayChange > 0.0005).length,
+    losers: quotes.filter((q) => q.dayChange < -0.0005).length,
+  };
+}
+
+export interface EarningsEvent {
+  symbol: string;
+  tickerId: string;
+  mrr: number;
+  prevMrr: number | null;
+  source: string;
+  month: string; // the reported month ("2026-08-01")
+  at: string; // created_at
+}
+
+/** Recent MRR reports with MoM context — the wire. Newest first. */
+export async function getEarningsWire(limit = 6): Promise<EarningsEvent[]> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const [updatesRes, tickersRes] = await Promise.all([
+      admin.from("mrr_updates").select("*").order("month", { ascending: true }),
+      admin.from("tickers").select("id, symbol"),
+    ]);
+    const symbols = new Map(
+      ((tickersRes.data ?? []) as { id: string; symbol: string }[]).map((t) => [
+        t.id,
+        t.symbol,
+      ])
+    );
+    const byTicker = new Map<string, MrrUpdate[]>();
+    for (const u of (updatesRes.data ?? []) as MrrUpdate[]) {
+      const list = byTicker.get(u.ticker_id) ?? [];
+      list.push(u); // month ascending
+      byTicker.set(u.ticker_id, list);
+    }
+    const events: EarningsEvent[] = [];
+    for (const [tickerId, list] of byTicker) {
+      const symbol = symbols.get(tickerId);
+      if (!symbol) continue;
+      list.forEach((u, i) => {
+        events.push({
+          symbol,
+          tickerId,
+          mrr: Number(u.mrr),
+          prevMrr: i > 0 ? Number(list[i - 1].mrr) : null,
+          source: u.source,
+          month: u.month,
+          at: u.created_at,
+        });
+      });
+    }
+    // Newest first, tie-broken by month so bulk-seeded rows order sanely,
+    // then one entry per ticker — the wire reports the latest, not history.
+    events.sort(
+      (a, b) => b.at.localeCompare(a.at) || b.month.localeCompare(a.month)
+    );
+    const seen = new Set<string>();
+    const deduped: EarningsEvent[] = [];
+    for (const e of events) {
+      if (seen.has(e.tickerId)) continue;
+      seen.add(e.tickerId);
+      deduped.push(e);
+    }
+    return deduped.slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
+export type FeedEvent =
+  | { kind: "trade"; at: string; trade: FeedTrade }
+  | { kind: "earnings"; at: string; earnings: EarningsEvent }
+  | { kind: "listing"; at: string; quote: TickerQuote };
+
+export type FeedFilter = "all" | "trades" | "earnings" | "listings";
+
+/** The unified activity feed: trades + earnings + listings, newest first. */
+export async function getFeedEvents(
+  quotes: TickerQuote[],
+  filter: FeedFilter = "all",
+  limit = 50
+): Promise<FeedEvent[]> {
+  const wantTrades = filter === "all" || filter === "trades";
+  const wantEarnings = filter === "all" || filter === "earnings";
+  const wantListings = filter === "all" || filter === "listings";
+
+  const [trades, earnings] = await Promise.all([
+    wantTrades ? getRecentTrades(limit) : Promise.resolve([]),
+    wantEarnings ? getEarningsWire(30) : Promise.resolve([]),
+  ]);
+
+  const events: FeedEvent[] = [
+    ...trades.map((t) => ({ kind: "trade" as const, at: t.created_at, trade: t })),
+    ...earnings.map((e) => ({ kind: "earnings" as const, at: e.at, earnings: e })),
+    ...(wantListings
+      ? quotes
+          .filter((q) => !q.ticker.fixture)
+          .map((q) => ({
+            kind: "listing" as const,
+            at: q.ticker.listed_at,
+            quote: q,
+          }))
+      : []),
+  ];
+  return events.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
+}
+
+export interface TrendingRow {
+  quote: TickerQuote;
+  trades24h: number;
+  votes: number;
+}
+
+/** Trending = most traded in 24h, votes as the tiebreaker. */
+export async function getTrending(
+  quotes: TickerQuote[],
+  limit = 5
+): Promise<TrendingRow[]> {
+  const byId = new Map(quotes.map((q) => [q.ticker.id, q]));
+  const tradeCounts = new Map<string, number>();
+  const voteCounts = new Map<string, number>();
+  try {
+    const admin = createSupabaseAdminClient();
+    const [tradesRes, votesRes] = await Promise.all([
+      admin
+        .from("trades")
+        .select("ticker_id")
+        .gte("created_at", new Date(Date.now() - 86400_000).toISOString()),
+      admin.from("ticker_votes").select("ticker_id"),
+    ]);
+    for (const t of (tradesRes.data ?? []) as { ticker_id: string }[]) {
+      tradeCounts.set(t.ticker_id, (tradeCounts.get(t.ticker_id) ?? 0) + 1);
+    }
+    for (const v of (votesRes.data ?? []) as { ticker_id: string }[]) {
+      voteCounts.set(v.ticker_id, (voteCounts.get(v.ticker_id) ?? 0) + 1);
+    }
+  } catch {
+    // fall through to |dayChange| ranking
+  }
+  return [...byId.values()]
+    .map((quote) => ({
+      quote,
+      trades24h: tradeCounts.get(quote.ticker.id) ?? 0,
+      votes: voteCounts.get(quote.ticker.id) ?? 0,
+    }))
+    .sort(
+      (a, b) =>
+        b.trades24h - a.trades24h ||
+        b.votes - a.votes ||
+        Math.abs(b.quote.dayChange) - Math.abs(a.quote.dayChange)
+    )
+    .slice(0, limit);
+}
+
+/** XP for every user, derived from activity counts (service role). */
+export async function getXpMap(): Promise<Map<string, number>> {
+  const xp = new Map<string, number>();
+  try {
+    const admin = createSupabaseAdminClient();
+    const [tradesRes, votesRes, tickersRes, profilesRes] = await Promise.all([
+      admin.from("trades").select("user_id"),
+      admin.from("ticker_votes").select("user_id"),
+      admin.from("tickers").select("listed_by"),
+      admin.from("profiles").select("id, invited_by"),
+    ]);
+    const counts = new Map<
+      string,
+      { trades: number; votes: number; listings: number; invites: number }
+    >();
+    const bump = (
+      userId: string | null | undefined,
+      key: "trades" | "votes" | "listings" | "invites"
+    ) => {
+      if (!userId) return;
+      const c =
+        counts.get(userId) ?? { trades: 0, votes: 0, listings: 0, invites: 0 };
+      c[key] += 1;
+      counts.set(userId, c);
+    };
+    for (const t of (tradesRes.data ?? []) as { user_id: string }[]) bump(t.user_id, "trades");
+    for (const v of (votesRes.data ?? []) as { user_id: string }[]) bump(v.user_id, "votes");
+    for (const t of (tickersRes.data ?? []) as { listed_by: string | null }[]) bump(t.listed_by, "listings");
+    for (const p of (profilesRes.data ?? []) as { id: string; invited_by: string | null }[]) bump(p.invited_by, "invites");
+    for (const [userId, c] of counts) xp.set(userId, computeXp(c));
+  } catch {
+    // XP layer degrades to zero
+  }
+  return xp;
+}
+
+/** One user's streak, from their trade history (service role — works for any user). */
+export async function getStreakFor(userId: string): Promise<Streak> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from("trades")
+      .select("created_at")
+      .eq("user_id", userId)
+      .gte("created_at", new Date(Date.now() - 60 * 86400_000).toISOString());
+    const days = ((data ?? []) as { created_at: string }[]).map((t) =>
+      t.created_at.slice(0, 10)
+    );
+    return streakFromDays(days);
+  } catch {
+    return { days: 0, tradedToday: false };
+  }
+}
+
+export interface MissedToday {
+  quote: TickerQuote;
+  hypotheticalStake: number;
+  hypotheticalGain: number;
+  onWatchlist: boolean;
+}
+
+/**
+ * The guilt card: today's top gainer the user does NOT hold, with an honest
+ * hypothetical ("a $2,500 bag at open would be up $X"). Null when the market
+ * is flat or the user holds today's winner (then there's nothing to rub in).
+ */
+export async function getMissedToday(
+  quotes: TickerQuote[],
+  userId: string
+): Promise<MissedToday | null> {
+  const STAKE = 2_500;
+  try {
+    const admin = createSupabaseAdminClient();
+    const [holdingsRes, watchRes] = await Promise.all([
+      admin.from("holdings").select("ticker_id").eq("user_id", userId).gt("shares", 0),
+      admin.from("watchlists").select("ticker_id").eq("user_id", userId),
+    ]);
+    const held = new Set(
+      ((holdingsRes.data ?? []) as { ticker_id: string }[]).map((h) => h.ticker_id)
+    );
+    const watched = new Set(
+      ((watchRes.data ?? []) as { ticker_id: string }[]).map((w) => w.ticker_id)
+    );
+    const candidate = [...quotes]
+      .filter((q) => !held.has(q.ticker.id) && q.dayChange > 0.02)
+      .sort((a, b) => b.dayChange - a.dayChange)[0];
+    if (!candidate) return null;
+    return {
+      quote: candidate,
+      hypotheticalStake: STAKE,
+      hypotheticalGain: STAKE * candidate.dayChange,
+      onWatchlist: watched.has(candidate.ticker.id),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export interface RecapStats {

@@ -1,11 +1,19 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/supabase/server";
-import { getPortfolio, getPortfolioHistory } from "@/lib/data";
+import {
+  getPortfolio,
+  getPortfolioHistory,
+  getStreakFor,
+  getXpMap,
+} from "@/lib/data";
 import { fmtMoney, fmtPrice } from "@/lib/format";
+import { tierFor } from "@/lib/xp";
 import ChangePct from "@/components/ChangePct";
 import ValueChart from "@/components/ValueChart";
 import InviteBox from "@/components/InviteBox";
+import StreakCard from "@/components/StreakCard";
+import TierBadge from "@/components/TierBadge";
 import { STARTING_CASH, siteUrl } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
@@ -16,10 +24,13 @@ export default async function PortfolioPage() {
   const user = await getUser();
   if (!user) redirect("/login?next=/portfolio");
 
-  const [data, history] = await Promise.all([
+  const [data, history, streak, xpMap] = await Promise.all([
     getPortfolio(user.id),
     getPortfolioHistory(),
+    getStreakFor(user.id),
+    getXpMap(),
   ]);
+  const standing = tierFor(xpMap.get(user.id) ?? 0);
   if (!data) {
     return (
       <p className="py-10 text-center text-sm text-terminal-muted">
@@ -157,6 +168,30 @@ export default async function PortfolioPage() {
       </section>
 
       <ValueChart history={history} liveValue={valuation.totalValue} />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <StreakCard streak={streak} />
+        <div className="panel space-y-2 p-4">
+          <div className="flex items-center justify-between">
+            <span className="microlabel">Ranked tier</span>
+            <TierBadge xp={standing.xp} showXp />
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-terminal-line">
+            <div
+              className="h-1.5 rounded-full"
+              style={{
+                width: `${Math.round(standing.progress * 100)}%`,
+                backgroundColor: standing.tier.color,
+              }}
+            />
+          </div>
+          <p className="text-[11px] leading-snug text-terminal-muted">
+            {standing.next
+              ? `${(standing.next.min - standing.xp).toLocaleString("en-US")} XP to ${standing.next.name}. Earn XP by trading (+50), voting (+25), listing a startup (+500) and inviting friends (+250).`
+              : "Diamond. There is nothing above this — only maintaining the aura."}
+          </p>
+        </div>
+      </div>
 
       {inviteCode && (
         <InviteBox inviteUrl={`${siteUrl()}/?ref=${inviteCode}`} />

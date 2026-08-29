@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getPublicProfile } from "@/lib/data";
+import { getPublicProfile, getStreakFor, getXpMap } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 import { fmtMoney, fmtPct } from "@/lib/format";
+import { STREAK_FLAME_AT } from "@/lib/xp";
 import { STARTING_CASH, APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import ValueChart from "@/components/ValueChart";
 import ShareButton from "@/components/ShareButton";
 import ChangePct from "@/components/ChangePct";
+import TierBadge from "@/components/TierBadge";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +31,11 @@ export default async function ProfilePage({ params }: Props) {
   if (!data) notFound();
 
   const { profile, valuation, rank, playerCount, history } = data;
-  const viewer = await getUser();
+  const [viewer, streak, xpMap] = await Promise.all([
+    getUser(),
+    getStreakFor(profile.id),
+    getXpMap(),
+  ]);
   const isMe = viewer?.id === profile.id;
   const pnlPct = valuation.totalPnl / STARTING_CASH;
 
@@ -40,10 +46,19 @@ export default async function ProfilePage({ params }: Props) {
           {profile.display_name.slice(0, 1).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="font-mono text-xl font-bold">
+          <h1 className="flex flex-wrap items-center gap-2 font-mono text-xl font-bold">
             {profile.display_name}
+            <TierBadge xp={xpMap.get(profile.id) ?? 0} />
+            {streak.days >= STREAK_FLAME_AT && (
+              <span
+                title={`${streak.days}-day trade streak`}
+                className="rounded bg-terminal-amber/15 px-1.5 py-0.5 font-mono text-[11px] font-bold text-terminal-amber"
+              >
+                🔥 {streak.days}
+              </span>
+            )}
             {isMe && (
-              <span className="ml-2 text-xs font-normal text-terminal-accent">
+              <span className="text-xs font-normal text-terminal-accent">
                 you
               </span>
             )}

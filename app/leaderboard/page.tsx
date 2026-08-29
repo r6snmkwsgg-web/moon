@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { getLeaderboard, type LeaderboardRange } from "@/lib/data";
+import { getLeaderboard, getXpMap, type LeaderboardRange } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 import { fmtMoney } from "@/lib/format";
 import { STARTING_CASH } from "@/lib/config";
+import TierBadge from "@/components/TierBadge";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,11 @@ export default async function LeaderboardPage({
   const range: LeaderboardRange =
     rangeParam === "7d" || rangeParam === "30d" ? rangeParam : "all";
 
-  const [rows, user] = await Promise.all([getLeaderboard(range), getUser()]);
+  const [rows, user, xpMap] = await Promise.all([
+    getLeaderboard(range),
+    getUser(),
+    getXpMap(),
+  ]);
   const top = rows.slice(0, 25);
 
   return (
@@ -83,21 +88,24 @@ export default async function LeaderboardPage({
                     {MEDALS[i] ?? i + 1}
                   </td>
                   <td className="px-3 py-2.5 font-mono">
-                    {v.profile.username ? (
-                      <Link
-                        href={`/u/${v.profile.username}`}
-                        className="hover:text-terminal-accent"
-                      >
-                        {v.profile.display_name}
-                      </Link>
-                    ) : (
-                      v.profile.display_name
-                    )}
-                    {isMe && (
-                      <span className="ml-1.5 text-[10px] text-terminal-accent">
-                        you
-                      </span>
-                    )}
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      {v.profile.username ? (
+                        <Link
+                          href={`/u/${v.profile.username}`}
+                          className="hover:text-terminal-accent"
+                        >
+                          {v.profile.display_name}
+                        </Link>
+                      ) : (
+                        v.profile.display_name
+                      )}
+                      <TierBadge xp={xpMap.get(v.profile.id) ?? 0} />
+                      {isMe && (
+                        <span className="text-[10px] text-terminal-accent">
+                          you
+                        </span>
+                      )}
+                    </span>
                   </td>
                   <td className="num px-3 py-2.5 text-right font-mono">
                     {fmtMoney(v.totalValue)}
