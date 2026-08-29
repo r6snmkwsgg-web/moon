@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { APP_NAME, APP_TAGLINE, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import Nav from "@/components/Nav";
 import TickerTape from "@/components/TickerTape";
@@ -27,6 +28,7 @@ export default function RootLayout({
           {children}
         </main>
         <Footer />
+        <Analytics />
       </body>
     </html>
   );
