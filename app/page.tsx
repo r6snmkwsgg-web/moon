@@ -12,9 +12,9 @@ import Sparkline from "@/components/Sparkline";
 import ChangePct from "@/components/ChangePct";
 import LogoTile from "@/components/LogoTile";
 import TickerBadges from "@/components/TickerBadges";
-import FeaturedTickerCard from "@/components/FeaturedTickerCard";
 import WireBanner from "@/components/WireBanner";
 import DayStrip from "@/components/DayStrip";
+import HeroChart from "@/components/HeroChart";
 
 export const dynamic = "force-dynamic";
 
@@ -40,9 +40,15 @@ export default async function ExchangePage() {
     user ? getMissedToday(market, user.id) : Promise.resolve(null),
   ]);
 
-  const featured = [...market]
+  // Signed-in surfaces track the biggest mover either way; the landing hero
+  // leads with the top GAINER so first impressions aren't a cliff-dive
+  // (unless the whole board is red — then honesty wins).
+  const movers = [...market]
     .filter((q) => q.spark.length > 2)
-    .sort((a, b) => Math.abs(b.dayChange) - Math.abs(a.dayChange))[0];
+    .sort((a, b) => Math.abs(b.dayChange) - Math.abs(a.dayChange));
+  const topGainer = [...movers].sort((a, b) => b.dayChange - a.dayChange)[0];
+  const featured =
+    topGainer && topGainer.dayChange > 0 ? topGainer : movers[0];
 
   // ONE banner slot: the newest IPO wins, else fresh earnings news, else nothing.
   const freshIpo = market
@@ -239,33 +245,89 @@ export default async function ExchangePage() {
         </>
       ) : (
         <>
-          <div className="grid gap-4 lg:grid-cols-[440px_1fr]">
-            <div className="flex flex-col justify-center gap-3.5">
-              <h1 className="text-4xl font-bold leading-[1.08] tracking-tight [text-wrap:balance]">
-                The stock market for indie SaaS.
-              </h1>
-              <p className="text-sm leading-relaxed text-terminal-muted">
-                Real startups, revenue verified through Stripe, $10,000 of play
-                money. Hype moves prices — MRR is gravity.
-              </p>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <Link
-                  href="/login"
-                  className="rounded-lg bg-terminal-up px-4 py-2.5 text-sm font-bold text-black hover:bg-terminal-up/85"
-                >
-                  Start trading — it&apos;s free
-                </Link>
-                <Link
-                  href="/how"
-                  className="rounded-lg border border-terminal-line px-4 py-2.5 text-sm font-semibold hover:border-terminal-muted"
-                >
-                  How pricing works
-                </Link>
-              </div>
+          {/* fold: the centered monument (V2) */}
+          <div className="flex flex-col items-center gap-4 pt-8 text-center sm:pt-12">
+            <div className="microlabel flex items-center gap-2 rounded-full border border-terminal-up/40 px-4 py-1.5 !text-terminal-up">
+              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-terminal-up" />
+              {market.length} startups listed ·{" "}
+              {fmtCompact(market.reduce((s, q) => s + q.marketCap, 0))}{" "}
+              play-money cap
             </div>
-            {featured && <FeaturedTickerCard quote={featured} />}
+            <h1 className="max-w-3xl text-5xl font-bold leading-[1.05] tracking-[-0.03em] [text-wrap:balance] sm:text-6xl">
+              Indie SaaS, trading like the S&amp;P.
+            </h1>
+            <p className="max-w-xl text-base leading-relaxed text-terminal-muted">
+              Real startups. Real Stripe-verified revenue. Completely fake
+              money — you get $10,000 of it.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Link
+                href="/login"
+                className="rounded-xl bg-terminal-up px-6 py-3 text-[15px] font-bold text-black hover:bg-terminal-up/85"
+              >
+                Claim your $10,000
+              </Link>
+              <Link
+                href="/list"
+                className="rounded-xl border border-terminal-line px-6 py-3 text-[15px] font-semibold hover:border-terminal-muted"
+              >
+                ⚡ List your startup
+              </Link>
+            </div>
+            <p className="text-xs text-terminal-muted/80">
+              Play money. Not real securities — nothing cashes out, ever.
+            </p>
           </div>
+          {featured && <HeroChart quote={featured} />}
+
+          {/* how it works, in three beats */}
+          <div className="grid gap-3.5 pt-6 sm:grid-cols-3">
+            {[
+              [
+                "01",
+                "Founders list in 60 seconds",
+                "A read-only Stripe key computes their MRR on the spot — verified from day one, re-synced monthly. The ⚡ badge means the number is real.",
+                "text-terminal-amber",
+              ],
+              [
+                "02",
+                "Revenue sets the anchor",
+                "One open formula: fair value = 3× MRR over 10,000 shares. Monthly reports are earnings day — beats rip, misses dump.",
+                "text-terminal-up",
+              ],
+              [
+                "03",
+                "You trade the hype",
+                "$10,000 of play money. Buys push prices up, hype decays 10% nightly, revenue is gravity. The leaderboard is forever.",
+                "text-terminal-accent",
+              ],
+            ].map(([num, title, body, color]) => (
+              <div key={num} className="panel space-y-1.5 p-5">
+                <div className={`font-mono text-xl font-bold ${color}`}>
+                  {num}
+                </div>
+                <div className="text-[15px] font-bold">{title}</div>
+                <p className="text-[13px] leading-relaxed text-terminal-muted">
+                  {body}
+                </p>
+              </div>
+            ))}
+          </div>
+
           {board}
+
+          {/* closing CTA */}
+          <div className="flex flex-col items-center gap-4 rounded-xl bg-gradient-to-b from-transparent to-terminal-up/[0.07] py-10">
+            <div className="text-2xl font-bold tracking-tight">
+              The FOMO is free.
+            </div>
+            <Link
+              href="/login"
+              className="rounded-xl bg-terminal-up px-6 py-3 text-[15px] font-bold text-black hover:bg-terminal-up/85"
+            >
+              Claim your $10,000 →
+            </Link>
+          </div>
         </>
       )}
     </div>
