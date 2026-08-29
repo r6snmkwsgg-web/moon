@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/supabase/server";
-import { getPortfolio } from "@/lib/data";
+import { getPortfolio, getPortfolioHistory } from "@/lib/data";
 import { fmtMoney, fmtPrice } from "@/lib/format";
 import ChangePct from "@/components/ChangePct";
-import { STARTING_CASH } from "@/lib/config";
+import ValueChart from "@/components/ValueChart";
+import InviteBox from "@/components/InviteBox";
+import { STARTING_CASH, siteUrl } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +16,10 @@ export default async function PortfolioPage() {
   const user = await getUser();
   if (!user) redirect("/login?next=/portfolio");
 
-  const data = await getPortfolio(user.id);
+  const [data, history] = await Promise.all([
+    getPortfolio(user.id),
+    getPortfolioHistory(),
+  ]);
   if (!data) {
     return (
       <p className="py-10 text-center text-sm text-terminal-muted">
@@ -24,10 +29,22 @@ export default async function PortfolioPage() {
   }
 
   const { valuation, rank, playerCount } = data;
+  const username = valuation.profile.username;
+  const inviteCode = valuation.profile.invite_code;
 
   return (
     <div className="space-y-6">
-      <h1 className="font-mono text-lg font-bold">Portfolio</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="font-mono text-lg font-bold">Portfolio</h1>
+        {username && (
+          <Link
+            href={`/u/${username}`}
+            className="text-xs text-terminal-accent hover:underline"
+          >
+            view public profile →
+          </Link>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="panel px-3 py-2">
@@ -138,6 +155,12 @@ export default async function PortfolioPage() {
           </tbody>
         </table>
       </section>
+
+      <ValueChart history={history} liveValue={valuation.totalValue} />
+
+      {inviteCode && (
+        <InviteBox inviteUrl={`${siteUrl()}/?ref=${inviteCode}`} />
+      )}
 
       <div className="flex items-center justify-between text-xs text-terminal-muted">
         <span>PnL is vs. your average cost; rank is by total portfolio value.</span>

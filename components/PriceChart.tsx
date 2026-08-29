@@ -144,6 +144,28 @@ export default function PriceChart({
             opacity="0.75"
           />
 
+          {/* earnings markers: one diamond per MRR report inside the window */}
+          {mrrHistory
+            .filter((m) => {
+              const t = new Date(m.month).getTime();
+              return t >= t0 && t <= t1;
+            })
+            .map((m) => {
+              const mx = x(m.month);
+              const my = y(fairPrice(Number(m.mrr)));
+              return (
+                <path
+                  key={m.id}
+                  d={`M ${mx} ${my - 5} L ${mx + 4.5} ${my} L ${mx} ${my + 5} L ${mx - 4.5} ${my} Z`}
+                  fill="#fbbf24"
+                  stroke="#070b12"
+                  strokeWidth="1"
+                >
+                  <title>MRR report</title>
+                </path>
+              );
+            })}
+
           <polyline
             points={pricePts}
             fill="none"

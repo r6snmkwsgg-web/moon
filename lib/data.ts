@@ -10,6 +10,7 @@ import { STARTING_CASH } from "@/lib/config";
 import type {
   Holding,
   MrrUpdate,
+  PortfolioSnapshot,
   PriceSnapshot,
   Profile,
   Ticker,
@@ -231,4 +232,247 @@ export async function getAllValuations(): Promise<PortfolioValuation[]> {
   return ((profilesRes.data ?? []) as Profile[])
     .map((p) => valuePortfolio(p, holdingsByUser.get(p.id) ?? [], quotesById))
     .sort((a, b) => b.totalValue - a.totalValue);
+}
+
+// ── market depth (0002) ─────────────────────────────────────────────────────
+
+export interface FeedTrade {
+  id: string;
+  side: "buy" | "sell";
+  shares: number;
+  price: number;
+  total: number;
+  created_at: string;
+  trader: string; // display name
+  username: string | null;
+  symbol: string;
+}
+
+/** Recent trades for the tape (global) or one ticker. Service role: joins names. */
+export async function getRecentTrades(
+  limit = 40,
+  tickerId?: string
+): Promise<FeedTrade[]> {
+  const admin = createSupabaseAdminClient();
+  let query = admin
+    .from("trades")
+    .select("*, profiles(display_name, username), tickers(symbol)")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (tickerId) query = query.eq("ticker_id", tickerId);
+  const { data } = await query;
+  return ((data ?? []) as Array<Record<string, unknown>>).map((t) => {
+    const profile = (t.profiles ?? {}) as Record<string, unknown>;
+    const ticker = (t.tickers ?? {}) as Record<string, unknown>;
+    return {
+      id: String(t.id),
+      side: t.side as "buy" | "sell",
+      shares: Number(t.shares),
+      price: Number(t.price),
+      total: Number(t.total),
+      created_at: String(t.created_at),
+      trader: String(profile.display_name ?? "trader"),
+      username: (profile.username as string) ?? null,
+      symbol: String(ticker.symbol ?? "?"),
+    };
+  });
+}
+
+/** Community bull/bear tally for one ticker (aggregated with service role). */
+export async function getVoteGauge(
+  tickerId: string
+): Promise<{ bulls: number; bears: number }> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from("ticker_votes")
+      .select("vote")
+      .eq("ticker_id", tickerId);
+    const votes = (data ?? []) as { vote: number }[];
+    return {
+      bulls: votes.filter((v) => Number(v.vote) === 1).length,
+      bears: votes.filter((v) => Number(v.vote) === -1).length,
+    };
+  } catch {
+    return { bulls: 0, bears: 0 };
+  }
+}
+
+/** The signed-in user's own daily portfolio values (RLS: own rows). */
+export async function getPortfolioHistory(): Promise<PortfolioSnapshot[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase
+    .from("portfolio_snapshots")
+    .select("*")
+    .order("day", { ascending: true });
+  return (data ?? []) as PortfolioSnapshot[];
+}
+
+export type LeaderboardRange = "all" | "7d" | "30d";
+
+export interface LeaderboardRow {
+  valuation: PortfolioValuation;
+  rangePnl: number;
+}
+
+/**
+ * Leaderboard over a window: PnL vs the latest portfolio snapshot at or
+ * before the window start (players without history fall back to the
+ * $10,000 starting stake).
+ */
+export async function getLeaderboard(
+  range: LeaderboardRange
+): Promise<LeaderboardRow[]> {
+  const valuations = await getAllValuations();
+  if (range === "all") {
+    return valuations
+      .map((v) => ({ valuation: v, rangePnl: v.totalPnl }))
+      .sort((a, b) => b.rangePnl - a.rangePnl);
+  }
+
+  const startDay = isoDaysAgo(range === "7d" ? 7 : 30);
+  const baseline = new Map<string, number>();
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from("portfolio_snapshots")
+      .select("user_id, day, total_value")
+      .lte("day", startDay)
+      .order("day", { ascending: true });
+    for (const s of (data ?? []) as PortfolioSnapshot[]) {
+      baseline.set(s.user_id, Number(s.total_value)); // ascending → last wins
+    }
+  } catch {
+    // table missing pre-migration — everyone falls back to starting cash
+  }
+
+  return valuations
+    .map((v) => ({
+      valuation: v,
+      rangePnl:
+        v.totalValue - (baseline.get(v.profile.id) ?? STARTING_CASH),
+    }))
+    .sort((a, b) => b.rangePnl - a.rangePnl);
+}
+
+export interface PublicProfileData {
+  profile: Profile;
+  valuation: PortfolioValuation;
+  rank: number;
+  playerCount: number;
+  history: PortfolioSnapshot[];
+}
+
+/** A trader's public page, looked up by username. Service role. */
+export async function getPublicProfile(
+  username: string
+): Promise<PublicProfileData | null> {
+  const admin = createSupabaseAdminClient();
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("*")
+    .ilike("username", username)
+    .maybeSingle();
+  if (!profile) return null;
+
+  const all = await getAllValuations();
+  const idx = all.findIndex((v) => v.profile.id === profile.id);
+  if (idx === -1) return null;
+
+  const { data: history } = await admin
+    .from("portfolio_snapshots")
+    .select("*")
+    .eq("user_id", profile.id)
+    .order("day", { ascending: true });
+
+  return {
+    profile: profile as Profile,
+    valuation: all[idx],
+    rank: idx + 1,
+    playerCount: all.length,
+    history: (history ?? []) as PortfolioSnapshot[],
+  };
+}
+
+export interface RecapStats {
+  topGainer: TickerQuote | null;
+  topLoser: TickerQuote | null;
+  newListings: TickerQuote[];
+  mrrMoves: { quote: TickerQuote; from: number; to: number }[];
+  mostTraded: { quote: TickerQuote; volume: number; trades: number }[];
+  weekStart: string;
+}
+
+/** Everything the weekly recap needs, computed over the trailing 7 days. */
+export async function getRecapStats(): Promise<RecapStats> {
+  const market = await getMarket();
+  const byId = new Map(market.map((q) => [q.ticker.id, q]));
+  const weekStart = isoDaysAgo(7);
+  const sorted = [...market].sort((a, b) => b.weekChange - a.weekChange);
+
+  const newListings = market.filter(
+    (q) => q.ticker.listed_at >= new Date(Date.now() - 7 * 86400_000).toISOString()
+  );
+
+  // Largest month-over-month MRR moves among updates posted this week.
+  const admin = createSupabaseAdminClient();
+  const mrrMoves: RecapStats["mrrMoves"] = [];
+  try {
+    const { data: recent } = await admin
+      .from("mrr_updates")
+      .select("*")
+      .gte("created_at", new Date(Date.now() - 7 * 86400_000).toISOString());
+    for (const u of (recent ?? []) as MrrUpdate[]) {
+      const quote = byId.get(u.ticker_id);
+      if (!quote) continue;
+      const { data: prev } = await admin
+        .from("mrr_updates")
+        .select("mrr")
+        .eq("ticker_id", u.ticker_id)
+        .lt("month", u.month)
+        .order("month", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!prev) continue;
+      mrrMoves.push({ quote, from: Number(prev.mrr), to: Number(u.mrr) });
+    }
+    mrrMoves.sort(
+      (a, b) =>
+        Math.abs(changeFraction(b.from, b.to)) -
+        Math.abs(changeFraction(a.from, a.to))
+    );
+  } catch {
+    // fine — section just stays empty
+  }
+
+  const mostTraded: RecapStats["mostTraded"] = [];
+  try {
+    const { data: trades } = await admin
+      .from("trades")
+      .select("ticker_id, total")
+      .gte("created_at", new Date(Date.now() - 7 * 86400_000).toISOString());
+    const agg = new Map<string, { volume: number; trades: number }>();
+    for (const t of (trades ?? []) as { ticker_id: string; total: number }[]) {
+      const cur = agg.get(t.ticker_id) ?? { volume: 0, trades: 0 };
+      cur.volume += Number(t.total);
+      cur.trades += 1;
+      agg.set(t.ticker_id, cur);
+    }
+    for (const [tickerId, stats] of agg) {
+      const quote = byId.get(tickerId);
+      if (quote) mostTraded.push({ quote, ...stats });
+    }
+    mostTraded.sort((a, b) => b.volume - a.volume);
+  } catch {
+    // fine
+  }
+
+  return {
+    topGainer: sorted[0] ?? null,
+    topLoser: sorted.length > 1 ? sorted[sorted.length - 1] : null,
+    newListings,
+    mrrMoves: mrrMoves.slice(0, 3),
+    mostTraded: mostTraded.slice(0, 3),
+    weekStart,
+  };
 }

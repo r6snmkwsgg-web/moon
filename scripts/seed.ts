@@ -115,6 +115,7 @@ async function main() {
         name: fixture.name,
         pitch: fixture.pitch,
         founder_handle: fixture.founder_handle,
+        fixture: true, // demo data — purgeable in one click from /admin
         sentiment: initialSentiment(fixture.symbol),
         listed_at: monthStartUTC(-(fixture.mrr.length - 1)).toISOString(),
       })

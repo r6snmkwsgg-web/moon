@@ -3,21 +3,27 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { executionFill } from "@/lib/pricing";
 import { fmtMoney, fmtPrice } from "@/lib/format";
 
 /**
- * Buy/sell panel. The server is the source of truth for price — this panel
- * shows an estimate and the /api/trade route re-computes at execution time.
+ * Buy/sell panel. Estimates use the same executionFill the server fills
+ * with, so the quote already includes slippage: big buys cost more per
+ * share, big sells return less. The server re-computes at execution time.
  */
 export default function TradePanel({
   symbol,
   price,
+  mrr,
+  sentiment,
   signedIn,
   cash,
   sharesHeld,
 }: {
   symbol: string;
   price: number;
+  mrr: number;
+  sentiment: number;
   signedIn: boolean;
   cash: number | null;
   sharesHeld: number;
@@ -41,7 +47,9 @@ export default function TradePanel({
     );
   }
 
-  const estimate = shares * price;
+  const buyEst = executionFill(mrr, sentiment, "buy", shares);
+  const sellEst = executionFill(mrr, sentiment, "sell", shares);
+  const buyImpact = price > 0 ? buyEst.avgPrice / price - 1 : 0;
 
   async function trade(side: "buy" | "sell") {
     setPending(side);
@@ -57,7 +65,7 @@ export default function TradePanel({
         setMessage(json.error ?? "Trade failed.");
       } else {
         setMessage(
-          `${side === "buy" ? "Bought" : "Sold"} ${shares} × $${symbol} @ ${fmtPrice(json.price)}`
+          `${side === "buy" ? "Bought" : "Sold"} ${shares} × $${symbol} @ avg ${fmtPrice(json.price)}`
         );
         router.refresh();
       }
@@ -95,13 +103,22 @@ export default function TradePanel({
           className="input num w-24 font-mono"
           aria-label="Shares"
         />
-        <span className="text-xs text-terminal-muted">
-          shares ≈{" "}
-          <span className="num font-mono text-terminal-text">
-            {fmtMoney(estimate)}
+        <span className="text-xs leading-snug text-terminal-muted">
+          <span className="num block font-mono">
+            buy ≈ {fmtMoney(buyEst.total)}
+          </span>
+          <span className="num block font-mono">
+            sell ≈ {fmtMoney(sellEst.total)}
           </span>
         </span>
       </div>
+
+      {buyImpact > 0.005 && (
+        <p className="font-mono text-[11px] text-terminal-amber">
+          size impact: avg fill ≈ {fmtPrice(buyEst.avgPrice)} (
+          {(buyImpact * 100).toFixed(1)}% above quote)
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <button
@@ -124,8 +141,9 @@ export default function TradePanel({
         <p className="font-mono text-xs text-terminal-muted">{message}</p>
       )}
       <p className="text-[11px] leading-snug text-terminal-muted/70">
-        Play money only. Buys push sentiment up, sells push it down (±40% cap,
-        decays daily) — MRR sets the anchor.
+        Play money only. Orders fill along the hype curve (±40% cap, decays
+        daily) — MRR is the anchor, and pumping your own bag round-trips to
+        zero.
       </p>
     </div>
   );

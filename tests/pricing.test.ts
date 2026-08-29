@@ -9,6 +9,7 @@ import {
   changeFraction,
   clampSentiment,
   decaySentiment,
+  executionFill,
   fairPrice,
   livePrice,
   marketCap,
@@ -163,6 +164,67 @@ describe("changeFraction", () => {
   it("is zero when the baseline is unusable", () => {
     expect(changeFraction(0, 5)).toBe(0);
     expect(changeFraction(NaN, 5)).toBe(0);
+  });
+});
+
+describe("executionFill — slippage along the sentiment curve", () => {
+  const MRR = 10_000; // fair $3.00
+
+  it("a tiny order fills at ~the live price and moves sentiment as one trade", () => {
+    const fill = executionFill(MRR, 0, "buy", 1);
+    expect(fill.avgPrice).toBeCloseTo(livePrice(MRR, 0), 3);
+    expect(fill.newSentiment).toBeCloseTo(applyTrade(0, "buy", 1), 10);
+  });
+
+  it("big buys pay MORE than the quoted price, big sells receive LESS", () => {
+    const buy = executionFill(MRR, 0, "buy", 1_000); // pushes sentiment 0 → +0.2
+    expect(buy.avgPrice).toBeGreaterThan(livePrice(MRR, 0));
+    expect(buy.avgPrice).toBeCloseTo(3 * (1 + 0.1), 10); // mean of 0 and +0.2
+
+    const sell = executionFill(MRR, 0, "sell", 1_000);
+    expect(sell.avgPrice).toBeLessThan(livePrice(MRR, 0));
+    expect(sell.avgPrice).toBeCloseTo(3 * (1 - 0.1), 10);
+  });
+
+  it("sentiment after the fill matches applyTrade exactly", () => {
+    const fill = executionFill(MRR, 0.05, "buy", 700);
+    expect(fill.newSentiment).toBeCloseTo(applyTrade(0.05, "buy", 700), 10);
+  });
+
+  it("shares past the cap fill flat at the cap price", () => {
+    // From 0, +0.4 cap is hit after 2,000 shares; the other 2,000 fill at cap.
+    const fill = executionFill(MRR, 0, "buy", 4_000);
+    const movingCost = 2_000 * 3 * (1 + 0.2); // mean sentiment 0 → 0.4 is 0.2
+    const cappedCost = 2_000 * 3 * (1 + SENTIMENT_CAP);
+    expect(fill.total).toBeCloseTo(movingCost + cappedCost, 6);
+    expect(fill.newSentiment).toBe(SENTIMENT_CAP);
+  });
+
+  it("already at the cap, a buy fills entirely flat", () => {
+    const fill = executionFill(MRR, SENTIMENT_CAP, "buy", 500);
+    expect(fill.avgPrice).toBeCloseTo(livePrice(MRR, SENTIMENT_CAP), 10);
+    expect(fill.newSentiment).toBe(SENTIMENT_CAP);
+  });
+
+  it("a round trip is never profitable — pumping your own ticker is a wash", () => {
+    // The sell walks back down the same path the buy walked up, so
+    // buy→sell nets exactly zero: no self-pump exploit exists.
+    const buy = executionFill(MRR, 0, "buy", 1_000);
+    const sell = executionFill(MRR, buy.newSentiment, "sell", 1_000);
+    expect(sell.total).toBeLessThanOrEqual(buy.total + 1e-9);
+    expect(sell.total).toBeCloseTo(buy.total, 8);
+
+    // Naively selling at the post-pump QUOTED price would have been a profit;
+    // slippage is what takes it away.
+    const quotedAfterPump = livePrice(MRR, buy.newSentiment) * 1_000;
+    expect(quotedAfterPump).toBeGreaterThan(buy.total);
+  });
+
+  it("total = avgPrice × shares, and zero-ish inputs are safe", () => {
+    const fill = executionFill(MRR, 0.1, "sell", 250);
+    expect(fill.total).toBeCloseTo(fill.avgPrice * 250, 8);
+    expect(executionFill(0, 0, "buy", 100).total).toBe(0);
+    expect(executionFill(MRR, 0, "buy", 0).total).toBe(0);
   });
 });
 

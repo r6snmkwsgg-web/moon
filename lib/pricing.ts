@@ -94,3 +94,43 @@ export function changeFraction(from: number, to: number): number {
   if (!Number.isFinite(from) || from <= 0) return 0;
   return (to - from) / from;
 }
+
+export interface Fill {
+  /** Volume-weighted average price actually paid/received per share. */
+  avgPrice: number;
+  /** avgPrice × shares — cash out (buy) or in (sell). */
+  total: number;
+  /** Sentiment after the order finishes filling. */
+  newSentiment: number;
+}
+
+/**
+ * Slippage: an order fills SHARE BY SHARE along the sentiment curve, so big
+ * buys pay progressively more and big sells receive progressively less.
+ * Sentiment moves linearly with shares (tradeImpact), so the average price
+ * over the moving stretch is fair × (1 + mean sentiment); any shares filled
+ * after sentiment pins at the ±40% cap fill flat at the cap price.
+ */
+export function executionFill(
+  mrr: number,
+  sentiment: number,
+  side: TradeSide,
+  shares: number
+): Fill {
+  const fair = fairPrice(mrr);
+  const s0 = clampSentiment(sentiment);
+  if (!Number.isFinite(shares) || shares <= 0 || fair <= 0) {
+    return { avgPrice: livePrice(mrr, s0), total: 0, newSentiment: s0 };
+  }
+
+  const perShare = TRADE_IMPACT_FACTOR / SHARES_OUTSTANDING;
+  const sEnd = applyTrade(s0, side, shares);
+  const movingShares = Math.min(shares, Math.abs(sEnd - s0) / perShare);
+  const cappedShares = shares - movingShares;
+
+  const total =
+    fair *
+    (movingShares * (1 + (s0 + sEnd) / 2) + cappedShares * (1 + sEnd));
+
+  return { avgPrice: total / shares, total, newSentiment: sEnd };
+}

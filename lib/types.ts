@@ -1,6 +1,6 @@
 /** Row shapes for the Supabase tables (see supabase/migrations/0001_init.sql). */
 
-export type MrrSource = "self-reported" | "curated";
+export type MrrSource = "self-reported" | "curated" | "stripe";
 
 export interface Ticker {
   id: string;
@@ -13,6 +13,12 @@ export interface Ticker {
   claimed_by: string | null;
   sentiment: number;
   listed_at: string;
+  // 0002_market_depth — may be undefined until the migration runs
+  fixture?: boolean;
+  stripe_verified?: boolean;
+  handle_verified?: boolean;
+  handle_proof_url?: string | null;
+  listed_by?: string | null;
 }
 
 export interface MrrUpdate {
@@ -39,6 +45,39 @@ export interface Profile {
   display_name: string;
   cash: number;
   created_at: string;
+  // 0002_market_depth — may be undefined until the migration runs
+  username?: string;
+  invite_code?: string;
+  invited_by?: string | null;
+}
+
+export interface Trade {
+  id: string;
+  user_id: string;
+  ticker_id: string;
+  side: "buy" | "sell";
+  shares: number;
+  price: number;
+  total: number;
+  created_at: string;
+}
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  ticker_id: string | null;
+  kind: "mrr" | "move" | "invite" | "system";
+  title: string;
+  read: boolean;
+  created_at: string;
+}
+
+export interface PortfolioSnapshot {
+  user_id: string;
+  day: string;
+  total_value: number;
+  cash: number;
+  holdings_value: number;
 }
 
 export interface Holding {

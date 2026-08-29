@@ -9,8 +9,11 @@ import {
   addCuratedMrr,
   addTicker,
   approveClaim,
+  approveHandle,
   delistTicker,
+  purgeFixtures,
   rejectClaim,
+  rejectHandle,
   updateTicker,
 } from "./actions";
 
@@ -86,6 +89,71 @@ export default async function AdminPage() {
           ))
         )}
       </section>
+
+      {/* handle verifications */}
+      {tickers.some((t) => t.handle_proof_url && !t.handle_verified) && (
+        <section className="space-y-2">
+          <h2 className="font-mono text-xs uppercase tracking-widest text-terminal-muted">
+            Handle verifications
+          </h2>
+          {tickers
+            .filter((t) => t.handle_proof_url && !t.handle_verified)
+            .map((t) => (
+              <div
+                key={t.id}
+                className="panel flex flex-wrap items-center gap-3 px-3 py-2 text-sm"
+              >
+                <span className="font-mono font-bold">${t.symbol}</span>
+                <span className="font-mono text-terminal-accent">
+                  @{t.founder_handle}
+                </span>
+                <a
+                  href={t.handle_proof_url!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="max-w-[280px] truncate text-xs text-terminal-accent underline-offset-2 hover:underline"
+                >
+                  {t.handle_proof_url}
+                </a>
+                <div className="ml-auto flex gap-2">
+                  <form action={approveHandle}>
+                    <input type="hidden" name="ticker_id" value={t.id} />
+                    <button className="btn-buy px-2 py-1 text-xs">
+                      ✓ Verify
+                    </button>
+                  </form>
+                  <form action={rejectHandle}>
+                    <input type="hidden" name="ticker_id" value={t.id} />
+                    <button className="btn-ghost px-2 py-1 text-xs">
+                      Reject
+                    </button>
+                  </form>
+                </div>
+              </div>
+            ))}
+        </section>
+      )}
+
+      {/* fixtures */}
+      {tickers.some((t) => t.fixture) && (
+        <section className="space-y-2">
+          <h2 className="font-mono text-xs uppercase tracking-widest text-terminal-muted">
+            Demo fixtures ({tickers.filter((t) => t.fixture).length})
+          </h2>
+          <form
+            action={purgeFixtures}
+            className="panel flex flex-wrap items-center gap-3 px-3 py-2 text-sm"
+          >
+            <span className="text-terminal-muted">
+              Wipe every demo ticker (refunds holders at last price, deletes
+              all their data). Real listings are untouched.
+            </span>
+            <button className="btn-sell ml-auto px-2 py-1 text-xs">
+              Purge all fixtures
+            </button>
+          </form>
+        </section>
+      )}
 
       {/* delist requests */}
       <section className="space-y-2">
@@ -174,10 +242,18 @@ export default async function AdminPage() {
               <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm">
                 <span className="font-mono font-bold">${t.symbol}</span>
                 <span className="text-terminal-muted">{t.name}</span>
+                {t.stripe_verified && (
+                  <span className="text-[10px] text-terminal-amber">
+                    ⚡ stripe
+                  </span>
+                )}
                 {t.claimed && (
                   <span className="text-[10px] text-terminal-accent">
                     ✓ claimed
                   </span>
+                )}
+                {t.fixture && (
+                  <span className="text-[10px] text-terminal-muted">demo</span>
                 )}
                 <span className="ml-auto font-mono text-xs text-terminal-amber">
                   {latest

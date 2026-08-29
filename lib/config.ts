@@ -9,6 +9,12 @@ export const APP_TAGLINE = "A fantasy stock market for indie SaaS startups.";
 
 export const STARTING_CASH = 10_000;
 
+/** Play money credited to BOTH sides when an invite converts. */
+export const INVITE_BONUS = 2_500;
+
+/** Max tickers one account can self-list (anti-spam). */
+export const MAX_LISTINGS_PER_USER = 3;
+
 /**
  * Non-negotiable guardrail. Rendered in the footer of every page and on the
  * OG card. Do not soften or remove.

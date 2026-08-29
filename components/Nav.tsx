@@ -11,8 +11,23 @@ async function signOut() {
   redirect("/");
 }
 
+async function unreadCount(userId: string): Promise<number> {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { count } = await supabase
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("read", false);
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default async function Nav() {
   const user = await getUser();
+  const unread = user ? await unreadCount(user.id) : 0;
 
   return (
     <header className="sticky top-0 z-20 border-b border-terminal-line bg-terminal-bg/85 backdrop-blur">
@@ -50,6 +65,12 @@ export default async function Nav() {
 
         <nav className="ml-auto flex items-center gap-1 text-sm">
           <Link
+            href="/tape"
+            className="hidden rounded px-2 py-1 text-terminal-muted hover:text-terminal-text sm:block"
+          >
+            Tape
+          </Link>
+          <Link
             href="/portfolio"
             className="rounded px-2 py-1 text-terminal-muted hover:text-terminal-text"
           >
@@ -60,6 +81,26 @@ export default async function Nav() {
             className="rounded px-2 py-1 text-terminal-muted hover:text-terminal-text"
           >
             Leaders
+          </Link>
+          {user && (
+            <Link
+              href="/notifications"
+              title="Alerts"
+              className="relative rounded px-2 py-1 text-terminal-muted hover:text-terminal-text"
+            >
+              ◔
+              {unread > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-terminal-down px-1 font-mono text-[9px] font-bold text-white">
+                  {unread > 9 ? "9+" : unread}
+                </span>
+              )}
+            </Link>
+          )}
+          <Link
+            href="/list"
+            className="mr-1 hidden whitespace-nowrap rounded-md border border-terminal-amber/50 bg-terminal-amber/10 px-2.5 py-1 font-semibold text-terminal-amber hover:bg-terminal-amber/20 sm:block"
+          >
+            + List
           </Link>
           {isAdminUser(user) && (
             <Link

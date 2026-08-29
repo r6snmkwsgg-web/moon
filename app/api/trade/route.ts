@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { applyTrade, livePrice, type TradeSide } from "@/lib/pricing";
+import { executionFill, type TradeSide } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST /api/trade { symbol, side: "buy" | "sell", shares }
  *
- * Price and sentiment are computed here via lib/pricing.ts (never in SQL),
- * then the ledger moves atomically inside the execute_trade function.
- * You trade at the CURRENT price; your trade moves sentiment for the next one.
+ * Fills use executionFill from lib/pricing.ts (never SQL): the order walks
+ * the sentiment curve, so big buys pay progressively more and big sells
+ * receive progressively less — and a pump-then-dump round trip nets zero.
+ * The ledger then moves atomically inside the execute_trade function.
  */
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -60,22 +61,21 @@ export async function POST(request: Request) {
     .maybeSingle();
   const mrr = Number(latest?.mrr ?? 0);
 
-  const price = livePrice(mrr, Number(ticker.sentiment));
-  if (price <= 0) {
+  const fill = executionFill(mrr, Number(ticker.sentiment), side, shares);
+  if (fill.avgPrice <= 0) {
     return NextResponse.json(
       { error: "This ticker has no MRR on record yet — it can't trade." },
       { status: 400 }
     );
   }
-  const newSentiment = applyTrade(Number(ticker.sentiment), side, shares);
 
   const { data, error } = await admin.rpc("execute_trade", {
     p_user_id: user.id,
     p_ticker_id: ticker.id,
     p_side: side,
     p_shares: shares,
-    p_price: price,
-    p_new_sentiment: newSentiment,
+    p_price: Number(fill.avgPrice.toFixed(6)),
+    p_new_sentiment: fill.newSentiment,
   });
 
   if (error) {
@@ -87,5 +87,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
-  return NextResponse.json({ ok: true, price, cash: data?.cash });
+  return NextResponse.json({
+    ok: true,
+    price: fill.avgPrice,
+    total: fill.total,
+    cash: data?.cash,
+  });
 }

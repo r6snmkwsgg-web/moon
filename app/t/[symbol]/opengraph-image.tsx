@@ -53,9 +53,20 @@ export default async function OgImage({
   const sym = symbol.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6);
 
   const tickers = await rest<
-    { id: string; symbol: string; name: string; sentiment: number }[]
-  >(`tickers?select=id,symbol,name,sentiment&symbol=eq.${sym}&limit=1`);
+    {
+      id: string;
+      symbol: string;
+      name: string;
+      sentiment: number;
+      stripe_verified?: boolean;
+      listed_at?: string;
+    }[]
+  >(`tickers?select=*&symbol=eq.${sym}&limit=1`);
   const ticker = tickers?.[0];
+  const verified = Boolean(ticker?.stripe_verified);
+  const isNew = ticker?.listed_at
+    ? Date.now() - new Date(ticker.listed_at).getTime() < 7 * 86400_000
+    : false;
 
   let price = 0;
   let change = 0;
@@ -119,16 +130,53 @@ export default async function OgImage({
           }}
         >
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <div
-              style={{
-                fontSize: 84,
-                fontWeight: 800,
-                color: TEXT,
-                letterSpacing: 2,
-              }}
-            >
-              {/* satori: keep text as ONE child node (no `$…{expr}` mixing) */}
-              {"$" + (ticker ? ticker.symbol : sym)}
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div
+                style={{
+                  fontSize: 84,
+                  fontWeight: 800,
+                  color: TEXT,
+                  letterSpacing: 2,
+                }}
+              >
+                {/* satori: keep text as ONE child node (no `$…{expr}` mixing) */}
+                {"$" + (ticker ? ticker.symbol : sym)}
+              </div>
+              {verified && (
+                <div
+                  style={{
+                    display: "flex",
+                    fontSize: 22,
+                    fontWeight: 700,
+                    color: "#fbbf24",
+                    border: "2px solid rgba(251,191,36,0.45)",
+                    backgroundColor: "rgba(251,191,36,0.10)",
+                    borderRadius: 10,
+                    padding: "4px 14px",
+                    marginLeft: 22,
+                    letterSpacing: 2,
+                  }}
+                >
+                  STRIPE-VERIFIED MRR
+                </div>
+              )}
+              {isNew && !verified && (
+                <div
+                  style={{
+                    display: "flex",
+                    fontSize: 22,
+                    fontWeight: 700,
+                    color: UP,
+                    border: `2px solid ${UP}`,
+                    borderRadius: 10,
+                    padding: "4px 14px",
+                    marginLeft: 22,
+                    letterSpacing: 2,
+                  }}
+                >
+                  JUST LISTED
+                </div>
+              )}
             </div>
             <div style={{ fontSize: 30, color: MUTED, marginTop: 4 }}>
               {ticker ? ticker.name : "not listed"}

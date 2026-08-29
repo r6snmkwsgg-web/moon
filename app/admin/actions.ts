@@ -138,6 +138,49 @@ export async function rejectClaim(formData: FormData) {
   refresh();
 }
 
+/** Approve the founder's X/Threads proof post → ✓ handle-verified badge. */
+export async function approveHandle(formData: FormData) {
+  await requireAdmin();
+  const admin = createSupabaseAdminClient();
+  const tickerId = String(formData.get("ticker_id") ?? "");
+  await admin
+    .from("tickers")
+    .update({ handle_verified: true })
+    .eq("id", tickerId);
+  refresh();
+}
+
+/** Reject the proof: clears it so the founder can submit a better link. */
+export async function rejectHandle(formData: FormData) {
+  await requireAdmin();
+  const admin = createSupabaseAdminClient();
+  const tickerId = String(formData.get("ticker_id") ?? "");
+  await admin
+    .from("tickers")
+    .update({ handle_proof_url: null })
+    .eq("id", tickerId);
+  refresh();
+}
+
+/**
+ * Purge every demo/fixture ticker in one click (refunding holders at the
+ * last price, same as a normal delist). Real listings are untouched.
+ */
+export async function purgeFixtures() {
+  await requireAdmin();
+  const admin = createSupabaseAdminClient();
+  const { data: fixtures } = await admin
+    .from("tickers")
+    .select("id")
+    .eq("fixture", true);
+  for (const t of fixtures ?? []) {
+    const form = new FormData();
+    form.set("ticker_id", t.id);
+    await delistTicker(form);
+  }
+  refresh();
+}
+
 /**
  * One-click delist: refund every holder at the last live price (so nobody's
  * play money evaporates), then hard-delete the ticker — the cascade removes

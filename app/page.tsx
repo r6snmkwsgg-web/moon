@@ -5,9 +5,12 @@ import { APP_TAGLINE } from "@/lib/config";
 import Sparkline from "@/components/Sparkline";
 import ChangePct from "@/components/ChangePct";
 import LogoTile from "@/components/LogoTile";
+import TickerBadges from "@/components/TickerBadges";
 import type { TickerQuote } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+const IPO_WINDOW_MS = 24 * 3600_000;
 
 function MoverCard({ quote }: { quote: TickerQuote }) {
   const up = quote.dayChange >= 0;
@@ -45,8 +48,33 @@ export default async function ExchangePage() {
     .sort((a, b) => Math.abs(b.dayChange) - Math.abs(a.dayChange))
     .slice(0, 4);
 
+  const freshIpos = market.filter(
+    (q) =>
+      !q.ticker.fixture &&
+      Date.now() - new Date(q.ticker.listed_at).getTime() < IPO_WINDOW_MS
+  );
+
   return (
     <div className="space-y-6">
+      {freshIpos.map((q) => (
+        <Link
+          key={q.ticker.id}
+          href={`/t/${q.ticker.symbol}`}
+          className="panel flex flex-wrap items-baseline gap-x-3 gap-y-1 border-terminal-up/40 bg-terminal-up/10 px-4 py-2.5 hover:bg-terminal-up/15"
+        >
+          <span className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-up">
+            🔔 New listing
+          </span>
+          <span className="font-mono font-bold">${q.ticker.symbol}</span>
+          <span className="min-w-0 truncate text-sm text-terminal-muted">
+            {q.ticker.name} — {q.ticker.pitch}
+          </span>
+          <span className="num ml-auto font-mono text-sm">
+            {fmtPrice(q.price)}
+          </span>
+        </Link>
+      ))}
+
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="font-mono text-lg font-bold tracking-wide">
@@ -54,11 +82,19 @@ export default async function ExchangePage() {
           </h1>
           <p className="text-sm text-terminal-muted">{APP_TAGLINE}</p>
         </div>
-        <p className="microlabel">
-          {market.length} listed ·{" "}
-          {fmtCompact(market.reduce((s, q) => s + q.marketCap, 0))} play-money
-          cap
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="microlabel">
+            {market.length} listed ·{" "}
+            {fmtCompact(market.reduce((s, q) => s + q.marketCap, 0))}{" "}
+            play-money cap
+          </p>
+          <Link
+            href="/list"
+            className="whitespace-nowrap rounded-md border border-terminal-amber/50 bg-terminal-amber/10 px-2.5 py-1 text-xs font-semibold text-terminal-amber hover:bg-terminal-amber/20"
+          >
+            ⚡ List your startup
+          </Link>
+        </div>
       </div>
 
       {movers.length > 0 && (
@@ -109,14 +145,7 @@ export default async function ExchangePage() {
                     <span className="min-w-0">
                       <span className="flex items-center gap-1.5 font-mono font-bold">
                         ${q.ticker.symbol}
-                        {q.ticker.claimed && (
-                          <span
-                            title="Claimed by founder"
-                            className="rounded bg-terminal-accent/15 px-1 text-[10px] font-semibold text-terminal-accent"
-                          >
-                            ✓
-                          </span>
-                        )}
+                        <TickerBadges ticker={q.ticker} compact />
                       </span>
                       <span className="block max-w-[150px] truncate text-xs text-terminal-muted sm:max-w-[210px]">
                         {q.ticker.name}

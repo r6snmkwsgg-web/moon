@@ -12,6 +12,25 @@ company — and screenshotting the chart.
 Renaming the app: edit `APP_NAME` in `lib/config.ts` — every page, meta tag,
 and OG card reads from there.
 
+## What's in the box
+
+- **Self-serve listing** (`/list`): a founder signs in, picks a symbol, and
+  pastes a **read-only Stripe restricted key** — MRR is computed from their
+  active subscriptions on the spot, the ticker goes live ⚡ Stripe-verified,
+  and the cron re-syncs it monthly (automatic earnings reports). Keys are
+  validated (secret keys hard-rejected, write access probe-rejected),
+  AES-256-GCM encrypted at rest, and deleted on disconnect/delist.
+- **Trust ladder**: curated → self-reported → ✓ handle-verified (founder
+  posts on X/Threads, admin approves) → ⚡ Stripe-verified.
+- **Market depth**: slippage (orders fill along the hype curve; pumping your
+  own ticker round-trips to zero), the tape (`/tape` + per-ticker trades),
+  bull/bear votes, watchlists with in-app alerts (±10% day moves, MRR
+  reports), portfolio value history + 7d/30d leaderboards.
+- **Growth loops**: per-ticker OG cards, public trader profiles (`/u/name`)
+  with brag cards, invite bonuses (+$2,500 play money each side), a weekly
+  recap (`/recap`) with its own card, IPO banners for new listings.
+- **Transparency**: `/how` explains the formula with a live playground.
+
 ## How the price works
 
 The **entire formula lives in [`lib/pricing.ts`](lib/pricing.ts)** — nothing
@@ -41,10 +60,11 @@ scraping.
 ### 1. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Run the migration: paste `supabase/migrations/0001_init.sql` into the SQL
-   editor (or `supabase db push` with the CLI). It creates all tables, RLS
-   policies, the signup trigger (every new user gets a $10,000 profile), and
-   the `execute_trade` ledger function.
+2. Run the migrations in order: paste `supabase/migrations/0001_init.sql`,
+   then `supabase/migrations/0002_market_depth.sql` into the SQL editor (or
+   `supabase db push` with the CLI). Fresh install shortcut:
+   `supabase/setup-all-in-one.sql` bundles both migrations + seed data in one
+   paste.
 3. Auth → make sure the **Email** provider is enabled (magic links). Add your
    deploy URL to the auth redirect allowlist
    (`https://your-app.vercel.app/auth/callback`).
@@ -61,8 +81,9 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (RLS applies) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service-role key — server only, never exposed |
 | `ADMIN_EMAILS` | Comma-separated emails allowed into `/admin` |
-| `NEXT_PUBLIC_SITE_URL` | Absolute URL of the deployment |
+| `NEXT_PUBLIC_SITE_URL` | Optional on Vercel (falls back to the Vercel domain); set for custom domains |
 | `CRON_SECRET` | Random string; Vercel sends it as a Bearer token to the cron route |
+| `STRIPE_KEY_ENCRYPTION_SECRET` | Encrypts founders' read-only Stripe keys at rest; required for verified listings |
 
 ### 3. Run
 
