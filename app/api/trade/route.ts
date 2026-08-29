@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { executionFill, type TradeSide } from "@/lib/pricing";
+import {
+  executionFill,
+  SHARES_OUTSTANDING,
+  type TradeSide,
+} from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +64,32 @@ export async function POST(request: Request) {
     .limit(1)
     .maybeSingle();
   const mrr = Number(latest?.mrr ?? 0);
+
+  // The float is finite: 10,000 shares exist per ticker, full stop. A buy
+  // can't take total held past that. (Positions from before this rule are
+  // grandfathered — they only ever shrink.)
+  if (side === "buy") {
+    const { data: heldRows } = await admin
+      .from("holdings")
+      .select("shares")
+      .eq("ticker_id", ticker.id);
+    const held = ((heldRows ?? []) as { shares: number }[]).reduce(
+      (sum, h) => sum + Number(h.shares),
+      0
+    );
+    const available = Math.max(0, SHARES_OUTSTANDING - held);
+    if (shares > available) {
+      return NextResponse.json(
+        {
+          error:
+            available > 0
+              ? `Only ${available.toLocaleString("en-US")} shares left in the float.`
+              : "The float is fully held — someone has to sell first.",
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   const fill = executionFill(mrr, Number(ticker.sentiment), side, shares);
   if (fill.avgPrice <= 0) {
