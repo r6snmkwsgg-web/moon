@@ -49,6 +49,15 @@ function hashString(s: string): number {
   return h >>> 0;
 }
 
+/**
+ * Deterministic starting sentiment in ±0.18 so the board opens with real
+ * green/red movement instead of a wall of 0.0% (daily decay walks it home).
+ */
+function initialSentiment(symbol: string): number {
+  const r = mulberry32(hashString(symbol + ":sentiment"))();
+  return Math.round((r * 2 - 1) * 0.18 * 10000) / 10000;
+}
+
 function monthStartUTC(offsetMonths: number): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offsetMonths, 1));
@@ -106,7 +115,7 @@ async function main() {
         name: fixture.name,
         pitch: fixture.pitch,
         founder_handle: fixture.founder_handle,
-        sentiment: 0,
+        sentiment: initialSentiment(fixture.symbol),
         listed_at: monthStartUTC(-(fixture.mrr.length - 1)).toISOString(),
       })
       .select("id")

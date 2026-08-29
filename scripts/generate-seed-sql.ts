@@ -64,6 +64,12 @@ function mrrAt(anchors: { time: number; mrr: number }[], time: number): number {
   return anchors[anchors.length - 1].mrr;
 }
 
+/** Deterministic starting sentiment in ±0.18 — mirrors scripts/seed.ts. */
+function initialSentiment(symbol: string): number {
+  const r = mulberry32(hashString(symbol + ":sentiment"))();
+  return Math.round((r * 2 - 1) * 0.18 * 10000) / 10000;
+}
+
 const tickerRows: string[] = [];
 const mrrRows: string[] = [];
 const snapRows: string[] = [];
@@ -72,7 +78,7 @@ for (const fixture of fixtures.tickers) {
   const id = randomUUID();
   const listedAt = monthStartUTC(-(fixture.mrr.length - 1));
   tickerRows.push(
-    `(${q(id)}, ${q(fixture.symbol)}, ${q(fixture.name)}, ${q(fixture.pitch)}, ${q(fixture.founder_handle)}, 0, ${q(listedAt.toISOString())})`
+    `(${q(id)}, ${q(fixture.symbol)}, ${q(fixture.name)}, ${q(fixture.pitch)}, ${q(fixture.founder_handle)}, ${initialSentiment(fixture.symbol)}, ${q(listedAt.toISOString())})`
   );
 
   const months = fixture.mrr.map((mrr, i) => ({

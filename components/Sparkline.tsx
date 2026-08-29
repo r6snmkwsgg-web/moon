@@ -4,14 +4,16 @@ export default function Sparkline({
   width = 96,
   height = 28,
   up,
+  stretch = false,
 }: {
   values: number[];
   width?: number;
   height?: number;
   up: boolean;
+  stretch?: boolean; // fill the parent width, keeping the aspect ratio
 }) {
   if (values.length < 2) {
-    return <div style={{ width, height }} />;
+    return <div style={{ width: stretch ? undefined : width, height }} />;
   }
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -28,16 +30,18 @@ export default function Sparkline({
 
   return (
     <svg
-      width={width}
-      height={height}
+      width={stretch ? undefined : width}
+      height={stretch ? undefined : height}
       viewBox={`0 0 ${width} ${height}`}
+      className={stretch ? "h-auto w-full" : undefined}
+      preserveAspectRatio="none"
       aria-hidden="true"
     >
       <polyline
         points={points}
         fill="none"
         stroke={color}
-        strokeWidth="1.5"
+        strokeWidth="1.75"
         strokeLinejoin="round"
         strokeLinecap="round"
       />

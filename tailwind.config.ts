@@ -11,15 +11,16 @@ const config: Config = {
       colors: {
         // Dark stock-terminal palette
         terminal: {
-          bg: "#0a0e14", // page background
-          panel: "#0f1520", // cards / rows
-          line: "#1c2533", // borders
-          muted: "#8b98ab", // secondary text
-          text: "#e6edf3", // primary text
+          bg: "#070b12", // page background
+          panel: "#0b111d", // cards / rows
+          raise: "#101828", // hover / raised surface
+          line: "#182236", // borders
+          muted: "#8494ab", // secondary text
+          text: "#e8eef7", // primary text
           up: "#22c55e", // gains
           down: "#f43f5e", // losses
           accent: "#38bdf8", // links / highlights
-          amber: "#fbbf24", // MRR overlay / badges
+          amber: "#fbbf24", // MRR / fair-value overlay
         },
       },
       fontFamily: {

@@ -99,11 +99,11 @@ export default async function TickerPage({ params }: Props) {
             </p>
           )}
         </div>
-        <div className="text-right">
+        <div className="flex flex-col items-end gap-1">
           <div className="num font-mono text-2xl font-bold">
             {fmtPrice(quote.price)}
           </div>
-          <ChangePct value={quote.dayChange} className="text-sm" />
+          <ChangePct value={quote.dayChange} chip className="text-sm" />
         </div>
       </div>
 
@@ -119,10 +119,10 @@ export default async function TickerPage({ params }: Props) {
           ["Float", SHARES_OUTSTANDING.toLocaleString("en-US")],
         ].map(([label, value]) => (
           <div key={label} className="panel px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wider text-terminal-muted">
-              {label}
+            <div className="microlabel">{label}</div>
+            <div className="num mt-0.5 font-mono text-sm font-semibold">
+              {value}
             </div>
-            <div className="num font-mono text-sm font-semibold">{value}</div>
           </div>
         ))}
       </div>
