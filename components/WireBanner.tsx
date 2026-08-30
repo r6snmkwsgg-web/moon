@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Zap } from "lucide-react";
 import type { EarningsEvent } from "@/lib/data";
 import { changeFraction } from "@/lib/pricing";
 import { fmtCompact, fmtPct } from "@/lib/format";
@@ -26,8 +27,9 @@ export default function WireBanner({ events }: { events: EarningsEvent[] }) {
       href={`/t/${fresh.symbol}`}
       className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-terminal-amber/35 bg-terminal-amber/[0.07] px-4 py-2.5 hover:bg-terminal-amber/[0.12]"
     >
-      <span className="rounded bg-terminal-amber px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest text-black">
-        ⚡ Earnings
+      <span className="flex items-center gap-1 rounded bg-terminal-amber px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest text-black">
+        <Zap size={10} fill="currentColor" strokeWidth={0} />
+        Earnings
       </span>
       <span className="min-w-0 text-sm">
         <b className="font-mono">${fresh.symbol}</b> reported{" "}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Flame } from "lucide-react";
 import type { MissedToday } from "@/lib/data";
 import type { Streak } from "@/lib/xp";
 import { nextEarningsDate } from "@/lib/xp";
@@ -29,7 +30,12 @@ export default function DayStrip({
           streak.days > 0 ? "text-terminal-amber" : "text-terminal-muted"
         }`}
       >
-        🔥 {streak.days}-day streak
+        <Flame
+          size={13}
+          fill={streak.days > 0 ? "currentColor" : "none"}
+          className="shrink-0"
+        />
+        {streak.days}-day streak
         {streak.days > 0 && !streak.tradedToday && (
           <span className="rounded bg-terminal-amber/15 px-1.5 py-0.5 text-[10px] font-semibold">
             trade today to keep it

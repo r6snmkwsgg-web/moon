@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient, getUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { recordTickerSnapshot } from "@/lib/snapshot";
 
 /**
  * Founder posts their own monthly MRR number (honor system, labeled
@@ -42,6 +43,9 @@ export async function submitMrr(formData: FormData) {
     { onConflict: "ticker_id,month" }
   );
   if (error) throw new Error("Could not save MRR.");
+
+  // the anchor just moved — put the reprice on the chart immediately
+  await recordTickerSnapshot(admin, ticker.id);
 
   revalidatePath(`/t/${ticker.symbol}`);
   revalidatePath("/");
@@ -92,7 +96,7 @@ export async function castVote(tickerId: string, symbol: string, vote: 1 | -1) {
 
 /**
  * Founder submits the X/Threads post proving the handle is theirs
- * ("just listed $SYMB on …"). Admin approves in /admin → ✓ badge.
+ * ("just listed $SYMB on …"). Admin approves in /admin → founder badge.
  */
 export async function submitHandleProof(formData: FormData) {
   const user = await getUser();
@@ -122,7 +126,7 @@ export async function submitHandleProof(formData: FormData) {
 /**
  * Founder of an already-listed ticker connects Stripe after the fact:
  * same validation as self-serve listing — read-only restricted key only,
- * MRR computed on the spot, ⚡ badge on, monthly auto-sync from then on.
+ * MRR computed on the spot, verified badge on, monthly auto-sync from then on.
  */
 export async function connectStripe(formData: FormData) {
   const user = await getUser();
@@ -176,6 +180,9 @@ export async function connectStripe(formData: FormData) {
     .from("tickers")
     .update({ stripe_verified: true })
     .eq("id", ticker.id);
+
+  // verified MRR just landed — reprice on the chart immediately
+  await recordTickerSnapshot(admin, ticker.id, { mrr });
 
   revalidatePath(`/t/${ticker.symbol}`);
   revalidatePath("/");

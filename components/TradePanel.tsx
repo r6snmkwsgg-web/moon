@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Check } from "lucide-react";
 import { executionFill } from "@/lib/pricing";
 import { fmtMoney, fmtPrice } from "@/lib/format";
 
@@ -32,6 +33,7 @@ export default function TradePanel({
   const [shares, setShares] = useState(10);
   const [pending, setPending] = useState<"buy" | "sell" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [filled, setFilled] = useState(false);
 
   if (!signedIn) {
     return (
@@ -67,6 +69,8 @@ export default function TradePanel({
         setMessage(
           `${side === "buy" ? "Bought" : "Sold"} ${shares} × $${symbol} @ avg ${fmtPrice(json.price)}`
         );
+        setFilled(true);
+        setTimeout(() => setFilled(false), 1200);
         router.refresh();
       }
     } catch {
@@ -77,7 +81,11 @@ export default function TradePanel({
   }
 
   return (
-    <div className="panel space-y-3 p-4">
+    <div
+      className={`panel space-y-3 p-4 transition-shadow duration-500 ${
+        filled ? "shadow-[0_0_0_1.5px_rgba(34,197,94,0.6)]" : ""
+      }`}
+    >
       <div className="flex items-baseline justify-between text-xs text-terminal-muted">
         <span>
           Cash:{" "}
@@ -89,6 +97,22 @@ export default function TradePanel({
           Held:{" "}
           <span className="num font-mono text-terminal-text">{sharesHeld}</span>
         </span>
+      </div>
+
+      {/* the spread — straight out of the fill curve, no market-maker theater */}
+      <div className="grid grid-cols-2 overflow-hidden rounded-md border border-terminal-line font-mono text-xs">
+        <div className="border-r border-terminal-line bg-terminal-up/[0.06] px-2.5 py-1.5">
+          <div className="microlabel !tracking-[0.12em]">Buy at</div>
+          <div className="num mt-0.5 font-semibold text-terminal-up">
+            {fmtPrice(buyEst.avgPrice)}
+          </div>
+        </div>
+        <div className="bg-terminal-down/[0.06] px-2.5 py-1.5 text-right">
+          <div className="microlabel !tracking-[0.12em]">Sell at</div>
+          <div className="num mt-0.5 font-semibold text-terminal-down">
+            {fmtPrice(sellEst.avgPrice)}
+          </div>
+        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -114,9 +138,9 @@ export default function TradePanel({
       </div>
 
       {buyImpact > 0.005 && (
-        <p className="font-mono text-[11px] text-terminal-amber">
-          size impact: avg fill ≈ {fmtPrice(buyEst.avgPrice)} (
-          {(buyImpact * 100).toFixed(1)}% above quote)
+        <p className="font-mono text-[11px] text-terminal-muted">
+          size impact: this order moves your avg fill{" "}
+          {(buyImpact * 100).toFixed(1)}% above the quote
         </p>
       )}
 
@@ -138,7 +162,10 @@ export default function TradePanel({
       </div>
 
       {message && (
-        <p className="font-mono text-xs text-terminal-muted">{message}</p>
+        <p className="flex items-center gap-1 font-mono text-xs text-terminal-muted">
+          {filled && <Check size={12} className="text-terminal-up" />}
+          {message}
+        </p>
       )}
       <p className="text-[11px] leading-snug text-terminal-muted/70">
         Play money only. Orders fill along the hype curve (±40% cap, decays

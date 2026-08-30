@@ -1,9 +1,25 @@
 import type { Metadata } from "next";
+import { IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
 import { APP_NAME, APP_TAGLINE, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import Nav from "@/components/Nav";
 import TickerTape from "@/components/TickerTape";
 import Footer from "@/components/Footer";
+import LiveRefresh from "@/components/LiveRefresh";
 import "./globals.css";
+
+const sans = Instrument_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-sans",
+  display: "swap",
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
@@ -19,8 +35,9 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <body className="flex min-h-screen flex-col">
+        <LiveRefresh />
         <Nav />
         <TickerTape />
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">

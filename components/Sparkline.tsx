@@ -44,6 +44,7 @@ export default function Sparkline({
         strokeWidth="1.75"
         strokeLinejoin="round"
         strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
       />
     </svg>
   );

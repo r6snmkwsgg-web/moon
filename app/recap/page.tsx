@@ -4,6 +4,7 @@ import { getRecapStats } from "@/lib/data";
 import { changeFraction } from "@/lib/pricing";
 import { fmtCompact, fmtPrice } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
+import { Bell, Flame, Trophy, Zap } from "lucide-react";
 import ChangePct from "@/components/ChangePct";
 import ShareButton from "@/components/ShareButton";
 import TickerBadges from "@/components/TickerBadges";
@@ -36,7 +37,7 @@ export default async function RecapPage() {
             href={`/t/${stats.topGainer.ticker.symbol}`}
             className="panel space-y-1 border-terminal-up/30 p-4 hover:bg-terminal-raise"
           >
-            <div className="microlabel">🏆 Gainer of the week</div>
+            <div className="microlabel flex items-center gap-1"><Trophy size={11} className="text-terminal-up" />Gainer of the week</div>
             <div className="font-mono text-lg font-bold">
               ${stats.topGainer.ticker.symbol}
             </div>
@@ -51,7 +52,7 @@ export default async function RecapPage() {
             href={`/t/${stats.topLoser.ticker.symbol}`}
             className="panel space-y-1 border-terminal-down/30 p-4 hover:bg-terminal-raise"
           >
-            <div className="microlabel">🧊 Rough week</div>
+            <div className="microlabel">Rough week</div>
             <div className="font-mono text-lg font-bold">
               ${stats.topLoser.ticker.symbol}
             </div>
@@ -65,8 +66,9 @@ export default async function RecapPage() {
 
       {stats.mrrMoves.length > 0 && (
         <section className="panel">
-          <h2 className="microlabel border-b border-terminal-line px-3 py-2">
-            ⚡ Earnings of the week
+          <h2 className="microlabel flex items-center gap-1 border-b border-terminal-line px-3 py-2">
+            <Zap size={11} className="text-terminal-amber" fill="currentColor" strokeWidth={0} />
+            Earnings of the week
           </h2>
           <ul className="divide-y divide-terminal-line/40">
             {stats.mrrMoves.map(({ quote, from, to }) => (
@@ -91,8 +93,9 @@ export default async function RecapPage() {
 
       {stats.newListings.length > 0 && (
         <section className="panel">
-          <h2 className="microlabel border-b border-terminal-line px-3 py-2">
-            🔔 New listings
+          <h2 className="microlabel flex items-center gap-1 border-b border-terminal-line px-3 py-2">
+            <Bell size={11} className="text-terminal-up" />
+            New listings
           </h2>
           <ul className="divide-y divide-terminal-line/40">
             {stats.newListings.map((q) => (
@@ -116,8 +119,9 @@ export default async function RecapPage() {
 
       {stats.mostTraded.length > 0 && (
         <section className="panel">
-          <h2 className="microlabel border-b border-terminal-line px-3 py-2">
-            🔥 Most traded
+          <h2 className="microlabel flex items-center gap-1 border-b border-terminal-line px-3 py-2">
+            <Flame size={11} className="text-terminal-accent" />
+            Most traded
           </h2>
           <ul className="divide-y divide-terminal-line/40">
             {stats.mostTraded.map(({ quote, volume, trades }) => (

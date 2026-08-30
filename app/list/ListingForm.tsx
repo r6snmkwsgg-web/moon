@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { Zap } from "lucide-react";
 import { listStartup, type ListingResult } from "./actions";
 
 const initialState: ListingResult = {};
@@ -88,7 +89,14 @@ export default function ListingForm() {
       )}
 
       <button type="submit" disabled={pending} className="btn-buy w-full">
-        {pending ? "Verifying with Stripe…" : "⚡ Verify & list my startup"}
+        {pending ? (
+          "Verifying with Stripe…"
+        ) : (
+          <>
+            <Zap size={14} fill="currentColor" strokeWidth={0} />
+            Verify &amp; list my startup
+          </>
+        )}
       </button>
       <p className="text-center text-[11px] text-terminal-muted">
         Play money only — a listing can never be bought, sold, or cashed out

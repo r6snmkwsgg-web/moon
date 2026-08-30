@@ -9,7 +9,10 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Dark stock-terminal palette
+        // Dark stock-terminal palette. Color discipline:
+        //   up/down  → price movement ONLY
+        //   amber    → revenue / MRR / earnings ONLY
+        //   accent   → links and actions ONLY
         terminal: {
           bg: "#070b12", // page background
           panel: "#0b111d", // cards / rows
@@ -24,14 +27,26 @@ const config: Config = {
         },
       },
       fontFamily: {
+        sans: [
+          "var(--font-sans)",
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif",
+        ],
         mono: [
+          "var(--font-mono)",
           "ui-monospace",
           "SFMono-Regular",
           "Menlo",
-          "Monaco",
-          "Consolas",
           "monospace",
         ],
+      },
+      // Three radii, used everywhere: chips 6, controls 8, panels 10.
+      borderRadius: {
+        DEFAULT: "6px",
+        md: "8px",
+        lg: "10px",
+        xl: "10px", // legacy alias — nothing should be rounder than a panel
       },
     },
   },

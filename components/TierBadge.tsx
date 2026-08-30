@@ -19,7 +19,10 @@ export default function TierBadge({
       }}
       title={`${standing.tier.name} · ${standing.xp.toLocaleString("en-US")} XP`}
     >
-      ◆ {standing.tier.name}
+      <svg width="7" height="7" viewBox="0 0 10 10" aria-hidden="true">
+        <path d="M5 0 L10 5 L5 10 L0 5 Z" fill="currentColor" />
+      </svg>
+      {standing.tier.name}
       {showXp && (
         <span className="num font-semibold normal-case tracking-normal">
           {standing.xp.toLocaleString("en-US")} XP

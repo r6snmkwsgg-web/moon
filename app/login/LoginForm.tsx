@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Check } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function LoginForm() {
@@ -27,8 +28,9 @@ export default function LoginForm() {
 
   if (state === "sent") {
     return (
-      <p className="panel p-4 text-sm text-terminal-up">
-        ✓ Check your email for the sign-in link.
+      <p className="panel flex items-center gap-1.5 p-4 text-sm text-terminal-up">
+        <Check size={14} />
+        Check your email for the sign-in link.
       </p>
     );
   }

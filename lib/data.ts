@@ -9,6 +9,8 @@ import {
 import { STARTING_CASH } from "@/lib/config";
 import { computeXp, streakFromDays, type Streak } from "@/lib/xp";
 import type {
+  ChartEvent,
+  ChartPoint,
   Holding,
   MrrUpdate,
   PortfolioSnapshot,
@@ -99,6 +101,161 @@ export async function getMarket(): Promise<TickerQuote[]> {
     .sort((a, b) => b.marketCap - a.marketCap);
 }
 
+/**
+ * The dense price series a chart deserves: daily snapshots plus every real
+ * trade print (the trades table stores each fill's price + timestamp), with
+ * the live price as the final point. No synthesized wiggle — every point on
+ * the line actually happened.
+ */
+export async function getPriceSeries(
+  tickerId: string,
+  currentPrice: number
+): Promise<ChartPoint[]> {
+  const supabase = await createSupabaseServerClient();
+  const admin = createSupabaseAdminClient();
+  const [snapsRes, tradesRes] = await Promise.all([
+    supabase
+      .from("price_snapshots")
+      .select("day, price")
+      .eq("ticker_id", tickerId)
+      .order("day", { ascending: true }),
+    // trade rows are RLS-scoped to their owner → service role for prints
+    admin
+      .from("trades")
+      .select("price, created_at")
+      .eq("ticker_id", tickerId)
+      .order("created_at", { ascending: true })
+      .limit(2000),
+  ]);
+
+  const points: ChartPoint[] = [];
+  for (const s of (snapsRes.data ?? []) as { day: string; price: number }[]) {
+    // the daily cron fires 06:00 UTC — pin snapshots to that moment
+    points.push({ t: Date.parse(`${s.day}T06:00:00Z`), price: Number(s.price) });
+  }
+  for (const t of (tradesRes.data ?? []) as {
+    price: number;
+    created_at: string;
+  }[]) {
+    points.push({ t: Date.parse(t.created_at), price: Number(t.price) });
+  }
+  points.sort((a, b) => a.t - b.t);
+  points.push({ t: Date.now(), price: currentPrice });
+  return points.slice(-1500);
+}
+
+/**
+ * Story dots for the landing hero: the featured ticker's real moments in the
+ * last 30 days — its latest MRR report, the biggest print, the window high.
+ * Every annotation is pulled from a table, never invented.
+ */
+export async function getHeroStory(
+  tickerId: string,
+  series: ChartPoint[]
+): Promise<ChartEvent[]> {
+  const events: ChartEvent[] = [];
+  if (series.length < 3) return events;
+  const windowStart = Date.now() - 30 * 86400_000;
+
+  const priceAt = (t: number): number => {
+    let best = series[0];
+    for (const p of series) {
+      if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+    }
+    return best.price;
+  };
+
+  try {
+    const admin = createSupabaseAdminClient();
+    const [mrrRes, bigTradeRes] = await Promise.all([
+      admin
+        .from("mrr_updates")
+        .select("mrr, source, month, created_at")
+        .eq("ticker_id", tickerId)
+        .order("month", { ascending: false })
+        .limit(2),
+      admin
+        .from("trades")
+        .select("shares, price, total, created_at")
+        .eq("ticker_id", tickerId)
+        .gte("created_at", new Date(windowStart).toISOString())
+        .order("total", { ascending: false })
+        .limit(1),
+    ]);
+
+    const updates = (mrrRes.data ?? []) as {
+      mrr: number;
+      source: string;
+      month: string;
+      created_at: string;
+    }[];
+    if (updates.length > 0) {
+      const u = updates[0];
+      // curated backfills carry stale created_at ordering — pin those to
+      // their reported month; real reports pin to the moment they posted
+      const t =
+        u.source === "curated"
+          ? Date.parse(`${u.month}T06:00:00Z`)
+          : Date.parse(u.created_at);
+      if (t >= windowStart) {
+        const prev = updates[1];
+        const mom =
+          prev && Number(prev.mrr) > 0
+            ? changeFraction(Number(prev.mrr), Number(u.mrr))
+            : null;
+        events.push({
+          t,
+          price: priceAt(t),
+          label:
+            mom === null
+              ? `MRR reported`
+              : `MRR ${mom >= 0 ? "beat" : "miss"} ${(mom * 100).toFixed(1)}%`,
+          tone: "revenue",
+        });
+      }
+    }
+
+    const big = (bigTradeRes.data ?? [])[0] as
+      | { shares: number; price: number; total: number; created_at: string }
+      | undefined;
+    if (big && Number(big.total) > 100) {
+      const t = Date.parse(big.created_at);
+      events.push({
+        t,
+        price: priceAt(t),
+        label: `${Number(big.shares).toLocaleString("en-US")} shs printed`,
+        tone: "trade",
+      });
+    }
+  } catch {
+    // annotations are garnish — the chart works without them
+  }
+
+  // the window high, only when it isn't the live point (that has the caption)
+  const inWindow = series.filter((p) => p.t >= windowStart);
+  if (inWindow.length > 2) {
+    let hi = inWindow[0];
+    for (const p of inWindow) if (p.price > hi.price) hi = p;
+    const isEdge =
+      hi.t === inWindow[inWindow.length - 1].t || hi.t === inWindow[0].t;
+    const nearOther = events.some((e) => Math.abs(e.t - hi.t) < 86400_000);
+    if (!isEdge && !nearOther) {
+      events.push({ t: hi.t, price: hi.price, label: "30d high", tone: "high" });
+    }
+  }
+
+  return events.slice(0, 3);
+}
+
+export interface DayStats {
+  open: number | null; // yesterday's close (last snapshot before today)
+  high: number | null;
+  low: number | null;
+  volumeShares: number;
+  volumeNotional: number;
+  trades: number;
+}
+
 /** One ticker page's worth of data. */
 export async function getTickerPage(symbol: string): Promise<{
   quote: TickerQuote;
@@ -106,6 +263,10 @@ export async function getTickerPage(symbol: string): Promise<{
   snapshots: PriceSnapshot[];
   holdersCount: number;
   watchersCount: number;
+  series: ChartPoint[];
+  fairSeries: ChartPoint[];
+  dayStats: DayStats;
+  floatHeld: number; // shares currently held across all players
 } | null> {
   const supabase = await createSupabaseServerClient();
 
@@ -135,30 +296,75 @@ export async function getTickerPage(symbol: string): Promise<{
     ? Number(mrrHistory[mrrHistory.length - 1].mrr)
     : 0;
 
-  // Holder/watcher counts cross user rows, so they run with the service role.
+  const quote = buildQuote(
+    ticker as Ticker,
+    latestMrr,
+    snapshots.filter((s) => s.day >= isoDaysAgo(SPARK_DAYS))
+  );
+
+  // Cross-user reads (counts, prints, positions) run with the service role.
   const admin = createSupabaseAdminClient();
-  const [holdersRes, watchersRes] = await Promise.all([
-    admin
-      .from("holdings")
-      .select("*", { count: "exact", head: true })
-      .eq("ticker_id", ticker.id)
-      .gt("shares", 0),
-    admin
-      .from("watchlists")
-      .select("*", { count: "exact", head: true })
-      .eq("ticker_id", ticker.id),
-  ]);
+  const todayStart = new Date().toISOString().slice(0, 10) + "T00:00:00Z";
+  const [holdersRes, watchersRes, heldRes, todayTradesRes, series] =
+    await Promise.all([
+      admin
+        .from("holdings")
+        .select("*", { count: "exact", head: true })
+        .eq("ticker_id", ticker.id)
+        .gt("shares", 0),
+      admin
+        .from("watchlists")
+        .select("*", { count: "exact", head: true })
+        .eq("ticker_id", ticker.id),
+      admin.from("holdings").select("shares").eq("ticker_id", ticker.id),
+      admin
+        .from("trades")
+        .select("price, shares, total")
+        .eq("ticker_id", ticker.id)
+        .gte("created_at", todayStart),
+      getPriceSeries(ticker.id, quote.price),
+    ]);
+
+  const floatHeld = ((heldRes.data ?? []) as { shares: number }[]).reduce(
+    (sum, h) => sum + Number(h.shares),
+    0
+  );
+
+  const todayTrades = (todayTradesRes.data ?? []) as {
+    price: number;
+    shares: number;
+    total: number;
+  }[];
+  const prevSnap = [...snapshots]
+    .reverse()
+    .find((s) => s.day < todayStart.slice(0, 10));
+  const tradedPrices = todayTrades.map((t) => Number(t.price));
+  const dayPrices = [...tradedPrices, quote.price];
+  const dayStats: DayStats = {
+    open: prevSnap ? Number(prevSnap.price) : null,
+    high: dayPrices.length ? Math.max(...dayPrices) : null,
+    low: dayPrices.length ? Math.min(...dayPrices) : null,
+    volumeShares: todayTrades.reduce((s, t) => s + Number(t.shares), 0),
+    volumeNotional: todayTrades.reduce((s, t) => s + Number(t.total), 0),
+    trades: todayTrades.length,
+  };
+
+  const fairSeries: ChartPoint[] = snapshots.map((s) => ({
+    t: Date.parse(`${s.day}T06:00:00Z`),
+    price: Number(s.fair_price),
+  }));
+  fairSeries.push({ t: Date.now(), price: quote.fairPrice });
 
   return {
-    quote: buildQuote(
-      ticker as Ticker,
-      latestMrr,
-      snapshots.filter((s) => s.day >= isoDaysAgo(SPARK_DAYS))
-    ),
+    quote,
     mrrHistory,
     snapshots,
     holdersCount: holdersRes.count ?? 0,
     watchersCount: watchersRes.count ?? 0,
+    series,
+    fairSeries,
+    dayStats,
+    floatHeld,
   };
 }
 

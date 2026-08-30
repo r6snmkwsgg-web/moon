@@ -10,7 +10,8 @@ import {
 import { fmtMoney, fmtPrice } from "@/lib/format";
 import { tierFor } from "@/lib/xp";
 import ChangePct from "@/components/ChangePct";
-import ValueChart from "@/components/ValueChart";
+import InteractiveChart from "@/components/InteractiveChart";
+import LivePrice from "@/components/LivePrice";
 import InviteBox from "@/components/InviteBox";
 import StreakCard from "@/components/StreakCard";
 import TierBadge from "@/components/TierBadge";
@@ -59,17 +60,17 @@ export default async function PortfolioPage() {
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="panel px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wider text-terminal-muted">
-            Total value
-          </div>
-          <div className="num font-mono text-sm font-semibold">
-            {fmtMoney(valuation.totalValue)}
+          <div className="microlabel">Total value</div>
+          <div className="font-mono text-sm font-semibold">
+            <LivePrice
+              value={valuation.totalValue}
+              formatted={fmtMoney(valuation.totalValue)}
+              format="money"
+            />
           </div>
         </div>
         <div className="panel px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wider text-terminal-muted">
-            PnL (all-time)
-          </div>
+          <div className="microlabel">PnL (all-time)</div>
           <div
             className={`num font-mono text-sm font-semibold ${
               valuation.totalPnl >= 0 ? "text-terminal-up" : "text-terminal-down"
@@ -80,17 +81,13 @@ export default async function PortfolioPage() {
           </div>
         </div>
         <div className="panel px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wider text-terminal-muted">
-            Cash
-          </div>
+          <div className="microlabel">Cash</div>
           <div className="num font-mono text-sm font-semibold">
             {fmtMoney(Number(valuation.profile.cash))}
           </div>
         </div>
         <div className="panel px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wider text-terminal-muted">
-            Rank
-          </div>
+          <div className="microlabel">Rank</div>
           <div className="num font-mono text-sm font-semibold">
             #{rank}{" "}
             <span className="text-xs font-normal text-terminal-muted">
@@ -132,8 +129,11 @@ export default async function PortfolioPage() {
                 <td className="num px-3 py-2.5 text-right font-mono text-terminal-muted">
                   {fmtPrice(Number(p.holding.avg_cost))}
                 </td>
-                <td className="num px-3 py-2.5 text-right font-mono">
-                  {fmtPrice(p.quote.price)}
+                <td className="px-3 py-2.5 text-right font-mono">
+                  <LivePrice
+                    value={p.quote.price}
+                    formatted={fmtPrice(p.quote.price)}
+                  />
                 </td>
                 <td className="num px-3 py-2.5 text-right font-mono">
                   {fmtMoney(p.value)}
@@ -167,7 +167,21 @@ export default async function PortfolioPage() {
         </table>
       </section>
 
-      <ValueChart history={history} liveValue={valuation.totalValue} />
+      <InteractiveChart
+        series={[
+          ...history.map((h) => ({
+            t: Date.parse(`${h.day}T06:00:00Z`),
+            price: Number(h.total_value),
+          })),
+          { t: Date.now(), price: valuation.totalValue },
+        ]}
+        symbol=""
+        variant="panel"
+        defaultRange="ALL"
+        heightClass="h-[180px]"
+        baseline={STARTING_CASH}
+        baselineLabel="$10k stake"
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <StreakCard streak={streak} />

@@ -7,7 +7,7 @@
     @apply bg-terminal-bg text-terminal-text;
   }
   body {
-    @apply antialiased;
+    @apply font-sans antialiased;
     background:
       radial-gradient(
         1100px 380px at 50% -120px,
@@ -32,7 +32,7 @@
     @apply w-full rounded-md border border-terminal-line bg-terminal-bg px-3 py-2 text-sm text-terminal-text placeholder:text-terminal-muted/60 focus:border-terminal-accent focus:outline-none;
   }
   .btn {
-    @apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold transition-[background-color,border-color,transform] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40 disabled:active:translate-y-0;
   }
   .btn-buy {
     @apply btn bg-terminal-up text-black hover:bg-terminal-up/80;
@@ -60,6 +60,13 @@
   .microlabel {
     @apply font-mono text-[10px] uppercase tracking-[0.18em] text-terminal-muted;
   }
+  /* table rows light an accent bar on hover — the terminal cursor */
+  .row-hover {
+    @apply relative transition-colors hover:bg-terminal-raise/60;
+  }
+  .row-hover:hover {
+    box-shadow: inset 2px 0 0 0 rgba(56, 189, 248, 0.6);
+  }
 }
 
 /* ── ticker tape ──────────────────────────────────────────────────── */
@@ -74,14 +81,10 @@
 .tape-track {
   animation: tape-scroll 55s linear infinite;
   width: max-content;
+  will-change: transform;
 }
 .tape-track:hover {
   animation-play-state: paused;
-}
-@media (prefers-reduced-motion: reduce) {
-  .tape-track {
-    animation: none;
-  }
 }
 
 /* market-open pulse */
@@ -96,4 +99,98 @@
 }
 .pulse-dot {
   animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* ── liveness ─────────────────────────────────────────────────────── */
+
+/* price cells flash when a live refresh moves them */
+@keyframes flash-up {
+  0% {
+    background-color: rgba(34, 197, 94, 0.28);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+@keyframes flash-down {
+  0% {
+    background-color: rgba(244, 63, 94, 0.28);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.flash-up {
+  animation: flash-up 0.9s ease-out;
+  border-radius: 4px;
+}
+.flash-down {
+  animation: flash-down 0.9s ease-out;
+  border-radius: 4px;
+}
+
+/* skeleton shimmer */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(
+    100deg,
+    #0e1524 40%,
+    #131c30 50%,
+    #0e1524 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* content eases in instead of popping */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.fade-up {
+  animation: fade-up 0.3s ease-out both;
+}
+
+/* chart line draws itself on mount (pathLength=1 on the polyline/path) */
+@keyframes chart-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.chart-draw {
+  stroke-dasharray: 1;
+  animation: chart-draw 0.9s ease-out both;
+}
+
+/* one respectful switch for all of it */
+@media (prefers-reduced-motion: reduce) {
+  .tape-track,
+  .pulse-dot,
+  .flash-up,
+  .flash-down,
+  .skeleton,
+  .fade-up,
+  .chart-draw {
+    animation: none;
+  }
+  .chart-draw {
+    stroke-dasharray: none;
+  }
 }

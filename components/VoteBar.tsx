@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { castVote } from "@/app/t/[symbol]/actions";
+import Tri from "@/components/Tri";
 
 /** One-tap bull/bear vote with a community gauge. No comments to moderate. */
 export default function VoteBar({
@@ -69,7 +70,8 @@ export default function VoteBar({
               : "border border-terminal-up/40 text-terminal-up hover:bg-terminal-up/10"
           }`}
         >
-          🐂 Bullish
+          <Tri dir="up" size={8} />
+          Bullish
         </button>
         <button
           type="button"
@@ -81,7 +83,8 @@ export default function VoteBar({
               : "border border-terminal-down/40 text-terminal-down hover:bg-terminal-down/10"
           }`}
         >
-          🐻 Bearish
+          <Tri dir="down" size={8} />
+          Bearish
         </button>
       </div>
     </div>

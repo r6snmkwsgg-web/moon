@@ -1,3 +1,4 @@
+import { BadgeCheck, Zap } from "lucide-react";
 import type { Ticker } from "@/lib/types";
 
 const NEW_WINDOW_MS = 7 * 86400_000;
@@ -18,17 +19,19 @@ export default function TickerBadges({
       {ticker.stripe_verified && (
         <span
           title="MRR computed via a read-only Stripe connection, refreshed monthly"
-          className="rounded bg-terminal-amber/15 px-1 py-0.5 font-mono text-[10px] font-semibold text-terminal-amber"
+          className="inline-flex items-center gap-0.5 rounded bg-terminal-amber/15 px-1 py-0.5 font-mono text-[10px] font-semibold text-terminal-amber"
         >
-          ⚡{compact ? "" : " verified"}
+          <Zap size={10} fill="currentColor" strokeWidth={0} />
+          {compact ? "" : "verified"}
         </span>
       )}
       {ticker.handle_verified && (
         <span
           title="Founder handle verified via a public post"
-          className="rounded bg-terminal-accent/15 px-1 py-0.5 font-mono text-[10px] font-semibold text-terminal-accent"
+          className="inline-flex items-center gap-0.5 rounded bg-terminal-accent/15 px-1 py-0.5 font-mono text-[10px] font-semibold text-terminal-accent"
         >
-          ✓{compact ? "" : " founder"}
+          <BadgeCheck size={10} />
+          {compact ? "" : "founder"}
         </span>
       )}
       {!ticker.stripe_verified && !ticker.handle_verified && ticker.claimed && (

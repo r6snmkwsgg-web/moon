@@ -119,7 +119,7 @@ export default async function AdminPage() {
                   <form action={approveHandle}>
                     <input type="hidden" name="ticker_id" value={t.id} />
                     <button className="btn-buy px-2 py-1 text-xs">
-                      ✓ Verify
+                      Approve
                     </button>
                   </form>
                   <form action={rejectHandle}>
@@ -244,12 +244,12 @@ export default async function AdminPage() {
                 <span className="text-terminal-muted">{t.name}</span>
                 {t.stripe_verified && (
                   <span className="text-[10px] text-terminal-amber">
-                    ⚡ stripe
+                    stripe
                   </span>
                 )}
                 {t.claimed && (
                   <span className="text-[10px] text-terminal-accent">
-                    ✓ claimed
+                    claimed
                   </span>
                 )}
                 {t.fixture && (

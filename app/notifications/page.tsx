@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { Bell, TrendingUp, UserPlus, Zap } from "lucide-react";
 import { createSupabaseServerClient, getUser } from "@/lib/supabase/server";
 import type { AppNotification } from "@/lib/types";
 
@@ -31,12 +32,25 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-const KIND_ICON: Record<AppNotification["kind"], string> = {
-  mrr: "⚡",
-  move: "▲",
-  invite: "🎉",
-  system: "·",
-};
+function KindIcon({ kind }: { kind: AppNotification["kind"] }) {
+  switch (kind) {
+    case "mrr":
+      return (
+        <Zap
+          size={13}
+          className="text-terminal-amber"
+          fill="currentColor"
+          strokeWidth={0}
+        />
+      );
+    case "move":
+      return <TrendingUp size={13} className="text-terminal-accent" />;
+    case "invite":
+      return <UserPlus size={13} className="text-terminal-accent" />;
+    default:
+      return <Bell size={13} className="text-terminal-muted" />;
+  }
+}
 
 export default async function NotificationsPage() {
   const user = await getUser();
@@ -67,7 +81,7 @@ export default async function NotificationsPage() {
       <section className="panel">
         {notifications.length === 0 ? (
           <p className="px-3 py-8 text-center text-sm text-terminal-muted">
-            Nothing yet. Watch a ticker (☆) to get alerts on big moves and MRR
+            Nothing yet. Watch a ticker to get alerts on big moves and MRR
             reports.
           </p>
         ) : (
@@ -79,7 +93,9 @@ export default async function NotificationsPage() {
                   n.read ? "text-terminal-muted" : "text-terminal-text"
                 }`}
               >
-                <span aria-hidden="true">{KIND_ICON[n.kind]}</span>
+                <span aria-hidden="true" className="self-center">
+                  <KindIcon kind={n.kind} />
+                </span>
                 <span className="min-w-0 flex-1">{n.title}</span>
                 <span className="font-mono text-[11px] text-terminal-muted">
                   {timeAgo(n.created_at)}

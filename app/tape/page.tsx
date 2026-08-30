@@ -5,6 +5,7 @@ import {
   getTrending,
   type FeedFilter,
 } from "@/lib/data";
+import { Bell, ChartNoAxesColumn, Zap } from "lucide-react";
 import { changeFraction } from "@/lib/pricing";
 import { fmtCompact, fmtPct, fmtPrice } from "@/lib/format";
 import ChangePct from "@/components/ChangePct";
@@ -136,8 +137,12 @@ export default async function FeedPage({
                   className="panel space-y-1.5 border-terminal-amber/25 px-4 py-3"
                 >
                   <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                    <span className="font-mono font-bold text-terminal-amber">
-                      {ev.source === "stripe" ? "⚡" : "📊"}
+                    <span className="self-center text-terminal-amber">
+                      {ev.source === "stripe" ? (
+                        <Zap size={13} fill="currentColor" strokeWidth={0} />
+                      ) : (
+                        <ChartNoAxesColumn size={13} />
+                      )}
                     </span>
                     <Link
                       href={`/t/${ev.symbol}`}
@@ -185,8 +190,9 @@ export default async function FeedPage({
                 href={`/t/${q.ticker.symbol}`}
                 className="panel flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-terminal-up/25 px-4 py-3 text-sm hover:bg-terminal-raise"
               >
-                <span className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-up">
-                  🔔 IPO
+                <span className="flex items-center gap-1 self-center font-mono text-xs font-bold uppercase tracking-widest text-terminal-up">
+                  <Bell size={11} />
+                  IPO
                 </span>
                 <span className="font-mono font-bold">${q.ticker.symbol}</span>
                 <TickerBadges ticker={q.ticker} compact />

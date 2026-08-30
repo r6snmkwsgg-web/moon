@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Timer } from "lucide-react";
 
 function fmt(msLeft: number): string {
   if (msLeft <= 0) return "any moment";
@@ -36,7 +37,8 @@ export default function CountdownChip({
 
   return (
     <span className="inline-flex items-center gap-1.5 rounded bg-terminal-amber/10 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-terminal-amber">
-      ⏱ {prefix}{" "}
+      <Timer size={11} className="shrink-0" />
+      {prefix}{" "}
       <span className="num">{msLeft === null ? "…" : fmt(msLeft)}</span>
     </span>
   );

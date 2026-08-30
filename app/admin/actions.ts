@@ -138,7 +138,7 @@ export async function rejectClaim(formData: FormData) {
   refresh();
 }
 
-/** Approve the founder's X/Threads proof post → ✓ handle-verified badge. */
+/** Approve the founder's X/Threads proof post → handle-verified badge. */
 export async function approveHandle(formData: FormData) {
   await requireAdmin();
   const admin = createSupabaseAdminClient();

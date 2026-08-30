@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Star } from "lucide-react";
 import { toggleWatch } from "@/app/t/[symbol]/actions";
 
 /** Watchlist star. Watchers get in-app alerts on big moves + MRR reports. */
@@ -36,13 +37,18 @@ export default function WatchStar({
       onClick={onClick}
       disabled={pending}
       title={watching ? "On your watchlist — alerts on" : "Watch: get alerts on big moves + MRR reports"}
-      className={`rounded-md border px-2 py-1 font-mono text-xs transition-colors disabled:opacity-50 ${
+      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-xs transition-colors disabled:opacity-50 ${
         watching
-          ? "border-terminal-amber/60 bg-terminal-amber/10 text-terminal-amber"
+          ? "border-terminal-accent/60 bg-terminal-accent/10 text-terminal-accent"
           : "border-terminal-line text-terminal-muted hover:border-terminal-muted hover:text-terminal-text"
       }`}
     >
-      {watching ? "★ watching" : "☆ watch"}
+      <Star
+        size={11}
+        fill={watching ? "currentColor" : "none"}
+        className="shrink-0"
+      />
+      {watching ? "watching" : "watch"}
     </button>
   );
 }

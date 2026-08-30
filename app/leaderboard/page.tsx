@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Leaderboard" };
 
-const MEDALS = ["🥇", "🥈", "🥉"];
+// podium ranks get metal colors instead of medal emojis
+const MEDAL_COLORS = ["#fbbf24", "#b9c2cf", "#cd8a4b"];
 const RANGES: { key: LeaderboardRange; label: string }[] = [
   { key: "all", label: "All-time" },
   { key: "30d", label: "30d" },
@@ -84,8 +85,15 @@ export default async function LeaderboardPage({
                     isMe ? "bg-terminal-accent/5" : ""
                   }`}
                 >
-                  <td className="num px-3 py-2.5 font-mono text-terminal-muted">
-                    {MEDALS[i] ?? i + 1}
+                  <td
+                    className="num px-3 py-2.5 font-mono text-terminal-muted"
+                    style={
+                      i < 3
+                        ? { color: MEDAL_COLORS[i], fontWeight: 700 }
+                        : undefined
+                    }
+                  >
+                    {i + 1}
                   </td>
                   <td className="px-3 py-2.5 font-mono">
                     <span className="inline-flex flex-wrap items-center gap-1.5">

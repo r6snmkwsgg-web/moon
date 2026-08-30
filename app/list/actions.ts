@@ -21,7 +21,7 @@ export interface ListingResult {
 /**
  * Self-serve listing. THE KEY IS THE TICKET: a valid read-only Stripe
  * restricted key is required, MRR is computed from Stripe on the spot
- * (never typed in), and the ticker goes live claimed + ⚡ Stripe-verified
+ * (never typed in), and the ticker goes live claimed + Stripe-verified
  * from birth. The pasted key is validated, encrypted, stored server-side,
  * and never echoed back or logged.
  */

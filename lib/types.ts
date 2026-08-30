@@ -103,6 +103,20 @@ export interface DelistRequest {
   created_at: string;
 }
 
+/** One point on a price chart — real prints and snapshots, epoch ms. */
+export interface ChartPoint {
+  t: number;
+  price: number;
+}
+
+/** An annotated moment on a chart — always something that actually happened. */
+export interface ChartEvent {
+  t: number;
+  price: number;
+  label: string;
+  tone: "revenue" | "trade" | "high";
+}
+
 /** A ticker joined with everything the exchange table / ticker page needs. */
 export interface TickerQuote {
   ticker: Ticker;

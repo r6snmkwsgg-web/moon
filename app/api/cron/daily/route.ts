@@ -99,7 +99,7 @@ export async function GET(request: Request) {
           await notifyUsers(
             audience,
             "mrr",
-            `⚡ $${ticker.symbol} reported ${fmtCompact(mrr)} MRR${delta} — Stripe-verified`,
+            `$${ticker.symbol} reported ${fmtCompact(mrr)} MRR${delta} — Stripe-verified`,
             ticker.id
           );
         } catch {
@@ -158,7 +158,7 @@ export async function GET(request: Request) {
         await notifyUsers(
           audience,
           "move",
-          `${change > 0 ? "▲" : "▼"} $${ticker.symbol} ${fmtPct(change)} today`,
+          `$${ticker.symbol} ${fmtPct(change)} today`,
           ticker.id
         );
         moveAlerts++;

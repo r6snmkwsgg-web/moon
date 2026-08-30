@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getMarket } from "@/lib/data";
 import { fmtPct, fmtPrice } from "@/lib/format";
 import type { TickerQuote } from "@/lib/types";
+import Tri from "@/components/Tri";
 
 function TapeItem({ quote, dup }: { quote: TickerQuote; dup?: boolean }) {
   const up = quote.dayChange > 0.0005;
@@ -17,7 +18,7 @@ function TapeItem({ quote, dup }: { quote: TickerQuote; dup?: boolean }) {
       </span>
       <span className="num text-terminal-muted">{fmtPrice(quote.price)}</span>
       <span
-        className={`num ${
+        className={`num flex items-baseline gap-1 ${
           up
             ? "text-terminal-up"
             : down
@@ -25,7 +26,14 @@ function TapeItem({ quote, dup }: { quote: TickerQuote; dup?: boolean }) {
               : "text-terminal-muted"
         }`}
       >
-        {up ? "▲" : down ? "▼" : "·"} {fmtPct(quote.dayChange)}
+        {up ? (
+          <Tri dir="up" size={6} />
+        ) : down ? (
+          <Tri dir="down" size={6} />
+        ) : (
+          <span>·</span>
+        )}{" "}
+        {fmtPct(quote.dayChange)}
       </span>
     </Link>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check, Share2 } from "lucide-react";
 
 /** "Share your chart" — copies the ticker link; the OG card does the rest. */
 export default function ShareButton({ url }: { url: string }) {
@@ -18,7 +19,17 @@ export default function ShareButton({ url }: { url: string }) {
 
   return (
     <button onClick={copy} className="btn-ghost text-xs" type="button">
-      {copied ? "✓ Link copied — paste it on X/Threads" : "⇪ Share your chart"}
+      {copied ? (
+        <>
+          <Check size={12} className="text-terminal-up" />
+          Link copied — paste it on X/Threads
+        </>
+      ) : (
+        <>
+          <Share2 size={12} />
+          Share your chart
+        </>
+      )}
     </button>
   );
 }

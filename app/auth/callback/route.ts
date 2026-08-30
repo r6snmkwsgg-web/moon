@@ -49,12 +49,12 @@ async function creditInvite(userId: string, refCode: string | null) {
     await notifyUsers(
       [inviter.id],
       "invite",
-      `🎉 Someone joined with your invite — you both got +$${INVITE_BONUS.toLocaleString("en-US")} play money`
+      `Someone joined with your invite — you both got +$${INVITE_BONUS.toLocaleString("en-US")} play money`
     );
     await notifyUsers(
       [userId],
       "invite",
-      `🎉 Invite bonus applied — +$${INVITE_BONUS.toLocaleString("en-US")} play money`
+      `Invite bonus applied — +$${INVITE_BONUS.toLocaleString("en-US")} play money`
     );
   } catch {
     // invite columns missing pre-migration, or a race — never block sign-in

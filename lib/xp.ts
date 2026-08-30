@@ -72,7 +72,7 @@ export interface Streak {
   tradedToday: boolean;
 }
 
-/** Days a streak must reach before the 🔥 shows on the public profile. */
+/** Days a streak must reach before the flame shows on the public profile. */
 export const STREAK_FLAME_AT = 5;
 
 function isoDay(d: Date): string {

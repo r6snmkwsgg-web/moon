@@ -9,16 +9,20 @@ import {
 } from "@/lib/pricing";
 import PricingPlayground from "./PricingPlayground";
 
-export const dynamic = "force-static";
+// re-rendered every 5 minutes so the shared tape stays honest
+export const revalidate = 300;
 
 export const metadata = { title: "How pricing works" };
 
 export default function HowPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="font-mono text-lg font-bold">How pricing works</h1>
-        <p className="text-sm text-terminal-muted">
+      <div className="space-y-1.5 pt-2 text-center">
+        <div className="microlabel">The open formula</div>
+        <h1 className="text-2xl font-bold tracking-tight">
+          How pricing works
+        </h1>
+        <p className="mx-auto max-w-md text-sm text-terminal-muted">
           The whole market runs on one open formula. No black box, no order
           book — revenue is gravity, hype is weather.
         </p>
@@ -36,11 +40,12 @@ export default function HowPage() {
             <span className="font-mono">{REVENUE_MULTIPLE}× revenue</span>{" "}
             multiple:
           </p>
-          <p className="rounded-md bg-terminal-bg px-3 py-2 font-mono text-xs text-terminal-amber">
-            fair_price = (latest MRR × {REVENUE_MULTIPLE}) ÷ {SHARES_OUTSTANDING.toLocaleString("en-US")}
+          <p className="num rounded-md border border-terminal-amber/20 bg-terminal-bg px-4 py-3.5 text-center font-mono text-sm font-semibold tracking-tight text-terminal-amber sm:text-base">
+            fair_price = (latest MRR × {REVENUE_MULTIPLE}) ÷{" "}
+            {SHARES_OUTSTANDING.toLocaleString("en-US")}
           </p>
           <p className="text-terminal-muted">
-            When a founder&apos;s MRR updates — ⚡ auto-synced from Stripe
+            When a founder&apos;s MRR updates — auto-synced from Stripe
             monthly, or posted manually — the anchor reprices instantly.
             That&apos;s the earnings report.
           </p>
@@ -56,7 +61,7 @@ export default function HowPage() {
             points), and it&apos;s hard-capped at ±
             {(SENTIMENT_CAP * 100).toFixed(0)}%:
           </p>
-          <p className="rounded-md bg-terminal-bg px-3 py-2 font-mono text-xs text-terminal-up">
+          <p className="num rounded-md border border-terminal-up/20 bg-terminal-bg px-4 py-3.5 text-center font-mono text-sm font-semibold tracking-tight text-terminal-up sm:text-base">
             live_price = fair_price × (1 + sentiment)
           </p>
           <p className="text-terminal-muted">

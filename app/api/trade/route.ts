@@ -6,6 +6,7 @@ import {
   SHARES_OUTSTANDING,
   type TradeSide,
 } from "@/lib/pricing";
+import { recordTickerSnapshot } from "@/lib/snapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -116,6 +117,12 @@ export async function POST(request: Request) {
         : "Trade failed.";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
+
+  // keep today's snapshot current so charts include this print's aftermath
+  await recordTickerSnapshot(admin, ticker.id, {
+    mrr,
+    sentiment: fill.newSentiment,
+  });
 
   return NextResponse.json({
     ok: true,

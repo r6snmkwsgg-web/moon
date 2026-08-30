@@ -6,7 +6,8 @@ import { getUser } from "@/lib/supabase/server";
 import { fmtMoney, fmtPct } from "@/lib/format";
 import { STREAK_FLAME_AT } from "@/lib/xp";
 import { STARTING_CASH, APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
-import ValueChart from "@/components/ValueChart";
+import { Flame } from "lucide-react";
+import InteractiveChart from "@/components/InteractiveChart";
 import ShareButton from "@/components/ShareButton";
 import ChangePct from "@/components/ChangePct";
 import TierBadge from "@/components/TierBadge";
@@ -23,7 +24,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-const MEDALS = ["🥇", "🥈", "🥉"];
+const MEDAL_COLORS = ["#fbbf24", "#b9c2cf", "#cd8a4b"];
 
 export default async function ProfilePage({ params }: Props) {
   const { username } = await params;
@@ -52,9 +53,10 @@ export default async function ProfilePage({ params }: Props) {
             {streak.days >= STREAK_FLAME_AT && (
               <span
                 title={`${streak.days}-day trade streak`}
-                className="rounded bg-terminal-amber/15 px-1.5 py-0.5 font-mono text-[11px] font-bold text-terminal-amber"
+                className="flex items-center gap-0.5 rounded bg-terminal-amber/15 px-1.5 py-0.5 font-mono text-[11px] font-bold text-terminal-amber"
               >
-                🔥 {streak.days}
+                <Flame size={11} fill="currentColor" />
+                {streak.days}
               </span>
             )}
             {isMe && (
@@ -83,7 +85,13 @@ export default async function ProfilePage({ params }: Props) {
         <div className="panel px-3 py-2">
           <div className="microlabel">Rank</div>
           <div className="num mt-0.5 font-mono text-sm font-semibold">
-            {MEDALS[rank - 1] ?? `#${rank}`}{" "}
+            <span
+              style={
+                rank <= 3 ? { color: MEDAL_COLORS[rank - 1] } : undefined
+              }
+            >
+              #{rank}
+            </span>{" "}
             <span className="text-xs font-normal text-terminal-muted">
               of {playerCount}
             </span>
@@ -108,7 +116,21 @@ export default async function ProfilePage({ params }: Props) {
         </div>
       </div>
 
-      <ValueChart history={history} liveValue={valuation.totalValue} />
+      <InteractiveChart
+        series={[
+          ...history.map((h) => ({
+            t: Date.parse(`${h.day}T06:00:00Z`),
+            price: Number(h.total_value),
+          })),
+          { t: Date.now(), price: valuation.totalValue },
+        ]}
+        symbol=""
+        variant="panel"
+        defaultRange="ALL"
+        heightClass="h-[180px]"
+        baseline={STARTING_CASH}
+        baselineLabel="$10k stake"
+      />
 
       <section className="panel">
         <h2 className="microlabel border-b border-terminal-line px-3 py-2">

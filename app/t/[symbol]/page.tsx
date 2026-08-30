@@ -5,10 +5,13 @@ import { getRecentTrades, getTickerPage, getVoteGauge } from "@/lib/data";
 import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { fmtCompact, fmtMonth, fmtPct, fmtPrice, currentMonthISO } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
-import { changeFraction, SHARES_OUTSTANDING } from "@/lib/pricing";
+import { changeFraction, fairPrice, SHARES_OUTSTANDING } from "@/lib/pricing";
 import { nextEarningsDate } from "@/lib/xp";
+import type { ChartEvent } from "@/lib/types";
+import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import CountdownChip from "@/components/CountdownChip";
-import PriceChart from "@/components/PriceChart";
+import InteractiveChart from "@/components/InteractiveChart";
+import LivePrice from "@/components/LivePrice";
 import TradePanel from "@/components/TradePanel";
 import ShareButton from "@/components/ShareButton";
 import ChangePct from "@/components/ChangePct";
@@ -52,7 +55,16 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const data = await getTickerPage(symbol);
   if (!data) notFound();
 
-  const { quote, mrrHistory, snapshots, holdersCount, watchersCount } = data;
+  const {
+    quote,
+    mrrHistory,
+    holdersCount,
+    watchersCount,
+    series,
+    fairSeries,
+    dayStats,
+    floatHeld,
+  } = data;
   const t = quote.ticker;
   const user = await getUser();
   const isFounder = user !== null && t.claimed_by === user.id;
@@ -119,8 +131,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
     <div className="space-y-6">
       {ipo === "1" && (
         <div className="panel flex flex-wrap items-center gap-3 border-terminal-up/40 bg-terminal-up/10 px-4 py-3">
-          <span className="font-mono text-sm font-bold text-terminal-up">
-            🔔 ${t.symbol} is live — you just IPO&apos;d.
+          <span className="flex items-center gap-1.5 font-mono text-sm font-bold text-terminal-up">
+            <Bell size={14} />${t.symbol} is live — you just IPO&apos;d.
           </span>
           <span className="text-xs text-terminal-muted">
             Share the chart on X/Threads — the link unfurls into your ticker
@@ -160,8 +172,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
           )}
         </div>
         <div className="flex flex-col items-end gap-1.5">
-          <div className="num font-mono text-2xl font-bold">
-            {fmtPrice(quote.price)}
+          <div className="font-mono text-2xl font-bold">
+            <LivePrice value={quote.price} formatted={fmtPrice(quote.price)} />
           </div>
           <ChangePct value={quote.dayChange} chip className="text-sm" />
           <span className="flex items-center gap-1.5">
@@ -172,21 +184,42 @@ export default async function TickerPage({ params, searchParams }: Props) {
               signedIn={user !== null}
             />
             {watchersCount > 0 && (
-              <span className="font-mono text-[11px] text-terminal-muted">
-                👀 {watchersCount}
+              <span className="flex items-center gap-1 font-mono text-[11px] text-terminal-muted">
+                <Eye size={11} />
+                {watchersCount}
               </span>
             )}
           </span>
         </div>
       </div>
 
-      {/* stat strip */}
+      {/* the microstructure block — all of it real, none of it decorative */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
           ["Mkt cap", fmtCompact(quote.marketCap)],
           ["MRR", latestUpdate ? fmtCompact(Number(latestUpdate.mrr)) : "—"],
+          ["Prev close", dayStats.open !== null ? fmtPrice(dayStats.open) : "—"],
+          [
+            "Day range",
+            dayStats.low !== null && dayStats.high !== null
+              ? `${fmtPrice(dayStats.low)} – ${fmtPrice(dayStats.high)}`
+              : "—",
+          ],
+          [
+            "Volume today",
+            dayStats.volumeShares > 0
+              ? `${dayStats.volumeShares.toLocaleString("en-US")} shs`
+              : "0",
+          ],
+          [
+            "Trades today",
+            String(dayStats.trades),
+          ],
           ["Holders", String(holdersCount)],
-          ["Float", SHARES_OUTSTANDING.toLocaleString("en-US")],
+          [
+            "Float held",
+            `${Math.min(100, Math.round((floatHeld / SHARES_OUTSTANDING) * 100))}% of ${(SHARES_OUTSTANDING / 1000).toFixed(0)}k`,
+          ],
         ].map(([label, value]) => (
           <div key={label} className="panel px-3 py-2">
             <div className="microlabel">{label}</div>
@@ -202,9 +235,10 @@ export default async function TickerPage({ params, searchParams }: Props) {
           <span>
             Latest MRR ({fmtMonth(latestUpdate.month)}):{" "}
             {latestUpdate.source === "stripe" ? (
-              <span className="font-semibold text-terminal-amber">
-                ⚡ Stripe-verified — computed from active subscriptions,
-                refreshed monthly
+              <span className="inline-flex items-center gap-1 font-semibold text-terminal-amber">
+                <Zap size={11} fill="currentColor" strokeWidth={0} />
+                Stripe-verified — computed from active subscriptions, refreshed
+                monthly
               </span>
             ) : latestUpdate.source === "self-reported" ? (
               <span className="text-terminal-amber">
@@ -239,10 +273,24 @@ export default async function TickerPage({ params, searchParams }: Props) {
 
       {/* chart + trade column */}
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-        <PriceChart
-          snapshots={snapshots}
-          mrrHistory={mrrHistory}
-          livePrice={quote.price}
+        <InteractiveChart
+          series={series}
+          fair={fairSeries}
+          events={mrrHistory.slice(-6).map((m): ChartEvent => {
+            const at =
+              m.source === "curated"
+                ? Date.parse(`${m.month}T06:00:00Z`)
+                : Date.parse(m.created_at);
+            return {
+              t: at,
+              price: fairPrice(Number(m.mrr)),
+              label: `${fmtCompact(Number(m.mrr))} MRR`,
+              tone: "revenue",
+            };
+          })}
+          symbol={t.symbol}
+          variant="panel"
+          defaultRange="30D"
         />
         <div className="space-y-3">
           <TradePanel
@@ -276,15 +324,14 @@ export default async function TickerPage({ params, searchParams }: Props) {
           {t.stripe_verified ? (
             <div className="space-y-2">
               <p className="text-xs text-terminal-muted">
-                ⚡ MRR syncs from Stripe automatically each month — your
-                earnings report posts itself. Manual entry is off while
-                connected.
+                MRR syncs from Stripe automatically each month — your earnings
+                report posts itself. Manual entry is off while connected.
               </p>
               <form action={disconnectStripe}>
                 <input type="hidden" name="ticker_id" value={t.id} />
                 <button className="text-xs text-terminal-muted underline-offset-2 hover:text-terminal-down hover:underline">
-                  Disconnect Stripe (deletes the stored key, removes the ⚡
-                  badge)
+                  Disconnect Stripe (deletes the stored key, removes the
+                  verified badge)
                 </button>
               </form>
             </div>
@@ -311,7 +358,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
                   Stored encrypted; only the MRR number is ever public.
                 </p>
                 <button className="btn-ghost text-xs">
-                  ⚡ Verify &amp; connect
+                  <Zap size={12} className="text-terminal-amber" />
+                  Verify &amp; connect
                 </button>
               </form>
 
@@ -353,8 +401,9 @@ export default async function TickerPage({ params, searchParams }: Props) {
           {!t.handle_verified && (
             <div className="border-t border-terminal-line pt-3">
               {t.handle_proof_url ? (
-                <p className="text-xs text-terminal-muted">
-                  ✓ Handle verification submitted — awaiting review.
+                <p className="flex items-center gap-1 text-xs text-terminal-muted">
+                  <BadgeCheck size={12} className="text-terminal-accent" />
+                  Handle verification submitted — awaiting review.
                 </p>
               ) : (
                 <form
@@ -372,7 +421,9 @@ export default async function TickerPage({ params, searchParams }: Props) {
                       className="input mt-1"
                     />
                   </label>
-                  <button className="btn-ghost text-xs">Submit for ✓</button>
+                  <button className="btn-ghost text-xs">
+                    Submit for the badge
+                  </button>
                 </form>
               )}
             </div>
@@ -447,11 +498,16 @@ export default async function TickerPage({ params, searchParams }: Props) {
                       )}
                     </td>
                     <td className="px-3 py-2 text-right text-[11px] text-terminal-muted">
-                      {m.source === "stripe"
-                        ? "⚡ Stripe-verified"
-                        : m.source === "self-reported"
-                          ? "self-reported"
-                          : "curated — founder hasn't claimed this ticker yet"}
+                      {m.source === "stripe" ? (
+                        <span className="inline-flex items-center gap-1 text-terminal-amber">
+                          <Zap size={10} fill="currentColor" strokeWidth={0} />
+                          Stripe-verified
+                        </span>
+                      ) : m.source === "self-reported" ? (
+                        "self-reported"
+                      ) : (
+                        "curated — founder hasn't claimed this ticker yet"
+                      )}
                     </td>
                   </tr>
                 );
