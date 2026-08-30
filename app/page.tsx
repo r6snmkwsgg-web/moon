@@ -13,6 +13,7 @@ import { getUser } from "@/lib/supabase/server";
 import { fmtCompact, fmtPrice } from "@/lib/format";
 import ChangePct from "@/components/ChangePct";
 import DayStrip from "@/components/DayStrip";
+import Dismissible from "@/components/Dismissible";
 import InteractiveChart from "@/components/InteractiveChart";
 import LivePrice from "@/components/LivePrice";
 import MarketBoard from "@/components/MarketBoard";
@@ -84,25 +85,30 @@ export default async function ExchangePage() {
     <div className="space-y-5">
       {/* one banner, max */}
       {freshIpo ? (
-        <Link
-          href={`/t/${freshIpo.ticker.symbol}`}
-          className="panel flex flex-wrap items-center gap-x-3 gap-y-1 border-terminal-up/40 bg-terminal-up/10 px-4 py-2.5 hover:bg-terminal-up/15"
+        <Dismissible
+          id={`ipo.${freshIpo.ticker.symbol}`}
+          label="Hide this listing"
         >
-          <span className="flex items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-widest text-terminal-up">
-            <Bell size={12} />
-            New listing
-          </span>
-          <span className="font-mono font-bold">${freshIpo.ticker.symbol}</span>
-          <span className="min-w-0 truncate text-sm text-terminal-muted">
-            {freshIpo.ticker.name} — {freshIpo.ticker.pitch}
-          </span>
-          <span className="num ml-auto font-mono text-sm">
-            <LivePrice
-              value={freshIpo.price}
-              formatted={fmtPrice(freshIpo.price)}
-            />
-          </span>
-        </Link>
+          <Link
+            href={`/t/${freshIpo.ticker.symbol}`}
+            className="panel flex flex-wrap items-center gap-x-3 gap-y-1 border-terminal-up/40 bg-terminal-up/10 py-2.5 pl-4 pr-11 hover:bg-terminal-up/15"
+          >
+            <span className="flex items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-widest text-terminal-up">
+              <Bell size={12} />
+              New listing
+            </span>
+            <span className="font-mono font-bold">${freshIpo.ticker.symbol}</span>
+            <span className="min-w-0 truncate text-sm text-terminal-muted">
+              {freshIpo.ticker.name} — {freshIpo.ticker.pitch}
+            </span>
+            <span className="num ml-auto font-mono text-sm">
+              <LivePrice
+                value={freshIpo.price}
+                formatted={fmtPrice(freshIpo.price)}
+              />
+            </span>
+          </Link>
+        </Dismissible>
       ) : (
         <WireBanner events={wire} />
       )}
@@ -110,25 +116,27 @@ export default async function ExchangePage() {
       {user ? (
         <>
           {tradeCount === 0 ? (
-            <div className="panel flex flex-wrap items-center gap-x-4 gap-y-2 border-terminal-up/30 bg-gradient-to-r from-terminal-up/10 to-transparent px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-bold">
-                  You&apos;re in — $10,000 of play money is loaded.
+            <Dismissible id="welcome-cash" label="Hide this">
+              <div className="panel flex flex-wrap items-center gap-x-4 gap-y-2 border-terminal-up/30 bg-gradient-to-r from-terminal-up/10 to-transparent py-3 pl-4 pr-11">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold">
+                    You&apos;re in — $10,000 of play money is loaded.
+                  </div>
+                  <div className="text-xs text-terminal-muted">
+                    Pick any startup below and buy your first shares — your
+                    first print puts you on the leaderboard.
+                  </div>
                 </div>
-                <div className="text-xs text-terminal-muted">
-                  Pick any startup below and buy your first shares — your
-                  first print puts you on the leaderboard.
-                </div>
+                {featured && (
+                  <Link
+                    href={`/t/${featured.ticker.symbol}`}
+                    className="whitespace-nowrap rounded-md bg-terminal-up px-3.5 py-2 text-sm font-bold text-black hover:bg-terminal-up/85"
+                  >
+                    Start with ${featured.ticker.symbol} →
+                  </Link>
+                )}
               </div>
-              {featured && (
-                <Link
-                  href={`/t/${featured.ticker.symbol}`}
-                  className="whitespace-nowrap rounded-md bg-terminal-up px-3.5 py-2 text-sm font-bold text-black hover:bg-terminal-up/85"
-                >
-                  Start with ${featured.ticker.symbol} →
-                </Link>
-              )}
-            </div>
+            </Dismissible>
           ) : (
             <DayStrip missed={missed} />
           )}

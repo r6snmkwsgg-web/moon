@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { CandlestickChart, ChevronDown, LineChart } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CandlestickChart,
+  ChevronDown,
+  LineChart,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import type { ChartPoint } from "@/lib/types";
 import { fmtPct, fmtPrice } from "@/lib/format";
 import {
+  axisTimeLabel,
   buildCandles,
   DEFAULT_TIMEFRAME,
   labelFor,
+  niceTimeStep,
+  tzOffsetMs,
   makePriceAt,
   refreshIntervalFor,
   TIMEFRAMES,
@@ -21,6 +31,9 @@ const DOWN = "#f43f5e";
 const AMBER = "#fbbf24";
 const MUTED = "#8494ab";
 const GRID = "#182236";
+
+const MIN_BARS = 12; // zoomed all the way in
+const MAX_BARS = 600; // zoomed all the way out
 
 function niceTicks(min: number, max: number, count = 4): number[] {
   if (!(max > min)) return [min];
@@ -87,8 +100,67 @@ export default function TradingChart({
   const [mode, setMode] = useState<"candle" | "line">("candle");
   const [now, setNow] = useState<number | null>(null); // null until mounted
   const [scrub, setScrub] = useState<number | null>(null);
+  // the visible window: how many bars (zoom) and how many bars back from the
+  // live edge the right side sits (pan). null = this frame's own default.
+  const [view, setView] = useState<{ bars: number; offset: number } | null>(
+    null
+  );
 
   const tf = timeframeFor(tfKey);
+
+  // how far back this ticker actually goes, in buckets
+  const totalBars =
+    earliest !== undefined && now !== null
+      ? Math.max(MIN_BARS, Math.ceil((now - earliest) / tf.ms) + 1)
+      : MAX_BARS;
+  // never below the frame's own width: a two-day-old ticker on the 1D frame
+  // should draw two bars at their natural size, not two bars stretched over
+  // the whole plot.
+  const maxBars = Math.max(tf.bars, Math.min(MAX_BARS, totalBars));
+  const viewBars = Math.round(
+    Math.min(maxBars, Math.max(MIN_BARS, view?.bars ?? tf.bars))
+  );
+  const offset = Math.max(
+    0,
+    Math.min(Math.round(view?.offset ?? 0), Math.max(0, totalBars - viewBars))
+  );
+  const zoomed = viewBars !== tf.bars || offset !== 0;
+
+  const clampView = useCallback(
+    (bars: number, off: number) => {
+      const b = Math.round(Math.min(maxBars, Math.max(MIN_BARS, bars)));
+      const o = Math.max(
+        0,
+        Math.min(Math.round(off), Math.max(0, totalBars - b))
+      );
+      return { bars: b, offset: o };
+    },
+    [maxBars, totalBars]
+  );
+
+  /** Zoom by `factor`, keeping whatever sits at `fx` (0 = left, 1 = right). */
+  const zoomAt = useCallback(
+    (factor: number, fx: number) => {
+      setView((cur) => {
+        const bars = cur?.bars ?? tf.bars;
+        const off = cur?.offset ?? 0;
+        const next = Math.round(
+          Math.min(maxBars, Math.max(MIN_BARS, bars * factor))
+        );
+        const fromNow = off + (bars - 1) * (1 - fx);
+        const b = Math.round(Math.min(maxBars, Math.max(MIN_BARS, next)));
+        const o = Math.max(
+          0,
+          Math.min(
+            Math.round(fromNow - (b - 1) * (1 - fx)),
+            Math.max(0, totalBars - b)
+          )
+        );
+        return { bars: b, offset: o };
+      });
+    },
+    [tf.bars, maxBars, totalBars]
+  );
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -118,8 +190,16 @@ export default function TradingChart({
 
   const candles = useMemo<Candle[]>(() => {
     if (now === null) return [];
-    return buildCandles({ priceAt, tf, now, earliest, trades });
-  }, [priceAt, tf, now, earliest, trades]);
+    return buildCandles({
+      priceAt,
+      tf,
+      now,
+      earliest,
+      trades,
+      bars: viewBars,
+      offset,
+    });
+  }, [priceAt, tf, now, earliest, trades, viewBars, offset]);
 
   const hasVolume = candles.some((c) => c.v > 0);
 
@@ -151,16 +231,22 @@ export default function TradingChart({
     vMax += pad;
 
     const plotW = w - padR;
-    const step = plotW / candles.length;
-    const x = (i: number) => step * (i + 0.5);
+    // slots, not candles: when history is shorter than the window the bars
+    // keep their width and sit at the live edge, with empty space behind.
+    const slots = Math.max(candles.length, viewBars);
+    const step = plotW / slots;
+    const shift = plotW - step * candles.length;
+    const x = (i: number) => shift + step * (i + 0.5);
     const y = (v: number) =>
       padT + (1 - (v - vMin) / (vMax - vMin || 1)) * plotH;
 
     const maxVol = Math.max(1, ...candles.map((c) => c.v));
     const vy = (v: number) => (v / maxVol) * (volH - 6);
 
-    return { w, h, padR, padT, padB, plotW, plotH, volH, step, x, y, vy, vMin, vMax };
-  }, [dims, candles, fairPrice, hasVolume]);
+    return {
+      w, h, padR, padT, padB, plotW, plotH, volH, step, shift, x, y, vy, vMin, vMax,
+    };
+  }, [dims, candles, fairPrice, hasVolume, viewBars]);
 
   const pf = useMemo(
     () => makePriceFmt(geo ? geo.vMax - geo.vMin : 1),
@@ -177,13 +263,113 @@ export default function TradingChart({
   const up = change >= 0;
   const color = up ? UP : DOWN;
 
-  function onPointer(e: React.PointerEvent) {
+  function scrubAt(e: React.PointerEvent) {
     if (!geo) return;
     const rect = wrapRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const i = Math.floor((e.clientX - rect.left) / geo.step);
+    const i = Math.floor((e.clientX - rect.left - geo.shift) / geo.step);
     setScrub(Math.max(0, Math.min(candles.length - 1, i)));
   }
+
+  // wheel = zoom (shift or a horizontal wheel = pan). Non-passive, because the
+  // page must not scroll out from under the chart while you are zooming it.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const rect = el.getBoundingClientRect();
+      const plotW = Math.max(1, rect.width - 52);
+      const fx = Math.min(1, Math.max(0, (e.clientX - rect.left) / plotW));
+      const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+      e.preventDefault();
+      if (sideways || e.shiftKey) {
+        const d = sideways ? e.deltaX : e.deltaY;
+        setView((cur) => {
+          const bars = cur?.bars ?? tf.bars;
+          const off = cur?.offset ?? 0;
+          return clampView(bars, off - d / Math.max(2, plotW / bars));
+        });
+      } else {
+        zoomAt(e.deltaY > 0 ? 1.2 : 1 / 1.2, fx);
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [tf.bars, clampView, zoomAt]);
+
+  // drag to pan, two fingers to pinch — the same gestures a trading app has
+  const drag = useRef<{ x: number; offset: number; moved: boolean } | null>(
+    null
+  );
+  const touches = useRef(new Map<number, number>());
+  const pinch = useRef<{ dist: number; bars: number } | null>(null);
+
+  function onDown(e: React.PointerEvent) {
+    touches.current.set(e.pointerId, e.clientX);
+    if (touches.current.size === 2) {
+      const [a, b] = [...touches.current.values()];
+      pinch.current = { dist: Math.abs(a - b) || 1, bars: viewBars };
+      drag.current = null;
+      setScrub(null);
+      return;
+    }
+    drag.current = { x: e.clientX, offset, moved: false };
+    scrubAt(e);
+  }
+
+  function onMove(e: React.PointerEvent) {
+    if (touches.current.has(e.pointerId)) {
+      touches.current.set(e.pointerId, e.clientX);
+    }
+    if (touches.current.size === 2 && pinch.current) {
+      const [a, b] = [...touches.current.values()];
+      const dist = Math.abs(a - b) || 1;
+      setView(clampView((pinch.current.bars * pinch.current.dist) / dist, offset));
+      return;
+    }
+    const d = drag.current;
+    if (d && e.buttons === 1 && geo) {
+      const dx = e.clientX - d.x;
+      if (Math.abs(dx) > 2) d.moved = true;
+      if (d.moved) {
+        setScrub(null);
+        setView(clampView(viewBars, d.offset + dx / geo.step));
+        return;
+      }
+    }
+    scrubAt(e);
+  }
+
+  function onUp(e: React.PointerEvent) {
+    touches.current.delete(e.pointerId);
+    if (touches.current.size < 2) pinch.current = null;
+    drag.current = null;
+  }
+
+  /** Evenly spaced, round-numbered time ticks — the x axis. */
+  const ticks = useMemo(() => {
+    if (!geo || candles.length < 2) return [];
+    const span = candles[candles.length - 1].t - candles[0].t + tf.ms;
+    const step = niceTimeStep(span, Math.max(2, Math.floor(geo.plotW / 92)), tf.ms);
+    const tzo = tzOffsetMs();
+    const slot = (t: number) => Math.floor((t - tzo) / step);
+    const day = (t: number) => Math.floor((t - tzo) / 86_400_000);
+    const out: { x: number; label: string; major: boolean }[] = [];
+    let lastSlot: number | null = null;
+    let lastDay: number | null = null;
+    const rightEdge = geo.plotW - (offset === 0 ? 40 : 18);
+    candles.forEach((c, i) => {
+      const sl = slot(c.t);
+      if (sl === lastSlot) return;
+      lastSlot = sl;
+      const x = geo.x(i);
+      if (x < 26 || x > rightEdge) return;
+      const newDay = lastDay !== null && day(c.t) !== lastDay;
+      lastDay = day(c.t);
+      out.push({ x, label: axisTimeLabel(c.t, step, newDay), major: newDay });
+    });
+    return out;
+  }, [geo, candles, tf.ms, offset]);
 
   return (
     <div className="panel flex flex-col">
@@ -225,6 +411,38 @@ export default function TradingChart({
           </span>
         )}
         <div className="relative ml-auto flex items-center gap-1">
+          {/* zoom: the wheel and pinch do this too, these are the visible way */}
+          <button
+            type="button"
+            onClick={() => zoomAt(1.35, 1)}
+            title="Zoom out (scroll down on the chart)"
+            aria-label="Zoom out"
+            disabled={viewBars >= maxBars}
+            className="rounded p-1 text-terminal-muted transition-colors hover:text-terminal-text disabled:opacity-30"
+          >
+            <ZoomOut size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomAt(1 / 1.35, 1)}
+            title="Zoom in (scroll up on the chart)"
+            aria-label="Zoom in"
+            disabled={viewBars <= MIN_BARS}
+            className="rounded p-1 text-terminal-muted transition-colors hover:text-terminal-text disabled:opacity-30"
+          >
+            <ZoomIn size={13} />
+          </button>
+          {zoomed && (
+            <button
+              type="button"
+              onClick={() => setView(null)}
+              title="Reset the view"
+              aria-label="Reset zoom"
+              className="rounded p-1 text-terminal-accent transition-colors hover:bg-terminal-raise"
+            >
+              <RotateCcw size={12} />
+            </button>
+          )}
           {/* the granularity ladder, tucked behind one button */}
           <button
             type="button"
@@ -258,6 +476,7 @@ export default function TradingChart({
                     onClick={() => {
                       setTfKey(t.key);
                       setScrub(null);
+                      setView(null);
                       setTfOpen(false);
                     }}
                     className={`rounded px-1 py-1 font-mono text-[11px] font-semibold transition-colors ${
@@ -302,16 +521,24 @@ export default function TradingChart({
       {/* the plot */}
       <div
         ref={wrapRef}
-        className={`relative w-full ${heightClass}`}
-        onPointerMove={onPointer}
-        onPointerDown={onPointer}
-        onPointerLeave={() => setScrub(null)}
+        className={`relative w-full ${heightClass} ${
+          zoomed ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair"
+        }`}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        onDoubleClick={() => setView(null)}
+        onPointerLeave={(e) => {
+          onUp(e);
+          setScrub(null);
+        }}
       >
         {geo && candles.length > 1 ? (
           <svg
             width={geo.w}
             height={geo.h}
-            className="block touch-none select-none"
+            className="block touch-pan-y select-none"
             role="img"
             aria-label={`${symbol} ${tf.label} chart`}
           >
@@ -470,25 +697,42 @@ export default function TradingChart({
               </g>
             )}
 
-            {/* time axis ends */}
+            {/* time axis: round-numbered ticks across the whole window */}
+            {ticks.map((t) => (
+              <g key={`x${t.x}`}>
+                <line
+                  x1={t.x}
+                  x2={t.x}
+                  y1={geo.padT}
+                  y2={geo.h - geo.padB}
+                  stroke={GRID}
+                  strokeDasharray="2 6"
+                  opacity={t.major ? 1 : 0.6}
+                />
+                <text
+                  x={t.x}
+                  y={geo.h - 6}
+                  textAnchor="middle"
+                  fill={MUTED}
+                  fontSize="10"
+                  fontFamily="ui-monospace, monospace"
+                  opacity={t.major ? 1 : 0.85}
+                >
+                  {t.label}
+                </text>
+              </g>
+            ))}
             <text
-              x={4}
-              y={geo.h - 6}
-              fill={MUTED}
-              fontSize="10"
-              fontFamily="ui-monospace, monospace"
-            >
-              {labelFor(candles[0].t, tf)}
-            </text>
-            <text
-              x={geo.plotW - 4}
+              x={geo.plotW - 2}
               y={geo.h - 6}
               textAnchor="end"
               fill={MUTED}
               fontSize="10"
               fontFamily="ui-monospace, monospace"
             >
-              now
+              {offset === 0
+                ? "now"
+                : labelFor(candles[candles.length - 1].t, tf)}
             </text>
           </svg>
         ) : (
@@ -509,6 +753,10 @@ export default function TradingChart({
         <span className="flex items-center gap-1.5 text-terminal-amber">
           <span className="inline-block h-0 w-4 border-t border-dashed border-terminal-amber" />
           fair value · {multiple.toFixed(1)}× ARR ÷ 10k
+        </span>
+        <span className="ml-auto hidden text-terminal-muted/70 md:block">
+          scroll to zoom · drag to pan
+          {zoomed ? " · double-click to reset" : ""}
         </span>
       </div>
     </div>

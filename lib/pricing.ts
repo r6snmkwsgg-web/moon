@@ -283,6 +283,21 @@ export function marketFlow(symbol: string, t: number, mrr = 0): number {
 }
 
 /**
+ * The fast octaves alone — texture for the gaps BETWEEN recorded prices.
+ * The slow ones are deliberately absent: recorded history already carries
+ * the regime (that ramp really happened), this only stops the minutes in
+ * between from being drawn as straight lines.
+ */
+export function microFlow(symbol: string, t: number, mrr = 0): number {
+  const raw =
+    0.011 * valueNoise(`${symbol}/d`, t, (2 / 3) * 3600_000) + // 40-min chop
+    0.009 * valueNoise(`${symbol}/e`, t, 3600_000 / 20) + // 3-min shimmer
+    0.0045 * valueNoise(`${symbol}/f`, t, 25_000) +
+    0.0016 * valueNoise(`${symbol}/g`, t, 2_500);
+  return raw * volatilityFactor(mrr);
+}
+
+/**
  * What the ticker trades at, flow included — the ONLY price the app should
  * show or fill at. Anchor × hype × weather.
  */

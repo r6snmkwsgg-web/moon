@@ -1,5 +1,5 @@
 import type { ChartPoint } from "@/lib/types";
-import { flowPrice } from "@/lib/pricing";
+import { flowPrice, microFlow } from "@/lib/pricing";
 
 /** One OHLC bar. Volume is trade-derived and may be 0 on quiet buckets. */
 export interface Candle {
@@ -97,7 +97,12 @@ export function makePriceAt(
     const a = sorted[lo];
     const b = sorted[hi];
     const span = b.t - a.t || 1;
-    return a.price + ((b.price - a.price) * (t - a.t)) / span;
+    const w = (t - a.t) / span;
+    const lerp = a.price + (b.price - a.price) * w;
+    // texture between two real prices, faded to nothing AT them — every
+    // recorded value still lands exactly where it happened, but the ten
+    // minutes in between get wicks instead of a ruler line.
+    return lerp * (1 + Math.sin(Math.PI * w) * microFlow(symbol, t, mrr));
   };
 }
 
@@ -112,16 +117,23 @@ export function buildCandles({
   now,
   earliest,
   trades = [],
+  bars,
+  offset = 0,
 }: {
   priceAt: (t: number) => number;
   tf: Timeframe;
   now: number;
   earliest?: number;
   trades?: { t: number; shares: number }[];
+  /** How many buckets to draw — the zoom level. Defaults to the frame's own. */
+  bars?: number;
+  /** How many buckets back from now the right edge sits — the pan. */
+  offset?: number;
 }): Candle[] {
+  const width = Math.max(2, Math.round(bars ?? tf.bars));
   const bucketOf = (t: number) => Math.floor(t / tf.ms) * tf.ms;
-  const lastBucket = bucketOf(now);
-  let firstBucket = lastBucket - (tf.bars - 1) * tf.ms;
+  const lastBucket = bucketOf(now) - Math.max(0, Math.round(offset)) * tf.ms;
+  let firstBucket = lastBucket - (width - 1) * tf.ms;
   if (earliest !== undefined) {
     firstBucket = Math.max(firstBucket, bucketOf(earliest));
   }
@@ -161,6 +173,54 @@ export function buildCandles({
 /** Candles → a line series (closes), for the line/area rendering mode. */
 export function candlesToLine(candles: Candle[]): ChartPoint[] {
   return candles.map((c) => ({ t: c.t + 0, price: c.c }));
+}
+
+const SECOND = S;
+/** Round intervals a human reads as "every N" — the x-axis tick candidates. */
+const NICE_STEPS = [
+  SECOND, 2 * S, 5 * S, 10 * S, 15 * S, 30 * S,
+  M, 2 * M, 5 * M, 10 * M, 15 * M, 30 * M,
+  H, 2 * H, 3 * H, 6 * H, 12 * H,
+  D, 2 * D, 7 * D, 14 * D, 30 * D, 90 * D, 180 * D, 365 * D,
+];
+
+/**
+ * The smallest round interval that keeps the axis under `count` labels — and
+ * never finer than the bars themselves, so ticks always land on a bucket.
+ */
+export function niceTimeStep(spanMs: number, count: number, floorMs = 0): number {
+  const want = Math.max(spanMs / Math.max(1, count), floorMs);
+  return NICE_STEPS.find((s) => s >= want) ?? NICE_STEPS[NICE_STEPS.length - 1];
+}
+
+/** Minutes the viewer's clock is offset from UTC, as ms — ticks land local. */
+export function tzOffsetMs(): number {
+  return new Date().getTimezoneOffset() * 60_000;
+}
+
+/**
+ * Axis label sized to the TICK interval, not the bar: hourly ticks read
+ * "14:00", daily ticks read "Aug 30", and the first tick of a new day always
+ * shows the date so a multi-day window stays readable.
+ */
+export function axisTimeLabel(t: number, stepMs: number, dayMark = false): string {
+  const d = new Date(t);
+  if (stepMs >= D || dayMark) {
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+  if (stepMs < M) {
+    return d.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+  }
+  return d.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 /** Axis label for a bucket at this granularity. */
