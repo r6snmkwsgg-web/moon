@@ -102,7 +102,7 @@ export default function ListingForm() {
             className="fade-up text-xs text-terminal-muted"
             style={{ animationDelay: "0.5s" }}
           >
-            fair value = 3 × MRR ÷ 10,000 shares
+            fair value = 3 × ARR ÷ 10,000 shares (ARR = MRR × 12)
           </p>
           <p
             className="fade-up font-mono text-3xl font-bold text-terminal-up"

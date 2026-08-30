@@ -240,7 +240,7 @@ export default async function ExchangePage() {
               [
                 "02",
                 "Revenue sets the anchor",
-                "One open formula: fair value = 3× MRR over 10,000 shares. Monthly reports are earnings day — beats rip, misses dump.",
+                "One open formula: fair value = 3× annual revenue over 10,000 shares. Monthly reports are earnings day — beats rip, misses dump.",
               ],
               [
                 "03",

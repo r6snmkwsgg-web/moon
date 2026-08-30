@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { APP_NAME } from "@/lib/config";
 import {
-  REVENUE_MULTIPLE,
+  ARR_MULTIPLE,
   SENTIMENT_CAP,
   SENTIMENT_DAILY_DECAY,
   SHARES_OUTSTANDING,
@@ -37,11 +37,11 @@ export default function HowPage() {
             Every startup has exactly{" "}
             <span className="num font-mono">{SHARES_OUTSTANDING.toLocaleString("en-US")}</span>{" "}
             fake shares. Its fair value per share is a toy{" "}
-            <span className="font-mono">{REVENUE_MULTIPLE}× revenue</span>{" "}
+            <span className="font-mono">{ARR_MULTIPLE}× annual revenue</span>{" "}
             multiple:
           </p>
           <p className="num rounded-md border border-terminal-amber/20 bg-terminal-bg px-4 py-3.5 text-center font-mono text-sm font-semibold tracking-tight text-terminal-amber sm:text-base">
-            fair_price = (latest MRR × {REVENUE_MULTIPLE}) ÷{" "}
+            fair_price = (MRR × 12 × {ARR_MULTIPLE}) ÷{" "}
             {SHARES_OUTSTANDING.toLocaleString("en-US")}
           </p>
           <p className="text-terminal-muted">

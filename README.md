@@ -38,7 +38,8 @@ else in the app computes a price. Unit tests in
 [`tests/pricing.test.ts`](tests/pricing.test.ts) pin the behavior down.
 
 - Every ticker has **10,000 fake shares**.
-- `fair_price = (latest MRR × 3) / 10,000` — a toy "3x revenue" multiple.
+- `fair_price = (ARR × 3) / 10,000`, where ARR = latest MRR × 12 — small
+  SaaS trades hands around 2–4× annual revenue, so 3× sits mid-range.
 - `live price = fair_price × (1 + sentiment)`.
 - **Sentiment** rises with net play-money buying and falls with selling
   (trading 10% of the float moves it 20 points), is capped at **±40%**, and

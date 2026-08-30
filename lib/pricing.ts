@@ -4,7 +4,9 @@
  *
  * Model:
  *   - Every ticker has a fixed float of 10,000 fake shares.
- *   - fair_price = (latest MRR × 3) / 10,000 — a toy "3x revenue" multiple.
+ *   - fair_price = (ARR × 3) / 10,000, where ARR = latest MRR × 12 —
+ *     the multiple applies to ANNUAL revenue, the way SaaS is actually
+ *     valued (indie SaaS changes hands around 2–4× ARR).
  *   - live price = fair_price × (1 + sentiment).
  *   - sentiment rises with net play-money buying and falls with selling,
  *     is clamped to ±40%, and decays 10% toward zero once per day (cron).
@@ -16,8 +18,18 @@
 /** Fixed float per ticker. Every ticker has exactly this many fake shares. */
 export const SHARES_OUTSTANDING = 10_000;
 
-/** Toy valuation multiple applied to monthly recurring revenue. */
-export const REVENUE_MULTIPLE = 3;
+/**
+ * Valuation multiple applied to ANNUAL recurring revenue. Small SaaS
+ * businesses trade hands at roughly 2–4× ARR, so 3× sits mid-range.
+ * (Applying a multiple to MONTHLY revenue — the old bug — valued a
+ * $27k/mo business at $80k, i.e. 0.25× ARR: twelve times too cheap.)
+ */
+export const ARR_MULTIPLE = 3;
+
+export const MONTHS_PER_YEAR = 12;
+
+/** The same multiple expressed against MRR, for display and sanity checks. */
+export const MRR_MULTIPLE = ARR_MULTIPLE * MONTHS_PER_YEAR; // 36×
 
 /** Sentiment is clamped to ±40% around fair price. */
 export const SENTIMENT_CAP = 0.4;
@@ -41,13 +53,19 @@ export function clampSentiment(sentiment: number): number {
   return Math.min(SENTIMENT_CAP, Math.max(-SENTIMENT_CAP, sentiment));
 }
 
+/** Annual recurring revenue from the latest monthly number. */
+export function annualRevenue(mrr: number): number {
+  if (!Number.isFinite(mrr) || mrr <= 0) return 0;
+  return mrr * MONTHS_PER_YEAR;
+}
+
 /**
- * The anchor: what the ticker is "worth" per share at a 3x revenue multiple.
+ * The anchor: what the ticker is "worth" per share at a 3× ARR multiple.
  * MRR at or below zero anchors the price at zero — no negative prices.
  */
 export function fairPrice(mrr: number): number {
   if (!Number.isFinite(mrr) || mrr <= 0) return 0;
-  return (mrr * REVENUE_MULTIPLE) / SHARES_OUTSTANDING;
+  return (annualRevenue(mrr) * ARR_MULTIPLE) / SHARES_OUTSTANDING;
 }
 
 /** What the ticker trades at right now: fair price stretched by sentiment. */

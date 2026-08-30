@@ -506,7 +506,7 @@ export default function TradingChart({
         </span>
         <span className="flex items-center gap-1.5 text-terminal-amber">
           <span className="inline-block h-0 w-4 border-t border-dashed border-terminal-amber" />
-          fair value · 3× MRR ÷ 10k
+          fair value · 3× ARR ÷ 10k
         </span>
       </div>
     </div>

@@ -544,7 +544,7 @@ export default function InteractiveChart({
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-0.5 w-4 rounded-full border-t border-dashed border-terminal-amber bg-transparent" />
             <span className="text-terminal-amber">
-              fair value · 3× MRR ÷ 10k shares
+              fair value · 3× ARR ÷ 10k shares
             </span>
           </span>
         </div>
