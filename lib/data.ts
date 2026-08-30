@@ -12,6 +12,8 @@ import {
   type RevenuePoint,
 } from "@/lib/pricing";
 import { STARTING_CASH } from "@/lib/config";
+import { getRevenueEvents } from "@/lib/pulse";
+import type { EquityHolding, EquityTrade } from "@/lib/equity";
 import { computeXp } from "@/lib/xp";
 import type {
   ChartEvent,
@@ -849,14 +851,96 @@ export async function getVoteGauge(
   }
 }
 
-/** The signed-in user's own daily portfolio values (RLS: own rows). */
-export async function getPortfolioHistory(): Promise<PortfolioSnapshot[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from("portfolio_snapshots")
-    .select("*")
-    .order("day", { ascending: true });
-  return (data ?? []) as PortfolioSnapshot[];
+
+/**
+ * Everything the equity curve needs to be reconstructed instead of recorded:
+ * the price inputs for every ticker this account has ever touched, plus the
+ * trade log to replay holdings and cash backwards. See lib/equity.ts.
+ */
+export async function getEquityInputs(userId: string): Promise<{
+  cash: number;
+  startedAt: number;
+  holdings: EquityHolding[];
+  trades: EquityTrade[];
+}> {
+  const admin = createSupabaseAdminClient();
+  const [quotes, profileRes, holdingsRes, tradesRes] = await Promise.all([
+    getMarket(),
+    admin.from("profiles").select("cash, created_at").eq("id", userId).maybeSingle(),
+    admin.from("holdings").select("ticker_id, shares").eq("user_id", userId),
+    admin
+      .from("trades")
+      .select("ticker_id, side, shares, total, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(500),
+  ]);
+
+  const byId = new Map(quotes.map((q) => [q.ticker.id, q]));
+  const heldNow = new Map(
+    ((holdingsRes.data ?? []) as { ticker_id: string; shares: number }[]).map(
+      (h) => [h.ticker_id, Number(h.shares)]
+    )
+  );
+  const tradeRows = (tradesRes.data ?? []) as {
+    ticker_id: string;
+    side: "buy" | "sell";
+    shares: number;
+    total: number;
+    created_at: string;
+  }[];
+
+  // anything held now OR ever traded — a closed position still shaped the past
+  const touched = new Set<string>([
+    ...heldNow.keys(),
+    ...tradeRows.map((t) => t.ticker_id),
+  ]);
+
+  const holdings: EquityHolding[] = [];
+  for (const id of touched) {
+    const quote = byId.get(id);
+    if (!quote) continue;
+    const events = await getRevenueEvents(admin, id, 30 * 86_400_000);
+    const series = await getPriceSeries(
+      id,
+      quote.ticker.symbol,
+      quote.liveMrr,
+      Number(quote.ticker.sentiment),
+      quote.multiple,
+      quote.shares,
+      events
+    );
+    holdings.push({
+      symbol: quote.ticker.symbol,
+      shares: heldNow.get(id) ?? 0,
+      mrr: quote.liveMrr,
+      sentiment: Number(quote.ticker.sentiment),
+      multiple: quote.multiple,
+      outstanding: quote.shares,
+      series,
+      events,
+    });
+  }
+
+  const symbolOf = new Map(quotes.map((q) => [q.ticker.id, q.ticker.symbol]));
+  const trades: EquityTrade[] = tradeRows
+    .filter((t) => symbolOf.has(t.ticker_id))
+    .map((t) => ({
+      t: Date.parse(t.created_at),
+      symbol: symbolOf.get(t.ticker_id)!,
+      side: t.side,
+      shares: Number(t.shares),
+      total: Number(t.total),
+    }));
+
+  return {
+    cash: Number(profileRes.data?.cash ?? 0),
+    startedAt: profileRes.data?.created_at
+      ? Date.parse(profileRes.data.created_at)
+      : Date.now() - 86_400_000,
+    holdings,
+    trades,
+  };
 }
 
 export type LeaderboardRange = "all" | "7d" | "30d";

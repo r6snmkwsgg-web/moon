@@ -1,15 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/supabase/server";
-import {
-  getPortfolio,
-  getPortfolioHistory,
-  getXpMap,
-} from "@/lib/data";
+import { getEquityInputs, getPortfolio, getXpMap } from "@/lib/data";
 import { fmtMoney, fmtPrice } from "@/lib/format";
 import { tierFor } from "@/lib/xp";
 import ChangePct from "@/components/ChangePct";
-import InteractiveChart from "@/components/InteractiveChart";
+import EquityChart from "@/components/EquityChart";
 import LivePrice from "@/components/LivePrice";
 import InviteBox from "@/components/InviteBox";
 import TierBadge from "@/components/TierBadge";
@@ -23,9 +19,9 @@ export default async function PortfolioPage() {
   const user = await getUser();
   if (!user) redirect("/login?next=/portfolio");
 
-  const [data, history, xpMap] = await Promise.all([
+  const [data, equity, xpMap] = await Promise.all([
     getPortfolio(user.id),
-    getPortfolioHistory(),
+    getEquityInputs(user.id),
     getXpMap(),
   ]);
   const standing = tierFor(xpMap.get(user.id) ?? 0);
@@ -102,6 +98,17 @@ export default async function PortfolioPage() {
         </div>
       </div>
 
+      <div className="grid items-start gap-4 xl:grid-cols-[1fr_330px]">
+        <div className="min-w-0 space-y-4">
+      <EquityChart
+        cash={Number(valuation.profile.cash)}
+        holdings={equity.holdings}
+        trades={equity.trades}
+        startedAt={equity.startedAt}
+        startingCash={STARTING_CASH}
+        totalValue={valuation.totalValue}
+      />
+
       <section className="panel overflow-x-auto">
         <table className="w-full min-w-[480px] text-sm">
           <thead>
@@ -173,23 +180,9 @@ export default async function PortfolioPage() {
         </table>
       </section>
 
-      <InteractiveChart
-        series={[
-          ...history.map((h) => ({
-            t: Date.parse(`${h.day}T06:00:00Z`),
-            price: Number(h.total_value),
-          })),
-          { t: Date.now(), price: valuation.totalValue },
-        ]}
-        symbol=""
-        variant="panel"
-        defaultRange="ALL"
-        heightClass="h-[180px]"
-        baseline={STARTING_CASH}
-        baselineLabel="$10k stake"
-      />
+        </div>
 
-      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <div className="space-y-4 xl:sticky xl:top-[68px]">
         <div className="panel space-y-2 p-4">
           <div className="flex items-center justify-between">
             <span className="microlabel">Ranked tier</span>
@@ -213,6 +206,47 @@ export default async function PortfolioPage() {
         {inviteCode && (
           <InviteBox inviteUrl={`${siteUrl()}/?ref=${inviteCode}`} />
         )}
+
+        {equity.trades.length > 0 && (
+          <section className="panel">
+            <div className="border-b border-terminal-line px-3 py-2">
+              <span className="microlabel font-bold !text-terminal-text">
+                Your activity
+              </span>
+            </div>
+            <ul className="divide-y divide-terminal-line/40">
+              {[...equity.trades]
+                .reverse()
+                .slice(0, 8)
+                .map((t) => (
+                  <li key={`${t.t}-${t.symbol}-${t.shares}`}>
+                    <Link
+                      href={`/t/${t.symbol}`}
+                      className="flex items-baseline gap-2 px-3 py-1.5 font-mono text-[11px] hover:bg-terminal-raise/60"
+                    >
+                      <span
+                        className={`font-bold uppercase ${
+                          t.side === "buy"
+                            ? "text-terminal-up"
+                            : "text-terminal-down"
+                        }`}
+                      >
+                        {t.side}
+                      </span>
+                      <span className="num text-terminal-muted">
+                        {t.shares.toLocaleString("en-US")}
+                      </span>
+                      <span className="font-bold">${t.symbol}</span>
+                      <span className="num ml-auto text-terminal-muted">
+                        {fmtMoney(t.total)}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-xs text-terminal-muted">
