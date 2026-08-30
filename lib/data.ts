@@ -8,6 +8,7 @@ import {
   flowPrice,
   marketFlow,
   valuationMultiple,
+  type RevenueEvent,
   type RevenuePoint,
 } from "@/lib/pricing";
 import { STARTING_CASH } from "@/lib/config";
@@ -25,6 +26,61 @@ import type {
 } from "@/lib/types";
 
 const SPARK_DAYS = 30;
+
+/** What the five-minute Stripe poll knows that the monthly report doesn't. */
+export interface LiveRevenue {
+  liveMrr: number | null;
+  events: RevenueEvent[];
+}
+
+const NO_LIVE: LiveRevenue = { liveMrr: null, events: [] };
+
+/**
+ * Live revenue for every connected ticker: the current Stripe number and the
+ * recent changes behind it. Both sides degrade to nothing if 0005 hasn't been
+ * applied — the market then trades on the last reported number, as before.
+ */
+export async function getLiveRevenue(
+  sinceMs = 12 * 3600_000
+): Promise<Map<string, LiveRevenue>> {
+  const admin = createSupabaseAdminClient();
+  const out = new Map<string, LiveRevenue>();
+  const [connsRes, eventsRes] = await Promise.all([
+    admin.from("stripe_connections").select("*").eq("status", "active"),
+    admin
+      .from("revenue_events")
+      .select("ticker_id, at, prev_mrr, mrr")
+      .gte("at", new Date(Date.now() - sinceMs).toISOString())
+      .order("at", { ascending: true })
+      .limit(1000),
+  ]);
+
+  for (const c of (connsRes.data ?? []) as {
+    ticker_id: string;
+    live_mrr?: number | null;
+  }[]) {
+    const live = c.live_mrr === undefined ? null : c.live_mrr;
+    out.set(c.ticker_id, {
+      liveMrr: live === null ? null : Number(live),
+      events: [],
+    });
+  }
+  for (const e of (eventsRes.data ?? []) as {
+    ticker_id: string;
+    at: string;
+    prev_mrr: number;
+    mrr: number;
+  }[]) {
+    const entry = out.get(e.ticker_id) ?? { liveMrr: null, events: [] };
+    entry.events.push({
+      at: Date.parse(e.at),
+      mrr: Number(e.mrr),
+      prevMrr: Number(e.prev_mrr),
+    });
+    out.set(e.ticker_id, entry);
+  }
+  return out;
+}
 
 function isoDaysAgo(days: number): string {
   const d = new Date();
@@ -46,7 +102,8 @@ function historyByTicker(updates: MrrUpdate[]): Map<string, RevenuePoint[]> {
 function buildQuote(
   ticker: Ticker,
   history: RevenuePoint[],
-  snaps: PriceSnapshot[] // this ticker's snapshots, day ascending
+  snaps: PriceSnapshot[], // this ticker's snapshots, day ascending
+  live: LiveRevenue = NO_LIVE
 ): TickerQuote {
   const sentiment = Number(ticker.sentiment);
   const latestMrr = history.length ? Number(history[history.length - 1].mrr) : 0;
@@ -54,14 +111,19 @@ function buildQuote(
   const multiple = valuationMultiple(history);
   // each listing sized its own float at IPO; older rows use the default
   const shares = floatOf(ticker.shares_outstanding);
-  // anchor × hype × the flow — the one price everything shows and fills at
+  // the price trades on what Stripe says NOW; latestMrr is the last report
+  const liveMrr =
+    live.liveMrr !== null && live.liveMrr > 0 ? live.liveMrr : latestMrr;
+  const events = live.events;
+  // anchor × hype × the flow × the news — the one price everything fills at
   const price = flowPrice(
     ticker.symbol,
-    latestMrr,
+    liveMrr,
     sentiment,
     Date.now(),
     multiple,
-    shares
+    shares,
+    events
   );
   const spark = snaps.map((s) => Number(s.price));
 
@@ -85,8 +147,10 @@ function buildQuote(
     arr: annualRevenue(latestMrr),
     multiple,
     shares,
+    liveMrr,
+    unreported: latestMrr > 0 ? (liveMrr - latestMrr) / latestMrr : 0,
     price,
-    fairPrice: fairPrice(latestMrr, multiple, shares),
+    fairPrice: fairPrice(liveMrr, multiple, shares),
     marketCap: price * shares,
     dayChange: dayBase ? changeFraction(Number(dayBase.price), price) : 0,
     weekChange: weekBase ? changeFraction(Number(weekBase.price), price) : 0,
@@ -98,7 +162,7 @@ function buildQuote(
 export async function getMarket(): Promise<TickerQuote[]> {
   const supabase = await createSupabaseServerClient();
 
-  const [tickersRes, mrrRes, snapsRes] = await Promise.all([
+  const [tickersRes, mrrRes, snapsRes, live] = await Promise.all([
     supabase.from("tickers").select("*"),
     supabase.from("mrr_updates").select("*").order("month", { ascending: true }),
     supabase
@@ -106,6 +170,7 @@ export async function getMarket(): Promise<TickerQuote[]> {
       .select("*")
       .gte("day", isoDaysAgo(SPARK_DAYS))
       .order("day", { ascending: true }),
+    getLiveRevenue(),
   ]);
 
   const tickers = (tickersRes.data ?? []) as Ticker[];
@@ -120,7 +185,12 @@ export async function getMarket(): Promise<TickerQuote[]> {
 
   return tickers
     .map((t) =>
-      buildQuote(t, histories.get(t.id) ?? [], snapsByTicker.get(t.id) ?? [])
+      buildQuote(
+        t,
+        histories.get(t.id) ?? [],
+        snapsByTicker.get(t.id) ?? [],
+        live.get(t.id)
+      )
     )
     .sort((a, b) => b.marketCap - a.marketCap);
 }
@@ -138,7 +208,8 @@ export async function getPriceSeries(
   mrr: number,
   sentiment: number,
   multiple?: number,
-  shares?: number
+  shares?: number,
+  events: RevenueEvent[] = []
 ): Promise<ChartPoint[]> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
@@ -174,7 +245,15 @@ export async function getPriceSeries(
   anchors.sort((a, b) => a.t - b.t);
   anchors.push({
     t: Date.now(),
-    price: flowPrice(symbol, mrr, sentiment, Date.now(), multiple, shares),
+    price: flowPrice(
+      symbol,
+      mrr,
+      sentiment,
+      Date.now(),
+      multiple,
+      shares,
+      events
+    ),
   });
 
   // flow-modulated interpolation, pinned to the real values at both ends:
@@ -327,6 +406,7 @@ export async function getTickerPage(symbol: string): Promise<{
   floatHeld: number; // shares currently held across all players
   tradePoints: { t: number; shares: number }[];
   earliest: number; // listing time — charts never invent pre-IPO history
+  revenueEvents: RevenueEvent[]; // Stripe changes since the last report
 } | null> {
   const supabase = await createSupabaseServerClient();
 
@@ -337,7 +417,7 @@ export async function getTickerPage(symbol: string): Promise<{
     .maybeSingle();
   if (!ticker) return null;
 
-  const [mrrRes, snapsRes] = await Promise.all([
+  const [mrrRes, snapsRes, liveAll] = await Promise.all([
     supabase
       .from("mrr_updates")
       .select("*")
@@ -348,8 +428,12 @@ export async function getTickerPage(symbol: string): Promise<{
       .select("*")
       .eq("ticker_id", ticker.id)
       .order("day", { ascending: true }),
+    // 30 days of revenue changes: enough to redraw every step on the chart
+    getLiveRevenue(30 * 86_400_000),
   ]);
 
+  const live = liveAll.get(ticker.id);
+  const revenueEvents = live?.events ?? [];
   const mrrHistory = (mrrRes.data ?? []) as MrrUpdate[];
   const snapshots = (snapsRes.data ?? []) as PriceSnapshot[];
   const history: RevenuePoint[] = mrrHistory.map((u) => ({
@@ -361,7 +445,8 @@ export async function getTickerPage(symbol: string): Promise<{
   const quote = buildQuote(
     ticker as Ticker,
     history,
-    snapshots.filter((s) => s.day >= isoDaysAgo(SPARK_DAYS))
+    snapshots.filter((s) => s.day >= isoDaysAgo(SPARK_DAYS)),
+    live
   );
 
   // Cross-user reads (counts, prints, positions) run with the service role.
@@ -400,10 +485,11 @@ export async function getTickerPage(symbol: string): Promise<{
     getPriceSeries(
       ticker.id,
       (ticker as Ticker).symbol,
-      latestMrr,
+      quote.liveMrr,
       Number((ticker as Ticker).sentiment),
       quote.multiple,
-      quote.shares
+      quote.shares,
+      revenueEvents
     ),
   ]);
 
@@ -433,11 +519,12 @@ export async function getTickerPage(symbol: string): Promise<{
     dayPrices.push(
       flowPrice(
         (ticker as Ticker).symbol,
-        latestMrr,
+        quote.liveMrr,
         sentimentNow,
         t,
         quote.multiple,
-        quote.shares
+        quote.shares,
+        revenueEvents
       )
     );
   }
@@ -468,6 +555,7 @@ export async function getTickerPage(symbol: string): Promise<{
     floatHeld,
     tradePoints,
     earliest: Date.parse((ticker as Ticker).listed_at),
+    revenueEvents,
   };
 }
 

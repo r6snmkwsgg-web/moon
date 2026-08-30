@@ -347,6 +347,59 @@ export function marketFlow(symbol: string, t: number, mrr = 0): number {
   return FLOW_CAP * Math.tanh(scaled / 0.32);
 }
 
+/* ── the revenue pulse: real Stripe changes between monthly reports ──────── */
+
+/** A revenue change Stripe reported between two monthly earnings. */
+export interface RevenueEvent {
+  at: number; // epoch ms
+  mrr: number; // MRR after the change
+  prevMrr: number; // MRR before it
+}
+
+/** How far past the fundamental move the tape overshoots on fresh news. */
+export const SHOCK_OVERSHOOT = 1.6;
+/** The overshoot halves every 35 minutes, then the step is all that's left. */
+export const SHOCK_HALFLIFE_MS = 35 * 60_000;
+/** No single burst of news may move a price more than this on its own. */
+export const SHOCK_CAP = 0.45;
+
+/**
+ * MRR as Stripe knew it at instant t. Revenue steps — a customer signs up or
+ * cancels at a moment — so this walks the known changes backwards from the
+ * live number rather than interpolating between them.
+ */
+export function mrrAt(
+  events: RevenueEvent[],
+  liveMrr: number,
+  t: number
+): number {
+  let mrr = liveMrr;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].at <= t) break;
+    mrr = events[i].prevMrr;
+  }
+  return mrr;
+}
+
+/**
+ * The tape's reaction to fresh revenue news, on top of the permanent step:
+ * an overshoot that decays away. A churn gapping the price down harder than
+ * the revenue justifies, then recovering, is what a real print looks like —
+ * and it is the only part of a revenue move that is market reaction rather
+ * than arithmetic.
+ */
+export function revenueShock(events: RevenueEvent[], t: number): number {
+  let shock = 0;
+  for (const e of events) {
+    if (e.at > t || e.prevMrr <= 0) continue;
+    const age = t - e.at;
+    if (age > SHOCK_HALFLIFE_MS * 8) continue; // decayed to nothing
+    const move = (e.mrr - e.prevMrr) / e.prevMrr;
+    shock += move * SHOCK_OVERSHOOT * Math.pow(0.5, age / SHOCK_HALFLIFE_MS);
+  }
+  return Math.max(-SHOCK_CAP, Math.min(SHOCK_CAP, shock));
+}
+
 /**
  * The fast octaves alone — texture for the gaps BETWEEN recorded prices.
  * The slow ones are deliberately absent: recorded history already carries
@@ -372,11 +425,17 @@ export function flowPrice(
   sentiment: number,
   t = Date.now(),
   multiple = ARR_MULTIPLE,
-  shares = SHARES_OUTSTANDING
+  shares = SHARES_OUTSTANDING,
+  events: RevenueEvent[] = []
 ): number {
+  // with events, `mrr` is the LIVE number and the past is reconstructed from
+  // the changes — so a chart drawn now shows the step where it happened
+  const known = events.length ? mrrAt(events, mrr, t) : mrr;
+  const shock = events.length ? revenueShock(events, t) : 0;
   return (
-    livePrice(mrr, sentiment, multiple, shares) *
-    (1 + marketFlow(symbol, t, mrr))
+    livePrice(known, sentiment, multiple, shares) *
+    (1 + marketFlow(symbol, t, mrr)) *
+    (1 + shock)
   );
 }
 
@@ -433,17 +492,21 @@ export function executionFillAt(
   shares: number,
   t = Date.now(),
   multiple = ARR_MULTIPLE,
-  outstanding = SHARES_OUTSTANDING
+  outstanding = SHARES_OUTSTANDING,
+  events: RevenueEvent[] = []
 ): Fill {
   const base = executionFill(
-    mrr,
+    events.length ? mrrAt(events, mrr, t) : mrr,
     sentiment,
     side,
     shares,
     multiple,
     outstanding
   );
-  const drift = 1 + marketFlow(symbol, t, mrr);
+  // fills price off the same tape everyone is watching, news included
+  const drift =
+    (1 + marketFlow(symbol, t, mrr)) *
+    (1 + (events.length ? revenueShock(events, t) : 0));
   return {
     avgPrice: base.avgPrice * drift,
     total: base.total * drift,

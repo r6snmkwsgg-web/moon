@@ -10,6 +10,7 @@ import {
   type TradeSide,
 } from "@/lib/pricing";
 import { recordTickerSnapshot } from "@/lib/snapshot";
+import { getRevenueEvents } from "@/lib/pulse";
 
 export const dynamic = "force-dynamic";
 
@@ -71,26 +72,41 @@ export async function POST(request: Request) {
 
   // the whole revenue record, because the multiple is earned by durability —
   // fetched alongside the float check, since neither needs the other
-  const [{ data: revenue }, { data: heldRows }] = await Promise.all([
-    admin
-      .from("mrr_updates")
-      .select("month, mrr")
-      .eq("ticker_id", ticker.id)
-      .order("month", { ascending: true }),
-    side === "buy"
-      ? admin
-          .from("holdings")
-          .select("user_id, shares")
-          .eq("ticker_id", ticker.id)
-      : Promise.resolve({ data: [] as { user_id: string; shares: number }[] }),
-  ]);
+  const [{ data: revenue }, { data: heldRows }, { data: conn }, events] =
+    await Promise.all([
+      admin
+        .from("mrr_updates")
+        .select("month, mrr")
+        .eq("ticker_id", ticker.id)
+        .order("month", { ascending: true }),
+      side === "buy"
+        ? admin
+            .from("holdings")
+            .select("user_id, shares")
+            .eq("ticker_id", ticker.id)
+        : Promise.resolve({
+            data: [] as { user_id: string; shares: number }[],
+          }),
+      // what Stripe said in the last five minutes, and the changes behind it
+      admin
+        .from("stripe_connections")
+        .select("*")
+        .eq("ticker_id", ticker.id)
+        .maybeSingle(),
+      getRevenueEvents(admin, ticker.id, 12 * 3600_000),
+    ]);
   const outstanding = floatOf(
     (ticker as { shares_outstanding?: number }).shares_outstanding
   );
   const history = ((revenue ?? []) as { month: string; mrr: number }[]).map(
     (r) => ({ month: r.month, mrr: Number(r.mrr) })
   );
-  const mrr = history.length ? history[history.length - 1].mrr : 0;
+  const reportedMrr = history.length ? history[history.length - 1].mrr : 0;
+  // fills price off live revenue, exactly like the quote the trader saw
+  const liveMrr = Number(
+    (conn as { live_mrr?: number | null } | null)?.live_mrr ?? 0
+  );
+  const mrr = liveMrr > 0 ? liveMrr : reportedMrr;
   const multiple = valuationMultiple(history);
 
   // Two limits, both enforced here and not just in the UI:
@@ -142,7 +158,8 @@ export async function POST(request: Request) {
     shares,
     Date.now(),
     multiple,
-    outstanding
+    outstanding,
+    events
   );
   if (fill.avgPrice <= 0) {
     return NextResponse.json(

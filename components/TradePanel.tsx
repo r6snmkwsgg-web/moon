@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check } from "lucide-react";
+import type { RevenueEvent } from "@/lib/pricing";
 import {
   executionFillAt,
   MAX_POSITION_FRACTION,
@@ -25,6 +26,7 @@ export default function TradePanel({
   multiple,
   outstanding = SHARES_OUTSTANDING,
   floatHeld = 0,
+  events = [],
   quotedAt,
   signedIn,
   cash,
@@ -39,6 +41,8 @@ export default function TradePanel({
   outstanding?: number;
   /** Shares of it already held across every account. */
   floatHeld?: number;
+  /** Live Stripe revenue changes — quotes and fills price off these too. */
+  events?: RevenueEvent[];
   /** Server's clock at render — first paint matches, then we go live. */
   quotedAt: number;
   signedIn: boolean;
@@ -105,7 +109,8 @@ export default function TradePanel({
       n,
       quoteT,
       multiple,
-      outstanding
+      outstanding,
+      events
     );
   const buyEst = shares >= 1 ? est("buy", shares) : null;
   const sellEst = shares >= 1 ? est("sell", shares) : null;

@@ -9,6 +9,8 @@ import {
   SENTIMENT_CAP,
   SENTIMENT_DAILY_DECAY,
   SHARES_OUTSTANDING,
+  SHOCK_CAP,
+  SHOCK_HALFLIFE_MS,
   TARGET_OPENING_PRICE,
   TRADE_IMPACT_FACTOR,
   applyTrade,
@@ -23,11 +25,14 @@ import {
   livePrice,
   marketCap,
   marketFlow,
+  mrrAt,
   positionLimit,
+  revenueShock,
   shareCountFor,
   tradeImpact,
   valuationMultiple,
   volatilityFactor,
+  type RevenueEvent,
 } from "@/lib/pricing";
 
 /** The anchor for a given MRR at the baseline multiple. */
@@ -459,5 +464,76 @@ describe("position limits", () => {
   it("always leaves at least one share buyable", () => {
     expect(positionLimit(1)).toBe(1);
     expect(positionLimit(5)).toBe(1);
+  });
+});
+
+// ── the revenue pulse ────────────────────────────────────────────────────────
+
+describe("revenue events between reports", () => {
+  const T = 1_700_000_000_000;
+  const REPORTED = 10_000;
+  const churn: RevenueEvent = { at: T, prevMrr: 10_000, mrr: 9_000 };
+  const signup: RevenueEvent = { at: T, prevMrr: 10_000, mrr: 11_000 };
+
+  it("steps, because revenue steps", () => {
+    expect(mrrAt([churn], 9_000, T - 1)).toBe(10_000);
+    expect(mrrAt([churn], 9_000, T)).toBe(9_000);
+    expect(mrrAt([churn], 9_000, T + 1)).toBe(9_000);
+  });
+
+  it("walks back through several changes", () => {
+    const events: RevenueEvent[] = [
+      { at: T, prevMrr: 10_000, mrr: 11_000 },
+      { at: T + 3_600_000, prevMrr: 11_000, mrr: 10_500 },
+    ];
+    expect(mrrAt(events, 10_500, T - 1)).toBe(10_000);
+    expect(mrrAt(events, 10_500, T + 60_000)).toBe(11_000);
+    expect(mrrAt(events, 10_500, T + 7_200_000)).toBe(10_500);
+  });
+
+  it("prices a churn down and a signup up, immediately", () => {
+    const before = flowPrice("TEST", REPORTED, 0, T - 1000, 2.5, 10_000, [churn]);
+    const after = flowPrice("TEST", 9_000, 0, T + 1000, 2.5, 10_000, [churn]);
+    expect(after).toBeLessThan(before * 0.9);
+
+    const up = flowPrice("TEST", 11_000, 0, T + 1000, 2.5, 10_000, [signup]);
+    const flat = flowPrice("TEST", REPORTED, 0, T - 1000, 2.5, 10_000, [signup]);
+    expect(up).toBeGreaterThan(flat * 1.1);
+  });
+
+  it("overshoots on the news, then decays back to the step", () => {
+    const spike = Math.abs(revenueShock([churn], T + 1000));
+    const later = Math.abs(revenueShock([churn], T + SHOCK_HALFLIFE_MS));
+    const gone = Math.abs(revenueShock([churn], T + SHOCK_HALFLIFE_MS * 9));
+    expect(spike).toBeGreaterThan(0.1); // a 10% churn is a real candle
+    expect(later).toBeCloseTo(spike / 2, 2);
+    expect(gone).toBe(0);
+  });
+
+  it("caps a burst of news so nothing gaps to zero", () => {
+    const catastrophe: RevenueEvent[] = Array.from({ length: 12 }, (_, i) => ({
+      at: T + i,
+      prevMrr: 10_000,
+      mrr: 5_000,
+    }));
+    expect(revenueShock(catastrophe, T + 100)).toBeGreaterThanOrEqual(-SHOCK_CAP);
+  });
+
+  it("hands over to the monthly report without a gap", () => {
+    // a month later the overshoot is long gone and only the step remains
+    const later = T + 30 * 86_400_000;
+    // before the report: reported 10k, live 11k, priced off live
+    const beforeReport = flowPrice("TEST", 11_000, 0, later, 2.5, 10_000, [
+      { at: T, prevMrr: 10_000, mrr: 11_000 },
+    ]);
+    // after: the report says 11k and the event is behind us — same price
+    const afterReport = flowPrice("TEST", 11_000, 0, later, 2.5, 10_000, []);
+    expect(beforeReport).toBeCloseTo(afterReport, 9);
+  });
+
+  it("fills at the tape price, news included", () => {
+    const fill = executionFillAt("TEST", 9_000, 0, "buy", 10, T + 1000, 2.5, 10_000, [churn]);
+    const quiet = executionFillAt("TEST", 10_000, 0, "buy", 10, T - 1000, 2.5, 10_000, [churn]);
+    expect(fill.avgPrice).toBeLessThan(quiet.avgPrice * 0.9);
   });
 });

@@ -126,6 +126,8 @@ export interface TickerQuote {
   arr: number; // latestMrr × 12
   multiple: number; // quality-adjusted ARR multiple this ticker earns
   shares: number; // this ticker's float — set at IPO, not global
+  liveMrr: number; // what Stripe says right now (falls back to reported)
+  unreported: number; // liveMrr vs the last monthly report, as a fraction
   price: number;
   fairPrice: number;
   marketCap: number;

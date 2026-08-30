@@ -1,5 +1,5 @@
 import type { ChartPoint } from "@/lib/types";
-import { flowPrice, microFlow } from "@/lib/pricing";
+import { flowPrice, microFlow, type RevenueEvent } from "@/lib/pricing";
 
 /** One OHLC bar. Volume is trade-derived and may be 0 on quiet buckets. */
 export interface Candle {
@@ -71,6 +71,7 @@ export function makePriceAt(
   series: ChartPoint[],
   multiple?: number,
   shares?: number,
+  events: RevenueEvent[] = [],
   liveWindowMs = 12 * 60 * 60 * 1000
 ): (t: number) => number {
   const sorted = series.length > 1 ? series : [];
@@ -84,7 +85,7 @@ export function makePriceAt(
 
   return (t: number): number => {
     if (!first || !last || t >= liveFrom || t >= last.t) {
-      return flowPrice(symbol, mrr, sentiment, t, multiple, shares);
+      return flowPrice(symbol, mrr, sentiment, t, multiple, shares, events);
     }
     if (t <= first.t) return first.price;
     // binary search the bracketing recorded points

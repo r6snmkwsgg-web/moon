@@ -14,6 +14,7 @@ import { changeFraction } from "@/lib/pricing";
 import { nextEarningsDate } from "@/lib/xp";
 import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import CountdownChip from "@/components/CountdownChip";
+import PulseKeeper from "@/components/PulseKeeper";
 import Discussion from "@/components/Discussion";
 import TradingChart from "@/components/TradingChart";
 import ThesisFeed from "@/components/ThesisFeed";
@@ -72,6 +73,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
     floatHeld,
     tradePoints,
     earliest,
+    revenueEvents,
   } = data;
   const t = quote.ticker;
   const user = await getUser();
@@ -203,17 +205,20 @@ export default async function TickerPage({ params, searchParams }: Props) {
         </div>
       </div>
 
+      {t.stripe_verified && <PulseKeeper symbol={t.symbol} />}
+
       {/* split rail: chart + market data left, a permanent trade rail right */}
       <div className="grid items-start gap-4 lg:grid-cols-[1fr_330px]">
         <div className="min-w-0 space-y-4">
           <TradingChart
             symbol={t.symbol}
-            mrr={quote.latestMrr}
+            mrr={quote.liveMrr}
             sentiment={Number(t.sentiment)}
             series={series}
             fairPrice={quote.fairPrice}
             multiple={quote.multiple}
             shares={quote.shares}
+            events={revenueEvents}
             trades={tradePoints}
             earliest={earliest}
           />
@@ -222,7 +227,10 @@ export default async function TickerPage({ params, searchParams }: Props) {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             {[
               ["Mkt cap", fmtCompact(quote.marketCap)],
-              ["MRR", latestUpdate ? fmtCompact(Number(latestUpdate.mrr)) : "—"],
+              [
+                "MRR (live)",
+                quote.liveMrr > 0 ? fmtCompact(quote.liveMrr) : "—",
+              ],
               ["ARR", fmtCompact(quote.arr)],
               ["Multiple", `${quote.multiple.toFixed(1)}× ARR`],
               ["Float", `${quote.shares.toLocaleString("en-US")} shs`],
@@ -246,6 +254,25 @@ export default async function TickerPage({ params, searchParams }: Props) {
             ))}
           </div>
 
+          {Math.abs(quote.unreported) > 0.0005 && latestUpdate && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-terminal-line bg-terminal-panel px-3 py-2 text-xs">
+              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-terminal-up" />
+              <span className="microlabel !text-terminal-text">
+                Unreported revenue
+              </span>
+              <span className="text-terminal-muted">
+                Stripe says{" "}
+                <b className="num font-mono text-terminal-amber">
+                  {fmtCompact(quote.liveMrr)}
+                </b>{" "}
+                right now — {fmtPct(quote.unreported)} against the{" "}
+                {fmtMonth(latestUpdate.month)} report of{" "}
+                {fmtCompact(Number(latestUpdate.mrr))}. The price already
+                trades on it; the report is the record.
+              </span>
+            </div>
+          )}
+
           {latestUpdate && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-terminal-muted">
               <span>
@@ -254,7 +281,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
                   <span className="inline-flex items-center gap-1 font-semibold text-terminal-amber">
                     <Zap size={11} fill="currentColor" strokeWidth={0} />
                     Stripe-verified — computed from active subscriptions,
-                    refreshed monthly
+                    re-read every 5 minutes
                   </span>
                 ) : latestUpdate.source === "self-reported" ? (
                   <span className="text-terminal-amber">
@@ -284,10 +311,11 @@ export default async function TickerPage({ params, searchParams }: Props) {
           <TradePanel
             symbol={t.symbol}
             price={quote.price}
-            mrr={quote.latestMrr}
+            mrr={quote.liveMrr}
             sentiment={Number(t.sentiment)}
             multiple={quote.multiple}
             outstanding={quote.shares}
+            events={revenueEvents}
             floatHeld={floatHeld}
             quotedAt={Date.now()}
             signedIn={user !== null}

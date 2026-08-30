@@ -7,6 +7,9 @@ import {
   SENTIMENT_CAP,
   SENTIMENT_DAILY_DECAY,
   MAX_POSITION_FRACTION,
+  SHOCK_CAP,
+  SHOCK_HALFLIFE_MS,
+  SHOCK_OVERSHOOT,
   TARGET_OPENING_PRICE,
   TRADE_IMPACT_FACTOR,
 } from "@/lib/pricing";
@@ -98,8 +101,34 @@ export default function HowPage() {
         </div>
 
         <div className="panel space-y-2 p-4">
+          <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-amber">
+            3 · The pulse — revenue as it happens
+          </h2>
+          <p>
+            A verified listing&apos;s Stripe account is read{" "}
+            <b>every five minutes</b>. When a customer signs up the price steps
+            up at that minute; when one cancels it steps down. Earnings are
+            still only <b>reported</b> once a month — the report is the record,
+            and the handover is seamless because fair value is linear in
+            revenue: pricing off $11K unreported is arithmetically identical to
+            pricing off an $11K report.
+          </p>
+          <p className="text-terminal-muted">
+            On top of the step, the tape overshoots and settles — a fresh churn
+            gaps the price down about{" "}
+            {(SHOCK_OVERSHOOT * 100 - 100).toFixed(0)}% further than the
+            revenue justifies, then recovers, halving every{" "}
+            {Math.round(SHOCK_HALFLIFE_MS / 60_000)} minutes. That overshoot is
+            the one part of a revenue move that is market reaction rather than
+            arithmetic, and it is capped at ±{(SHOCK_CAP * 100).toFixed(0)}%.
+            Every step on the chart with a marker under it is a real thing that
+            happened in a real Stripe account.
+          </p>
+        </div>
+
+        <div className="panel space-y-2 p-4">
           <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-up">
-            3 · The weather — hype
+            4 · The weather — hype
           </h2>
           <p>
             Buying pushes sentiment up, selling pushes it down (trading 10% of
@@ -119,7 +148,7 @@ export default function HowPage() {
 
         <div className="panel space-y-2 p-4">
           <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-accent">
-            4 · Gravity — decay
+            5 · Gravity — decay
           </h2>
           <p>
             Every night, sentiment shrinks{" "}
@@ -130,7 +159,7 @@ export default function HowPage() {
 
         <div className="panel space-y-2 p-4">
           <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-muted">
-            5 · The flow — simulated volatility
+            6 · The flow — simulated volatility
           </h2>
           <p>
             Between real events, prices ride <b>the flow</b>: a per-ticker

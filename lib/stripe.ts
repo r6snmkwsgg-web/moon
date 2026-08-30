@@ -114,8 +114,20 @@ export async function verifyRestrictedKey(key: string): Promise<StripeKeyCheck> 
  * Metered/tiered items without a unit_amount are skipped — this is a
  * close-enough game number, labeled as computed, not audit-grade.
  */
-export async function computeMrrFromStripe(key: string): Promise<number> {
+export interface StripeRevenue {
+  mrr: number;
+  /** Active subscriptions — how a churn is told apart from a downgrade. */
+  subscriptions: number;
+}
+
+/**
+ * MRR plus the active subscription count, in one pass. The count is what
+ * lets the pulse label a change: fewer subscriptions and less money is a
+ * churn, the same subscriptions and less money is a downgrade.
+ */
+export async function readStripeRevenue(key: string): Promise<StripeRevenue> {
   let total = 0; // in cents/minor units, face value across currencies
+  let subscriptions = 0;
   let startingAfter: string | null = null;
 
   for (let page = 0; page < 10; page++) {
@@ -129,6 +141,7 @@ export async function computeMrrFromStripe(key: string): Promise<number> {
       throw new Error(`Stripe subscriptions read failed (${status})`);
     }
     const subs = (json.data ?? []) as Array<Record<string, unknown>>;
+    subscriptions += subs.length;
     for (const sub of subs) {
       const items = ((sub.items as Record<string, unknown>)?.data ??
         []) as Array<Record<string, unknown>>;
@@ -156,7 +169,12 @@ export async function computeMrrFromStripe(key: string): Promise<number> {
     if (!startingAfter) break;
   }
 
-  return Math.round(total) / 100; // minor units → dollars
+  return { mrr: Math.round(total) / 100, subscriptions }; // minor units → dollars
+}
+
+/** MRR alone — the number the monthly report and the IPO price are set from. */
+export async function computeMrrFromStripe(key: string): Promise<number> {
+  return (await readStripeRevenue(key)).mrr;
 }
 
 // ── encryption at rest ──────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import type { ChartPoint } from "@/lib/types";
+import type { RevenueEvent } from "@/lib/pricing";
 import { fmtPct, fmtPrice } from "@/lib/format";
 import {
   axisTimeLabel,
@@ -80,6 +81,7 @@ export default function TradingChart({
   fairPrice,
   multiple,
   shares,
+  events = [],
   trades = [],
   earliest,
   heightClass = "h-[300px] sm:h-[380px]",
@@ -91,6 +93,8 @@ export default function TradingChart({
   fairPrice: number;
   multiple: number;
   shares: number;
+  /** Real Stripe revenue changes — the steps and spikes on the tape. */
+  events?: RevenueEvent[];
   trades?: { t: number; shares: number }[];
   earliest?: number;
   heightClass?: string;
@@ -186,8 +190,8 @@ export default function TradingChart({
   }, [tf]);
 
   const priceAt = useMemo(
-    () => makePriceAt(symbol, mrr, sentiment, series, multiple, shares),
-    [symbol, mrr, sentiment, series, multiple, shares]
+    () => makePriceAt(symbol, mrr, sentiment, series, multiple, shares, events),
+    [symbol, mrr, sentiment, series, multiple, shares, events]
   );
 
   const candles = useMemo<Candle[]>(() => {
@@ -673,6 +677,48 @@ export default function TradingChart({
                 opacity="0.65"
               />
             )}
+
+            {/* real revenue changes — the only marks on this chart that are
+                news rather than price */}
+            {events.map((e) => {
+              if (candles.length < 2) return null;
+              const first = candles[0].t;
+              const last = candles[candles.length - 1].t + tf.ms;
+              if (e.at < first || e.at > last) return null;
+              const i = Math.min(
+                candles.length - 1,
+                Math.max(0, Math.floor((e.at - first) / tf.ms))
+              );
+              const up = e.mrr >= e.prevMrr;
+              const x = geo.x(i);
+              const y = geo.h - geo.padB - 4;
+              return (
+                <g key={`re${e.at}`} opacity="0.9">
+                  <line
+                    x1={x}
+                    x2={x}
+                    y1={geo.padT}
+                    y2={geo.h - geo.padB}
+                    stroke={up ? UP : DOWN}
+                    strokeWidth="1"
+                    strokeDasharray="1 4"
+                    opacity="0.45"
+                  />
+                  <path
+                    d={
+                      up
+                        ? `M ${x} ${y - 7} L ${x + 4} ${y} L ${x - 4} ${y} Z`
+                        : `M ${x} ${y} L ${x + 4} ${y - 7} L ${x - 4} ${y - 7} Z`
+                    }
+                    fill={up ? UP : DOWN}
+                  >
+                    <title>
+                      {`${up ? "Revenue up" : "Revenue down"}: ${e.prevMrr} → ${e.mrr} MRR`}
+                    </title>
+                  </path>
+                </g>
+              );
+            })}
 
             {/* crosshair */}
             {scrub !== null && candles[scrub] && (
