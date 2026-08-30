@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { makeEquityAt, sampleEquity, type EquityInputs } from "@/lib/equity";
+import {
+  makeEquityAt,
+  makeStateAt,
+  realizedPnl,
+  sampleEquity,
+  type EquityInputs,
+} from "@/lib/equity";
 
 const HOUR = 3_600_000;
 const NOW = Date.now();
@@ -20,6 +26,12 @@ function holding(symbol: string, shares: number) {
       { t: NOW - 13 * HOUR, price: 10 },
     ],
     events: [],
+    name: symbol,
+    logoUrl: null,
+    avgCost: 10,
+    dayChange: 0,
+    weekChange: 0,
+    spark: [],
   };
 }
 
@@ -29,7 +41,7 @@ describe("the equity curve", () => {
       cash: 8_000,
       holdings: [holding("AAA", 200)],
       trades: [
-        { t: NOW - 30 * HOUR, symbol: "AAA", side: "buy", shares: 200, total: 2_000 },
+        { t: NOW - 30 * HOUR, symbol: "AAA", side: "buy", shares: 200, price: 2_000 / 200, total: 2_000, note: null },
       ],
       startedAt: NOW - 40 * HOUR,
       startingCash: 10_000,
@@ -49,7 +61,7 @@ describe("the equity curve", () => {
       cash: 8_000,
       holdings: [held],
       trades: [
-        { t: buyAt, symbol: "AAA", side: "buy", shares: 200, total: 2_000 },
+        { t: buyAt, symbol: "AAA", side: "buy", shares: 200, price: 2_000 / 200, total: 2_000, note: null },
       ],
       startedAt: NOW - 40 * HOUR,
       startingCash: 10_000,
@@ -67,7 +79,7 @@ describe("the equity curve", () => {
       cash: 0,
       holdings: [holding("AAA", 1_000)],
       trades: [
-        { t: NOW - 30 * HOUR, symbol: "AAA", side: "buy", shares: 1_000, total: 10_000 },
+        { t: NOW - 30 * HOUR, symbol: "AAA", side: "buy", shares: 1_000, price: 10_000 / 1_000, total: 10_000, note: null },
       ],
       startedAt: NOW - 40 * HOUR,
       startingCash: 10_000,
@@ -85,8 +97,8 @@ describe("the equity curve", () => {
       cash: 10_400,
       holdings: [],
       trades: [
-        { t: NOW - 30 * HOUR, symbol: "AAA", side: "buy", shares: 200, total: 2_000 },
-        { t: NOW - 22 * HOUR, symbol: "AAA", side: "sell", shares: 200, total: 2_400 },
+        { t: NOW - 30 * HOUR, symbol: "AAA", side: "buy", shares: 200, price: 2_000 / 200, total: 2_000, note: null },
+        { t: NOW - 22 * HOUR, symbol: "AAA", side: "sell", shares: 200, price: 2_400 / 200, total: 2_400, note: null },
       ],
       startedAt: NOW - 40 * HOUR,
       startingCash: 10_000,
@@ -124,5 +136,78 @@ describe("the equity curve", () => {
     expect(s).toHaveLength(11);
     expect(s[0].t).toBe(NOW - HOUR);
     expect(s[s.length - 1].t).toBe(NOW);
+  });
+});
+
+describe("realized PnL", () => {
+  const t = (n: number) => NOW - (10 - n) * HOUR;
+  const trade = (
+    i: number,
+    side: "buy" | "sell",
+    shares: number,
+    price: number
+  ) => ({
+    t: t(i),
+    symbol: "AAA",
+    side,
+    shares,
+    price,
+    total: shares * price,
+    note: null,
+  });
+
+  it("books nothing until something is sold", () => {
+    expect(realizedPnl([trade(1, "buy", 100, 10)])).toBe(0);
+  });
+
+  it("books the gain when a winner is closed", () => {
+    // bought 100 at $10, sold 100 at $12
+    expect(realizedPnl([trade(1, "buy", 100, 10), trade(2, "sell", 100, 12)])).toBeCloseTo(200, 6);
+  });
+
+  it("books a loss the same way", () => {
+    expect(realizedPnl([trade(1, "buy", 100, 10), trade(2, "sell", 100, 7)])).toBeCloseTo(-300, 6);
+  });
+
+  it("averages the cost of several buys", () => {
+    // 100 at $10 then 100 at $20 → average $15; selling 200 at $18 books $600
+    const pnl = realizedPnl([
+      trade(1, "buy", 100, 10),
+      trade(2, "buy", 100, 20),
+      trade(3, "sell", 200, 18),
+    ]);
+    expect(pnl).toBeCloseTo(600, 6);
+  });
+
+  it("only books the part that was sold", () => {
+    const pnl = realizedPnl([
+      trade(1, "buy", 100, 10),
+      trade(2, "sell", 40, 15),
+    ]);
+    expect(pnl).toBeCloseTo(200, 6); // 40 × $5
+  });
+
+  it("survives a sell with nothing on the book", () => {
+    expect(realizedPnl([trade(1, "sell", 10, 5)])).toBeCloseTo(50, 6);
+  });
+});
+
+describe("holdings at a moment", () => {
+  it("knows what was held before and after a trade", () => {
+    const buyAt = NOW - 5 * HOUR;
+    const inputs: EquityInputs = {
+      cash: 5_000,
+      holdings: [holding("AAA", 100)],
+      trades: [
+        { t: buyAt, symbol: "AAA", side: "buy", shares: 100, price: 50, total: 5_000, note: null },
+      ],
+      startedAt: NOW - 10 * HOUR,
+      startingCash: 10_000,
+    };
+    const stateAt = makeStateAt(inputs);
+    expect(stateAt(buyAt - 1).shares.get("AAA") ?? 0).toBe(0);
+    expect(stateAt(buyAt - 1).cash).toBe(10_000);
+    expect(stateAt(buyAt + 1).shares.get("AAA")).toBe(100);
+    expect(stateAt(buyAt + 1).cash).toBe(5_000);
   });
 });

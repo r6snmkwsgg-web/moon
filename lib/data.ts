@@ -867,26 +867,37 @@ export async function getEquityInputs(userId: string): Promise<{
   const [quotes, profileRes, holdingsRes, tradesRes] = await Promise.all([
     getMarket(),
     admin.from("profiles").select("cash, created_at").eq("id", userId).maybeSingle(),
-    admin.from("holdings").select("ticker_id, shares").eq("user_id", userId),
+    admin
+      .from("holdings")
+      .select("ticker_id, shares, avg_cost")
+      .eq("user_id", userId),
     admin
       .from("trades")
-      .select("ticker_id, side, shares, total, created_at")
+      .select("ticker_id, side, shares, price, total, note, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: true })
       .limit(500),
   ]);
 
   const byId = new Map(quotes.map((q) => [q.ticker.id, q]));
+  const holdingRows = (holdingsRes.data ?? []) as {
+    ticker_id: string;
+    shares: number;
+    avg_cost: number;
+  }[];
   const heldNow = new Map(
-    ((holdingsRes.data ?? []) as { ticker_id: string; shares: number }[]).map(
-      (h) => [h.ticker_id, Number(h.shares)]
-    )
+    holdingRows.map((h) => [h.ticker_id, Number(h.shares)])
+  );
+  const costOf = new Map(
+    holdingRows.map((h) => [h.ticker_id, Number(h.avg_cost)])
   );
   const tradeRows = (tradesRes.data ?? []) as {
     ticker_id: string;
     side: "buy" | "sell";
     shares: number;
+    price: number;
     total: number;
+    note: string | null;
     created_at: string;
   }[];
 
@@ -919,6 +930,12 @@ export async function getEquityInputs(userId: string): Promise<{
       outstanding: quote.shares,
       series,
       events,
+      name: quote.ticker.name,
+      logoUrl: quote.ticker.logo_url,
+      avgCost: Number(costOf.get(id) ?? 0),
+      dayChange: quote.dayChange,
+      weekChange: quote.weekChange,
+      spark: quote.spark,
     });
   }
 
@@ -930,7 +947,9 @@ export async function getEquityInputs(userId: string): Promise<{
       symbol: symbolOf.get(t.ticker_id)!,
       side: t.side,
       shares: Number(t.shares),
+      price: Number(t.price),
       total: Number(t.total),
+      note: t.note ?? null,
     }));
 
   return {

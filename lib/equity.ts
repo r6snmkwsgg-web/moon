@@ -25,32 +25,22 @@ export interface EquityHolding {
   outstanding: number;
   series: ChartPoint[];
   events: RevenueEvent[];
+  // display, so the positions table can price off the same clock as the curve
+  name: string;
+  logoUrl: string | null;
+  avgCost: number;
+  dayChange: number;
+  weekChange: number;
+  spark: number[];
 }
 
-export interface EquityTrade {
-  t: number;
-  symbol: string;
-  side: "buy" | "sell";
-  shares: number;
-  total: number;
-}
-
-export interface EquityInputs {
-  cash: number; // right now
-  holdings: EquityHolding[];
-  trades: EquityTrade[]; // ascending
-  startedAt: number; // account creation — the curve begins here
-  startingCash: number;
-}
-
-/**
- * A function from instant → portfolio value. Trade replay is precomputed, so
- * sampling a few hundred points across a window stays cheap.
- */
-export function makeEquityAt(inputs: EquityInputs): (t: number) => number {
-  const priceAt = new Map<string, (t: number) => number>();
-  for (const h of inputs.holdings) {
-    priceAt.set(
+/** Price functions per symbol — the same ones the curve is built from. */
+export function makePricesAt(
+  holdings: EquityHolding[]
+): Map<string, (t: number) => number> {
+  const out = new Map<string, (t: number) => number>();
+  for (const h of holdings) {
+    out.set(
       h.symbol,
       makePriceAt(
         h.symbol,
@@ -63,14 +53,46 @@ export function makeEquityAt(inputs: EquityInputs): (t: number) => number {
       )
     );
   }
+  return out;
+}
 
-  // Walk the trades newest → oldest, recording the state BEFORE each one.
-  // states[i] is what cash and shares were just before trades[i] executed.
-  const trades = [...inputs.trades].sort((a, b) => a.t - b.t);
-  const now = { cash: inputs.cash, shares: new Map<string, number>() };
+export interface EquityTrade {
+  t: number;
+  symbol: string;
+  side: "buy" | "sell";
+  shares: number;
+  price: number;
+  total: number;
+  note: string | null; // the thesis, if one was attached
+}
+
+export interface EquityInputs {
+  cash: number; // right now
+  holdings: EquityHolding[];
+  trades: EquityTrade[]; // ascending
+  startedAt: number; // account creation — the curve begins here
+  startingCash: number;
+}
+
+export interface PortfolioState {
+  cash: number;
+  shares: Map<string, number>;
+}
+
+/**
+ * What the account held at any instant, by replaying the trade log backwards
+ * from today. Used by the value curve, and by anything that needs to know
+ * whether a revenue event actually touched this person's money.
+ */
+export function makeStateAt(inputs: EquityInputs): (t: number) => PortfolioState {
+  const now: PortfolioState = {
+    cash: inputs.cash,
+    shares: new Map<string, number>(),
+  };
   for (const h of inputs.holdings) now.shares.set(h.symbol, h.shares);
 
-  const states: { t: number; cash: number; shares: Map<string, number> }[] = [];
+  const trades = [...inputs.trades].sort((a, b) => a.t - b.t);
+  const states: (PortfolioState & { t: number })[] = [];
   let cash = now.cash;
   const shares = new Map(now.shares);
   for (let i = trades.length - 1; i >= 0; i--) {
@@ -86,8 +108,7 @@ export function makeEquityAt(inputs: EquityInputs): (t: number) => number {
     states[i] = { t: tr.t, cash, shares: new Map(shares) };
   }
 
-  return (t: number): number => {
-    // the first trade at or after t defines the state at t
+  return (t: number): PortfolioState => {
     let lo = 0;
     let hi = states.length;
     while (lo < hi) {
@@ -95,8 +116,46 @@ export function makeEquityAt(inputs: EquityInputs): (t: number) => number {
       if (states[mid].t <= t) lo = mid + 1;
       else hi = mid;
     }
-    const state = lo < states.length ? states[lo] : now;
+    return lo < states.length ? states[lo] : now;
+  };
+}
 
+/**
+ * Realized PnL, average-cost accounting: every sale books the difference
+ * between what it fetched and what those shares cost on average. Without
+ * this, selling a winner makes the gain vanish from the page — the open
+ * position it was measured against is gone.
+ */
+export function realizedPnl(trades: EquityTrade[]): number {
+  const book = new Map<string, { shares: number; avg: number }>();
+  let realized = 0;
+  for (const tr of [...trades].sort((a, b) => a.t - b.t)) {
+    const pos = book.get(tr.symbol) ?? { shares: 0, avg: 0 };
+    if (tr.side === "buy") {
+      const cost = pos.shares * pos.avg + tr.total;
+      pos.shares += tr.shares;
+      pos.avg = pos.shares > 0 ? cost / pos.shares : 0;
+    } else {
+      const sold = Math.min(tr.shares, pos.shares);
+      realized += tr.total - sold * pos.avg;
+      pos.shares = Math.max(0, pos.shares - tr.shares);
+      if (pos.shares === 0) pos.avg = 0;
+    }
+    book.set(tr.symbol, pos);
+  }
+  return realized;
+}
+
+/**
+ * A function from instant → portfolio value. Trade replay is precomputed, so
+ * sampling a few hundred points across a window stays cheap.
+ */
+export function makeEquityAt(inputs: EquityInputs): (t: number) => number {
+  const priceAt = makePricesAt(inputs.holdings);
+  const stateAt = makeStateAt(inputs);
+
+  return (t: number): number => {
+    const state = stateAt(t);
     let total = state.cash;
     for (const [symbol, qty] of state.shares) {
       if (qty <= 0) continue;
