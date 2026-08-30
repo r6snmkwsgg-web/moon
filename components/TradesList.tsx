@@ -18,10 +18,12 @@ export default function TradesList({
   trades,
   showSymbol = true,
   signedIn = false,
+  showNotes = true,
 }: {
   trades: FeedTrade[];
   showSymbol?: boolean;
   signedIn?: boolean;
+  showNotes?: boolean; // off where a ThesisFeed already shows them
 }) {
   if (trades.length === 0) {
     return (
@@ -81,7 +83,7 @@ export default function TradesList({
               </span>
             </span>
           </div>
-          {t.note && (
+          {showNotes && t.note && (
             <p className="border-l-2 border-terminal-line pl-2 text-xs italic leading-snug text-terminal-muted">
               “{t.note}”
             </p>

@@ -17,6 +17,7 @@ import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import CountdownChip from "@/components/CountdownChip";
 import Discussion from "@/components/Discussion";
 import InteractiveChart from "@/components/InteractiveChart";
+import ThesisFeed from "@/components/ThesisFeed";
 import LivePrice from "@/components/LivePrice";
 import TradePanel from "@/components/TradePanel";
 import ShareButton from "@/components/ShareButton";
@@ -75,10 +76,11 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const user = await getUser();
   const isFounder = user !== null && t.claimed_by === user.id;
 
-  const [gauge, recentTrades, posts] = await Promise.all([
+  const [gauge, recentTrades, posts, theses] = await Promise.all([
     getVoteGauge(t.id),
     getRecentTrades(10, t.id),
     getTickerPosts(t.id, quote.price),
+    getRecentTrades(15, t.id, undefined, true),
   ]);
 
   // Signed-in extras (own rows only — RLS applies).
@@ -457,7 +459,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
         </section>
       )}
 
-      {/* the floor + recent trades */}
+      {/* the floor + theses + recent trades */}
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Discussion
           posts={posts}
@@ -466,19 +468,23 @@ export default async function TickerPage({ params, searchParams }: Props) {
           signedIn={user !== null}
           viewerId={user?.id ?? null}
         />
-        <section className="panel">
-          <div className="flex items-baseline justify-between border-b border-terminal-line px-3 py-2">
-            <h2 className="microlabel">Recent trades</h2>
-            <Link href="/tape" className="text-[11px] text-terminal-accent">
-              full tape →
-            </Link>
-          </div>
-          <TradesList
-            trades={recentTrades}
-            showSymbol={false}
-            signedIn={user !== null}
-          />
-        </section>
+        <div className="space-y-4">
+          <ThesisFeed theses={theses} />
+          <section className="panel">
+            <div className="flex items-baseline justify-between border-b border-terminal-line px-3 py-2">
+              <h2 className="microlabel">Recent trades</h2>
+              <Link href="/tape" className="text-[11px] text-terminal-accent">
+                full tape →
+              </Link>
+            </div>
+            <TradesList
+              trades={recentTrades}
+              showSymbol={false}
+              signedIn={user !== null}
+              showNotes={false}
+            />
+          </section>
+        </div>
       </div>
 
       {/* MRR history */}

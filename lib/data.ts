@@ -471,7 +471,8 @@ export interface FeedTrade {
 export async function getRecentTrades(
   limit = 40,
   tickerId?: string,
-  userIds?: string[]
+  userIds?: string[],
+  thesesOnly = false
 ): Promise<FeedTrade[]> {
   if (userIds && userIds.length === 0) return [];
   const admin = createSupabaseAdminClient();
@@ -482,6 +483,9 @@ export async function getRecentTrades(
     .limit(limit);
   if (tickerId) query = query.eq("ticker_id", tickerId);
   if (userIds) query = query.in("user_id", userIds);
+  // trades that carry a written thesis (0003; the filter no-ops to an empty
+  // result pre-migration since the column is missing)
+  if (thesesOnly) query = query.not("note", "is", null);
   const { data } = await query;
   return ((data ?? []) as Array<Record<string, unknown>>).map((t) => {
     const profile = (t.profiles ?? {}) as Record<string, unknown>;

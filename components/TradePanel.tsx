@@ -151,7 +151,7 @@ export default function TradePanel({
         value={note}
         onChange={(e) => setNote(e.target.value)}
         maxLength={140}
-        placeholder="why? (optional — shows on the tape)"
+        placeholder="your thesis (optional — goes on the record)"
         className="input text-xs"
       />
 
