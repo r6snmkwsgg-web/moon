@@ -33,6 +33,7 @@ import {
   requestDelisting,
   submitHandleProof,
   submitMrr,
+  updateLogo,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -437,6 +438,25 @@ export default async function TickerPage({ params, searchParams }: Props) {
               )}
             </div>
           )}
+
+          <form
+            action={updateLogo}
+            className="flex flex-wrap items-end gap-2 border-t border-terminal-line pt-3"
+          >
+            <input type="hidden" name="ticker_id" value={t.id} />
+            <label className="min-w-0 flex-1 text-xs text-terminal-muted">
+              {t.logo_url ? "Replace logo" : "Add a logo"} (PNG/JPG/WebP,
+              under 1MB — shows on the board and your share card)
+              <input
+                type="file"
+                name="logo"
+                required
+                accept="image/png,image/jpeg,image/webp"
+                className="input mt-1 file:mr-2 file:rounded file:border-0 file:bg-terminal-raise file:px-2 file:py-1 file:font-sans file:text-xs file:text-terminal-text"
+              />
+            </label>
+            <button className="btn-ghost text-xs">Upload</button>
+          </form>
 
           <div className="border-t border-terminal-line pt-3">
             {delistRequested ? (

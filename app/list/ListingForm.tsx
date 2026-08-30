@@ -13,7 +13,7 @@ import {
 import { fairPrice } from "@/lib/pricing";
 import { fmtCompact, fmtPrice } from "@/lib/format";
 import LogoTile from "@/components/LogoTile";
-import { listStartup, type ListingResult } from "./actions";
+import { listStartup, uploadLogo, type ListingResult } from "./actions";
 
 const initialState: ListingResult = {};
 
@@ -40,6 +40,10 @@ export default function ListingForm() {
   const [pitch, setPitch] = useState("");
   const [handle, setHandle] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
+  const [logoState, setLogoState] = useState<
+    "idle" | "uploading" | "done" | "error"
+  >("idle");
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [stripeKey, setStripeKey] = useState("");
   const [symbolStatus, setSymbolStatus] = useState<SymbolStatus>("idle");
   const [copied, setCopied] = useState(false);
@@ -293,13 +297,41 @@ export default function ListingForm() {
               />
             </label>
             <label className="text-xs text-terminal-muted">
-              Logo URL (optional, https)
+              Logo (optional — PNG/JPG/WebP, under 1MB)
               <input
-                value={logoUrl}
-                onChange={(e) => setLogoUrl(e.target.value)}
-                placeholder="https://…"
-                className="input mt-1"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setLogoState("uploading");
+                  setLogoError(null);
+                  const fd = new FormData();
+                  fd.append("logo", file);
+                  const res = await uploadLogo(fd);
+                  if (res.url) {
+                    setLogoUrl(res.url);
+                    setLogoState("done");
+                  } else {
+                    setLogoState("error");
+                    setLogoError(res.error ?? "Upload failed.");
+                  }
+                }}
+                className="input mt-1 file:mr-2 file:rounded file:border-0 file:bg-terminal-raise file:px-2 file:py-1 file:font-sans file:text-xs file:text-terminal-text"
               />
+              <span className="mt-1 block font-mono text-[10px]">
+                {logoState === "uploading" && (
+                  <span className="text-terminal-muted">uploading…</span>
+                )}
+                {logoState === "done" && (
+                  <span className="flex items-center gap-0.5 text-terminal-up">
+                    <Check size={10} /> uploaded — see the preview above
+                  </span>
+                )}
+                {logoState === "error" && (
+                  <span className="text-terminal-down">{logoError}</span>
+                )}
+              </span>
             </label>
           </div>
           <button

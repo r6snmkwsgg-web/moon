@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient, getUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { recordTickerSnapshot } from "@/lib/snapshot";
+import { storeLogo } from "@/lib/logos";
 
 /**
  * Founder posts their own monthly MRR number (honor system, labeled
@@ -259,6 +260,33 @@ export async function disconnectStripe(formData: FormData) {
     .update({ stripe_verified: false })
     .eq("id", ticker.id);
   revalidatePath(`/t/${ticker.symbol}`);
+}
+
+/** Founder uploads or replaces their ticker's logo. */
+export async function updateLogo(formData: FormData) {
+  const user = await getUser();
+  if (!user) throw new Error("Sign in first.");
+
+  const tickerId = String(formData.get("ticker_id") ?? "");
+  const admin = createSupabaseAdminClient();
+  const { data: ticker } = await admin
+    .from("tickers")
+    .select("id, symbol, claimed_by")
+    .eq("id", tickerId)
+    .maybeSingle();
+  if (!ticker || ticker.claimed_by !== user.id) {
+    throw new Error("Only the claimed founder can change the logo.");
+  }
+
+  const stored = await storeLogo(admin, user.id, formData.get("logo"));
+  if (!stored.url) throw new Error(stored.error ?? "Upload failed.");
+
+  await admin
+    .from("tickers")
+    .update({ logo_url: stored.url })
+    .eq("id", ticker.id);
+  revalidatePath(`/t/${ticker.symbol}`);
+  revalidatePath("/");
 }
 
 /** Founder asks for their ticker to be delisted; admin acts on it in /admin. */

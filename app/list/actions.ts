@@ -12,6 +12,20 @@ import {
 import { fairPrice } from "@/lib/pricing";
 import { currentMonthISO } from "@/lib/format";
 import { MAX_LISTINGS_PER_USER } from "@/lib/config";
+import { storeLogo } from "@/lib/logos";
+
+export interface LogoResult {
+  url?: string;
+  error?: string;
+}
+
+/** Upload a logo file (wizard step 1) → public URL for the listing. */
+export async function uploadLogo(formData: FormData): Promise<LogoResult> {
+  const user = await getUser();
+  if (!user) return { error: "Sign in first." };
+  const admin = createSupabaseAdminClient();
+  return storeLogo(admin, user.id, formData.get("logo"));
+}
 
 export interface ListingResult {
   error?: string;
