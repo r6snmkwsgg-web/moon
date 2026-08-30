@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -67,12 +67,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unknown ticker." }, { status: 404 });
   }
 
-  // the whole revenue record, because the multiple is earned by durability
-  const { data: revenue } = await admin
-    .from("mrr_updates")
-    .select("month, mrr")
-    .eq("ticker_id", ticker.id)
-    .order("month", { ascending: true });
+  // the whole revenue record, because the multiple is earned by durability —
+  // fetched alongside the float check, since neither needs the other
+  const [{ data: revenue }, { data: heldRows }] = await Promise.all([
+    admin
+      .from("mrr_updates")
+      .select("month, mrr")
+      .eq("ticker_id", ticker.id)
+      .order("month", { ascending: true }),
+    side === "buy"
+      ? admin.from("holdings").select("shares").eq("ticker_id", ticker.id)
+      : Promise.resolve({ data: [] as { shares: number }[] }),
+  ]);
   const history = ((revenue ?? []) as { month: string; mrr: number }[]).map(
     (r) => ({ month: r.month, mrr: Number(r.mrr) })
   );
@@ -83,10 +89,6 @@ export async function POST(request: Request) {
   // can't take total held past that. (Positions from before this rule are
   // grandfathered — they only ever shrink.)
   if (side === "buy") {
-    const { data: heldRows } = await admin
-      .from("holdings")
-      .select("shares")
-      .eq("ticker_id", ticker.id);
     const held = ((heldRows ?? []) as { shares: number }[]).reduce(
       (sum, h) => sum + Number(h.shares),
       0
@@ -140,6 +142,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
+  // Everything below is bookkeeping the trader shouldn't wait on: it runs
+  // after the response is flushed, which is most of the fill latency.
+  after(async () => {
   // keep today's snapshot current so charts include this print's aftermath
   await recordTickerSnapshot(admin, ticker.id, {
     mrr,
@@ -191,6 +196,7 @@ export async function POST(request: Request) {
       // follows table missing pre-migration
     }
   }
+  });
 
   return NextResponse.json({
     ok: true,

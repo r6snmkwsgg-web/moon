@@ -10,7 +10,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { fairPrice } from "@/lib/pricing";
+import { ARR_MULTIPLE, fairPrice, SHARES_OUTSTANDING } from "@/lib/pricing";
 import { fmtCompact, fmtPrice } from "@/lib/format";
 import LogoTile from "@/components/LogoTile";
 import { listStartup, uploadLogo, type ListingResult } from "./actions";
@@ -88,6 +88,27 @@ export default function ListingForm() {
     handle.trim().length > 0;
   const keyLooksRight = /^rk_(live|test)_/.test(stripeKey.trim());
 
+  // A dead button with no explanation is the worst thing in a form. Say what
+  // is missing, in the order the fields appear.
+  const step1Blocker = !/^[A-Z]{2,6}$/.test(sym)
+    ? "Pick a ticker symbol — 2 to 6 letters."
+    : symbolStatus === "taken"
+      ? `$${sym} is already trading. Try another symbol.`
+      : !name.trim()
+        ? "Add your startup's name."
+        : !pitch.trim()
+          ? "Add the one-line pitch traders will see."
+          : !handle.trim()
+            ? "Add your X or Threads handle — it's how traders check a listing is really you."
+            : !/^@?[A-Za-z0-9_.]{1,50}$/.test(handle.trim())
+              ? "That handle has characters X and Threads don't allow."
+              : null;
+  const step2Blocker = !stripeKey.trim()
+    ? "Paste your restricted key to continue — your MRR (and your opening price) comes from it."
+    : !keyLooksRight
+      ? "Restricted keys start with rk_live_ — that's the one to paste."
+      : null;
+
   // ── the celebration: MRR → fair value → opening price ────────────────────
   if (state.ok) {
     const o = state.ok;
@@ -102,7 +123,7 @@ export default function ListingForm() {
             className="fade-up text-xs text-terminal-muted"
             style={{ animationDelay: "0.5s" }}
           >
-            fair value = 3 × ARR ÷ 10,000 shares (ARR = MRR × 12)
+            fair value = {ARR_MULTIPLE}× ARR ÷ {SHARES_OUTSTANDING.toLocaleString("en-US")} shares (ARR = MRR × 12)
           </p>
           <p
             className="fade-up font-mono text-3xl font-bold text-terminal-up"
@@ -288,7 +309,7 @@ export default function ListingForm() {
               />
             </label>
             <label className="text-xs text-terminal-muted">
-              Your X/Threads handle
+              Your X/Threads handle (required)
               <input
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
@@ -343,6 +364,11 @@ export default function ListingForm() {
             Next: verify your revenue
             <ArrowRight size={13} />
           </button>
+          {step1Blocker && (
+            <p className="text-center text-[11px] text-terminal-muted">
+              {step1Blocker}
+            </p>
+          )}
         </div>
       )}
 
@@ -410,6 +436,11 @@ export default function ListingForm() {
               <ArrowRight size={13} />
             </button>
           </div>
+          {step2Blocker && (
+            <p className="text-center text-[11px] text-terminal-muted">
+              {step2Blocker}
+            </p>
+          )}
         </div>
       )}
 
@@ -445,8 +476,10 @@ export default function ListingForm() {
 
           <p className="rounded-md bg-terminal-raise/60 px-3 py-2 text-[11px] leading-relaxed text-terminal-muted">
             On launch we verify the key, compute your MRR from active
-            subscriptions, and your opening price is set at fair value — 3 ×
-            MRR ÷ 10,000 shares. For {fmtCompact(1000)} MRR that&apos;s{" "}
+            subscriptions, and your opening price is set at fair value —{" "}
+            {ARR_MULTIPLE}× ARR over{" "}
+            {SHARES_OUTSTANDING.toLocaleString("en-US")} shares. For{" "}
+            {fmtCompact(1000)} MRR that&apos;s{" "}
             {fmtPrice(fairPrice(1000))}/share, for {fmtCompact(10000)} it&apos;s{" "}
             {fmtPrice(fairPrice(10000))}.
           </p>

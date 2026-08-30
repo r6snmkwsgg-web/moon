@@ -19,7 +19,7 @@ export default function HandleForm({ current }: { current: string }) {
           required
           minLength={3}
           maxLength={20}
-          pattern="[a-zA-Z0-9][a-zA-Z0-9-]{1,18}[a-zA-Z0-9]"
+          pattern="[a-zA-Z0-9][a-zA-Z0-9\-]{1,18}[a-zA-Z0-9]"
           autoComplete="off"
           autoCapitalize="none"
           spellCheck={false}

@@ -1173,23 +1173,22 @@ export async function getRecapStats(): Promise<RecapStats> {
   const admin = createSupabaseAdminClient();
   const mrrMoves: RecapStats["mrrMoves"] = [];
   try {
-    const { data: recent } = await admin
+    // One read for the whole revenue record, then the previous month is a
+    // lookup — this was a query per update, which cost 16s on a live board.
+    const { data: all } = await admin
       .from("mrr_updates")
       .select("*")
-      .gte("created_at", new Date(Date.now() - 7 * 86400_000).toISOString());
-    for (const u of (recent ?? []) as MrrUpdate[]) {
+      .order("month", { ascending: true });
+    const history = historyByTicker((all ?? []) as MrrUpdate[]);
+    const since = new Date(Date.now() - 7 * 86400_000).toISOString();
+    for (const u of (all ?? []) as MrrUpdate[]) {
+      if (u.created_at < since) continue;
       const quote = byId.get(u.ticker_id);
       if (!quote) continue;
-      const { data: prev } = await admin
-        .from("mrr_updates")
-        .select("mrr")
-        .eq("ticker_id", u.ticker_id)
-        .lt("month", u.month)
-        .order("month", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (!prev) continue;
-      mrrMoves.push({ quote, from: Number(prev.mrr), to: Number(u.mrr) });
+      const months = history.get(u.ticker_id) ?? [];
+      const i = months.findIndex((m) => m.month === u.month);
+      if (i < 1) continue;
+      mrrMoves.push({ quote, from: months[i - 1].mrr, to: Number(u.mrr) });
     }
     mrrMoves.sort(
       (a, b) =>

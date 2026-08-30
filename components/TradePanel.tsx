@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check } from "lucide-react";
@@ -43,6 +43,20 @@ export default function TradePanel({
   const [pending, setPending] = useState<"buy" | "sell" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filled, setFilled] = useState(false);
+  // A fill is instant; the server re-render behind it is not (~2.5s). Without
+  // this the panel still reads "Cash $10,000 · Held 0" after a successful buy,
+  // which is exactly what makes people click Buy a second time.
+  const [fill, setFill] = useState<{ cash: number; held: number } | null>(null);
+  // a short lock after a fill: the accidental second click is how one order
+  // became two identical prints
+  const [cooling, setCooling] = useState(false);
+  const [refreshing, startRefresh] = useTransition();
+  useEffect(() => {
+    // server numbers have landed — drop the optimistic ones
+    setFill(null);
+  }, [cash, sharesHeld]);
+  const shownCash = fill ? fill.cash : cash;
+  const shownHeld = fill ? fill.held : sharesHeld;
   // the quote re-prices every second, like the chart — a stale buy price is
   // the fastest way to make a market feel fake
   const [nowT, setNowT] = useState<number | null>(null);
@@ -86,12 +100,13 @@ export default function TradePanel({
 
   // the biggest buy the cash covers, walking the same fill curve + flow
   function maxAffordable(): number {
-    if (cash === null || cash <= 0 || mrr <= 0) return 0;
+    const purse = shownCash;
+    if (purse === null || purse <= 0 || mrr <= 0) return 0;
     let lo = 0;
     let hi = SHARES_OUTSTANDING;
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
-      if (est("buy", mid).total <= cash) lo = mid;
+      if (est("buy", mid).total <= purse) lo = mid;
       else hi = mid - 1;
     }
     return lo;
@@ -99,7 +114,7 @@ export default function TradePanel({
 
   async function trade(side: "buy" | "sell") {
     // selling clamps to what's actually held — matches the button label
-    const qty = side === "sell" ? Math.min(shares, sharesHeld) : shares;
+    const qty = side === "sell" ? Math.min(shares, shownHeld) : shares;
     if (qty < 1) return;
     setPending(side);
     setMessage(null);
@@ -119,7 +134,14 @@ export default function TradePanel({
         setNote("");
         setFilled(true);
         setTimeout(() => setFilled(false), 1200);
-        router.refresh();
+        setCooling(true);
+        setTimeout(() => setCooling(false), 1200);
+        // show the new position immediately, then let the server confirm it
+        setFill({
+          cash: (shownCash ?? 0) + (side === "buy" ? -json.total : json.total),
+          held: shownHeld + (side === "buy" ? qty : -qty),
+        });
+        startRefresh(() => router.refresh());
       }
     } catch {
       setMessage("Network error — try again.");
@@ -138,12 +160,12 @@ export default function TradePanel({
         <span>
           Cash:{" "}
           <span className="num font-mono text-terminal-text">
-            {cash !== null ? fmtMoney(cash) : "—"}
+            {shownCash !== null ? fmtMoney(shownCash) : "—"}
           </span>
         </span>
         <span>
           Held:{" "}
-          <span className="num font-mono text-terminal-text">{sharesHeld}</span>
+          <span className="num font-mono text-terminal-text">{shownHeld}</span>
         </span>
       </div>
 
@@ -212,14 +234,14 @@ export default function TradePanel({
         >
           max buy
         </button>
-        {sharesHeld > 0 && (
+        {shownHeld > 0 && (
           <button
             type="button"
-            onClick={() => setSharesText(String(sharesHeld))}
+            onClick={() => setSharesText(String(shownHeld))}
             title="Everything you hold"
             className="rounded border border-terminal-line px-2 py-0.5 font-mono text-[11px] text-terminal-muted transition-colors hover:border-terminal-down/60 hover:text-terminal-down"
           >
-            all {sharesHeld.toLocaleString("en-US")}
+            all {shownHeld.toLocaleString("en-US")}
           </button>
         )}
       </div>
@@ -243,10 +265,10 @@ export default function TradePanel({
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => trade("buy")}
-          disabled={pending !== null || shares < 1}
+          disabled={pending !== null || refreshing || cooling || shares < 1}
           className="btn-buy"
         >
-          {pending === "buy"
+          {pending === "buy" || (refreshing && filled)
             ? "…"
             : shares >= 1
               ? `Buy ${shares.toLocaleString("en-US")}`
@@ -254,13 +276,13 @@ export default function TradePanel({
         </button>
         <button
           onClick={() => trade("sell")}
-          disabled={pending !== null || sharesHeld < 1 || shares < 1}
+          disabled={pending !== null || refreshing || cooling || shownHeld < 1 || shares < 1}
           className="btn-sell"
         >
           {pending === "sell"
             ? "…"
-            : shares >= 1 && sharesHeld >= 1
-              ? `Sell ${Math.min(shares, sharesHeld).toLocaleString("en-US")}`
+            : shares >= 1 && shownHeld >= 1
+              ? `Sell ${Math.min(shares, shownHeld).toLocaleString("en-US")}`
               : "Sell"}
         </button>
       </div>
