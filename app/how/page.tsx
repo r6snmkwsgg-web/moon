@@ -81,6 +81,26 @@ export default function HowPage() {
             fades in about two weeks; only revenue moves the price for good.
           </p>
         </div>
+
+        <div className="panel space-y-2 p-4">
+          <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-muted">
+            4 · The flow — simulated volatility
+          </h2>
+          <p>
+            Between real events, prices ride <b>the flow</b>: a per-ticker
+            volatility field that runs, dips, squeezes and chops around the
+            anchor — small caps swing harder, hyped tickers chop more, and
+            everything eventually blows back toward fair value.
+          </p>
+          <p className="text-terminal-muted">
+            Full disclosure: the flow is pure game physics — deterministic,
+            identical for every player, capped at about ±55%, and it never
+            touches the facts. MRR is real, every trade on the tape is real,
+            and the anchor only moves on real revenue. The flow is what makes
+            it a market you can day trade instead of a spreadsheet you check
+            monthly. Orders fill at the flow price you see quoted.
+          </p>
+        </div>
       </section>
 
       <PricingPlayground />

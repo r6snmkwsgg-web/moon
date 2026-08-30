@@ -3,8 +3,9 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   changeFraction,
   fairPrice,
-  livePrice,
-  marketCap,
+  flowPrice,
+  marketFlow,
+  SHARES_OUTSTANDING,
 } from "@/lib/pricing";
 import { STARTING_CASH } from "@/lib/config";
 import { computeXp } from "@/lib/xp";
@@ -41,7 +42,8 @@ function buildQuote(
   snaps: PriceSnapshot[] // this ticker's snapshots, day ascending
 ): TickerQuote {
   const sentiment = Number(ticker.sentiment);
-  const price = livePrice(latestMrr, sentiment);
+  // anchor × hype × the flow — the one price everything shows and fills at
+  const price = flowPrice(ticker.symbol, latestMrr, sentiment);
   const spark = snaps.map((s) => Number(s.price));
 
   // Change vs. the snapshot closest to 1 / 7 days ago.
@@ -63,7 +65,7 @@ function buildQuote(
     latestMrr,
     price,
     fairPrice: fairPrice(latestMrr),
-    marketCap: marketCap(latestMrr, sentiment),
+    marketCap: price * SHARES_OUTSTANDING,
     dayChange: dayBase ? changeFraction(Number(dayBase.price), price) : 0,
     weekChange: weekBase ? changeFraction(Number(weekBase.price), price) : 0,
     spark: [...spark, price], // live price as the final point
@@ -102,14 +104,17 @@ export async function getMarket(): Promise<TickerQuote[]> {
 }
 
 /**
- * The dense price series a chart deserves: daily snapshots plus every real
- * trade print (the trades table stores each fill's price + timestamp), with
- * the live price as the final point. No synthesized wiggle — every point on
- * the line actually happened.
+ * The price series a chart deserves. Anchor points are REAL — daily
+ * snapshots, every trade print, and the live price. Between anchors the
+ * line is modulated by the deterministic flow (endpoint-matched, so every
+ * real value stays exactly where it happened): the fabricated volatility
+ * between facts, same for every viewer, reconstructible at any time.
  */
 export async function getPriceSeries(
   tickerId: string,
-  currentPrice: number
+  symbol: string,
+  mrr: number,
+  sentiment: number
 ): Promise<ChartPoint[]> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
@@ -128,20 +133,46 @@ export async function getPriceSeries(
       .limit(2000),
   ]);
 
-  const points: ChartPoint[] = [];
+  const anchors: ChartPoint[] = [];
   for (const s of (snapsRes.data ?? []) as { day: string; price: number }[]) {
     // the daily cron fires 06:00 UTC — pin snapshots to that moment
-    points.push({ t: Date.parse(`${s.day}T06:00:00Z`), price: Number(s.price) });
+    anchors.push({
+      t: Date.parse(`${s.day}T06:00:00Z`),
+      price: Number(s.price),
+    });
   }
   for (const t of (tradesRes.data ?? []) as {
     price: number;
     created_at: string;
   }[]) {
-    points.push({ t: Date.parse(t.created_at), price: Number(t.price) });
+    anchors.push({ t: Date.parse(t.created_at), price: Number(t.price) });
   }
-  points.sort((a, b) => a.t - b.t);
-  points.push({ t: Date.now(), price: currentPrice });
-  return points.slice(-1500);
+  anchors.sort((a, b) => a.t - b.t);
+  anchors.push({ t: Date.now(), price: flowPrice(symbol, mrr, sentiment) });
+
+  // flow-modulated interpolation, pinned to the real values at both ends:
+  // p(t) = lerp(real) × (1 + flow(t)) / lerp(1 + flow(endpoints))
+  const flowAt = (t: number) => 1 + marketFlow(symbol, t, mrr);
+  const series: ChartPoint[] = [];
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    series.push(a);
+    const b = anchors[i + 1];
+    if (!b) break;
+    const gap = b.t - a.t;
+    if (gap < 30 * 60_000 || a.price <= 0 || b.price <= 0) continue;
+    const steps = Math.min(40, Math.floor(gap / (10 * 60_000)));
+    const fa = flowAt(a.t);
+    const fb = flowAt(b.t);
+    for (let k = 1; k < steps; k++) {
+      const u = k / steps;
+      const t = a.t + gap * u;
+      const base = a.price + (b.price - a.price) * u;
+      const norm = fa + (fb - fa) * u;
+      series.push({ t, price: (base * flowAt(t)) / norm });
+    }
+  }
+  return series.slice(-1500);
 }
 
 /**
@@ -322,7 +353,12 @@ export async function getTickerPage(symbol: string): Promise<{
         .select("price, shares, total")
         .eq("ticker_id", ticker.id)
         .gte("created_at", todayStart),
-      getPriceSeries(ticker.id, quote.price),
+      getPriceSeries(
+        ticker.id,
+        (ticker as Ticker).symbol,
+        latestMrr,
+        Number((ticker as Ticker).sentiment)
+      ),
     ]);
 
   const floatHeld = ((heldRes.data ?? []) as { shares: number }[]).reduce(
@@ -339,7 +375,15 @@ export async function getTickerPage(symbol: string): Promise<{
     .reverse()
     .find((s) => s.day < todayStart.slice(0, 10));
   const tradedPrices = todayTrades.map((t) => Number(t.price));
+  // sample today's flow so the range reflects the day's actual path
   const dayPrices = [...tradedPrices, quote.price];
+  const t0 = Date.parse(todayStart);
+  const sentimentNow = Number((ticker as Ticker).sentiment);
+  for (let t = t0; t < Date.now(); t += 15 * 60_000) {
+    dayPrices.push(
+      flowPrice((ticker as Ticker).symbol, latestMrr, sentimentNow, t)
+    );
+  }
   const dayStats: DayStats = {
     open: prevSnap ? Number(prevSnap.price) : null,
     high: dayPrices.length ? Math.max(...dayPrices) : null,

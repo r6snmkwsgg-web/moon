@@ -53,7 +53,12 @@ export default async function ExchangePage() {
   // Dense series + real story dots for the hero (signed-out only).
   const [heroSeries, heroEvents] = !user && featured
     ? await (async () => {
-        const series = await getPriceSeries(featured.ticker.id, featured.price);
+        const series = await getPriceSeries(
+          featured.ticker.id,
+          featured.ticker.symbol,
+          featured.latestMrr,
+          Number(featured.ticker.sentiment)
+        );
         const events = await getHeroStory(featured.ticker.id, series);
         return [series, events] as const;
       })()

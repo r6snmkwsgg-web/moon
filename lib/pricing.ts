@@ -104,12 +104,98 @@ export interface Fill {
   newSentiment: number;
 }
 
+// ── the flow: simulated volatility ──────────────────────────────────────────
+//
+// Between real events (trades, earnings, decay) nothing moves, and a market
+// where nothing moves is a spreadsheet. The flow is DISCLOSED game physics:
+// a deterministic, per-ticker volatility field around the anchor — multi-day
+// runs, squeezes, crashes, sleepy stretches — computed as a pure function of
+// (symbol, time). No randomness at request time, no database writes: every
+// client and the server agree on the price at any instant, and charts can
+// reconstruct any past moment. Facts stay real: MRR, trades, and events are
+// never fabricated. Only the weather is simulated, and it always blows back
+// toward fair value.
+
+/** Hard cap on simulated deviation from the sentiment-adjusted price. */
+export const FLOW_CAP = 0.55;
+
+/** Deterministic 32-bit hash → [0, 1). Pure math — identical everywhere. */
+function hash01(seed: string, n: number): number {
+  const s = `${seed}#${n}`;
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995) >>> 0;
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+/** Smooth value noise in [-1, 1] with the given period (ms). */
+function valueNoise(seed: string, t: number, period: number): number {
+  const x = t / period;
+  const i = Math.floor(x);
+  const f = x - i;
+  const u = f * f * (3 - 2 * f); // smoothstep between lattice values
+  const a = hash01(seed, i) * 2 - 1;
+  const b = hash01(seed, i + 1) * 2 - 1;
+  return a + (b - a) * u;
+}
+
+/**
+ * Per-ticker volatility multiplier: small caps rip and dump harder.
+ * MRR $500 ≈ 1.5×, MRR $50k ≈ 0.8×. Deliberately independent of sentiment:
+ * if hype changed the amplitude, a buy could inflate a positive flow and
+ * sell straight into it — a guaranteed self-pump skim.
+ */
+export function volatilityFactor(mrr: number): number {
+  return Math.max(
+    0.7,
+    Math.min(1.7, 1.9 - 0.28 * Math.log10(Math.max(mrr, 1) + 100))
+  );
+}
+
+/**
+ * The flow at an instant: signed fraction in (−FLOW_CAP, +FLOW_CAP).
+ * Octaves: multi-day swings, intraday runs, hourly moves, minute chop, and
+ * tape shimmer — summed, scaled by the ticker's volatility, then squashed
+ * through tanh so extremes flatten instead of exploding.
+ */
+export function marketFlow(symbol: string, t: number, mrr = 0): number {
+  const H = 3600_000;
+  const raw =
+    0.2 * valueNoise(`${symbol}/a`, t, 72 * H) + // the regime: runs & slumps
+    0.13 * valueNoise(`${symbol}/b`, t, 18 * H) + // intraday trends
+    0.055 * valueNoise(`${symbol}/c`, t, 4 * H) + // hourly waves
+    0.022 * valueNoise(`${symbol}/d`, t, (2 / 3) * H) + // 40-min chop
+    0.009 * valueNoise(`${symbol}/e`, t, H / 20); // 3-min shimmer
+  const scaled = raw * volatilityFactor(mrr);
+  return FLOW_CAP * Math.tanh(scaled / 0.32);
+}
+
+/**
+ * What the ticker trades at, flow included — the ONLY price the app should
+ * show or fill at. Anchor × hype × weather.
+ */
+export function flowPrice(
+  symbol: string,
+  mrr: number,
+  sentiment: number,
+  t = Date.now()
+): number {
+  return livePrice(mrr, sentiment) * (1 + marketFlow(symbol, t, mrr));
+}
+
 /**
  * Slippage: an order fills SHARE BY SHARE along the sentiment curve, so big
  * buys pay progressively more and big sells receive progressively less.
  * Sentiment moves linearly with shares (tradeImpact), so the average price
  * over the moving stretch is fair × (1 + mean sentiment); any shares filled
  * after sentiment pins at the ±40% cap fill flat at the cap price.
+ * NOTE: callers fill at the flow-adjusted price — scale avgPrice/total by
+ * (1 + marketFlow(...)) at execution time (see executionFillAt).
  */
 export function executionFill(
   mrr: number,
@@ -133,4 +219,27 @@ export function executionFill(
     (movingShares * (1 + (s0 + sEnd) / 2) + cappedShares * (1 + sEnd));
 
   return { avgPrice: total / shares, total, newSentiment: sEnd };
+}
+
+/**
+ * executionFill at a moment in time: the sentiment-curve fill scaled by the
+ * flow, so orders execute at the same price the tape is showing. Round trips
+ * at the same instant stay a wash; profiting off the flow means actually
+ * timing it.
+ */
+export function executionFillAt(
+  symbol: string,
+  mrr: number,
+  sentiment: number,
+  side: TradeSide,
+  shares: number,
+  t = Date.now()
+): Fill {
+  const base = executionFill(mrr, sentiment, side, shares);
+  const drift = 1 + marketFlow(symbol, t, mrr);
+  return {
+    avgPrice: base.avgPrice * drift,
+    total: base.total * drift,
+    newSentiment: base.newSentiment,
+  };
 }

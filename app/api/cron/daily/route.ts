@@ -4,7 +4,7 @@ import {
   changeFraction,
   decaySentiment,
   fairPrice,
-  livePrice,
+  flowPrice,
 } from "@/lib/pricing";
 import {
   computeMrrFromStripe,
@@ -131,7 +131,7 @@ export async function GET(request: Request) {
       .eq("id", ticker.id);
     if (updateErr) continue;
 
-    const price = livePrice(mrr, sentiment);
+    const price = flowPrice(ticker.symbol, mrr, sentiment);
     const { error: snapErr } = await admin.from("price_snapshots").upsert(
       {
         ticker_id: ticker.id,

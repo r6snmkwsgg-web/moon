@@ -10,10 +10,15 @@ import {
   clampSentiment,
   decaySentiment,
   executionFill,
+  executionFillAt,
   fairPrice,
+  FLOW_CAP,
+  flowPrice,
   livePrice,
   marketCap,
+  marketFlow,
   tradeImpact,
+  volatilityFactor,
 } from "@/lib/pricing";
 
 describe("fairPrice — the 3x revenue anchor", () => {
@@ -250,5 +255,71 @@ describe("the whole mechanic, end to end", () => {
     // Earnings: founder reports MRR up 50% — the anchor jumps instantly.
     const earnings = livePrice(mrr * 1.5, sentiment);
     expect(earnings).toBeCloseTo(cooled * 1.5, 10);
+  });
+});
+
+describe("the flow (simulated volatility)", () => {
+  const DAY = 86_400_000;
+
+  it("is deterministic: same symbol + instant → same value, everywhere", () => {
+    const t = Date.parse("2026-08-30T12:00:00Z");
+    expect(marketFlow("INBX", t, 8000)).toBe(marketFlow("INBX", t, 8000));
+  });
+
+  it("differs across tickers and moves over time", () => {
+    const t = Date.parse("2026-08-30T12:00:00Z");
+    expect(marketFlow("INBX", t)).not.toBe(marketFlow("PRL", t));
+    expect(marketFlow("INBX", t)).not.toBe(marketFlow("INBX", t + 6 * 3_600_000));
+  });
+
+  it("stays inside the ±FLOW_CAP squash at every sampled minute", () => {
+    const t0 = Date.parse("2026-01-01T00:00:00Z");
+    for (let i = 0; i < 5_000; i++) {
+      const d = marketFlow("VOLT", t0 + i * 8.64 * 60_000, 300);
+      expect(Math.abs(d)).toBeLessThan(FLOW_CAP);
+    }
+  });
+
+  it("actually swings: daily ranges are trading-worthy, not shimmer", () => {
+    const t0 = Date.parse("2026-03-01T00:00:00Z");
+    let maxRange = 0;
+    for (let day = 0; day < 30; day++) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let m = 0; m < 96; m++) {
+        const d = marketFlow("SCRP", t0 + day * DAY + m * 15 * 60_000, 2_000);
+        lo = Math.min(lo, d);
+        hi = Math.max(hi, d);
+      }
+      maxRange = Math.max(maxRange, hi - lo);
+    }
+    expect(maxRange).toBeGreaterThan(0.08); // at least one ±4%+ day a month
+  });
+
+  it("small caps are wilder than big caps", () => {
+    expect(volatilityFactor(300)).toBeGreaterThan(volatilityFactor(50_000));
+  });
+
+  it("fills execute at the flow price and round trips stay a wash", () => {
+    const t = Date.parse("2026-08-30T15:30:00Z");
+    const buy = executionFillAt("INBX", 8_000, 0, "buy", 500, t);
+    const drift = 1 + marketFlow("INBX", t, 8_000);
+    expect(buy.avgPrice).toBeCloseTo(
+      executionFill(8_000, 0, "buy", 500).avgPrice * drift,
+      10
+    );
+    const sell = executionFillAt("INBX", 8_000, buy.newSentiment, "sell", 500, t);
+    expect(sell.total).toBeCloseTo(buy.total, 6);
+  });
+
+  it("flowPrice is anchor × hype × weather, and never negative", () => {
+    const t = Date.parse("2026-08-30T12:00:00Z");
+    const p = flowPrice("INBX", 8_000, 0.2, t);
+    expect(p).toBeCloseTo(
+      livePrice(8_000, 0.2) * (1 + marketFlow("INBX", t, 8_000)),
+      10
+    );
+    expect(p).toBeGreaterThan(0);
+    expect(flowPrice("INBX", 0, 0, t)).toBe(0);
   });
 });

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check } from "lucide-react";
-import { executionFill, SHARES_OUTSTANDING } from "@/lib/pricing";
+import { executionFillAt, SHARES_OUTSTANDING } from "@/lib/pricing";
 import { fmtMoney, fmtPrice } from "@/lib/format";
 
 /**
@@ -55,21 +55,24 @@ export default function TradePanel({
     );
   }
 
-  const buyEst = shares >= 1 ? executionFill(mrr, sentiment, "buy", shares) : null;
-  const sellEst = shares >= 1 ? executionFill(mrr, sentiment, "sell", shares) : null;
-  const buyImpact =
-    buyEst && price > 0 ? buyEst.avgPrice / price - 1 : 0;
-  const unitBuy = executionFill(mrr, sentiment, "buy", 1);
-  const unitSell = executionFill(mrr, sentiment, "sell", 1);
+  // minute-bucketed clock: estimates track the flow without SSR/client drift
+  const quoteT = Math.floor(Date.now() / 60_000) * 60_000;
+  const est = (side: "buy" | "sell", n: number) =>
+    executionFillAt(symbol, mrr, sentiment, side, n, quoteT);
+  const buyEst = shares >= 1 ? est("buy", shares) : null;
+  const sellEst = shares >= 1 ? est("sell", shares) : null;
+  const buyImpact = buyEst && price > 0 ? buyEst.avgPrice / price - 1 : 0;
+  const unitBuy = est("buy", 1);
+  const unitSell = est("sell", 1);
 
-  // the biggest buy the cash covers, walking the same fill curve
+  // the biggest buy the cash covers, walking the same fill curve + flow
   function maxAffordable(): number {
     if (cash === null || cash <= 0 || mrr <= 0) return 0;
     let lo = 0;
     let hi = SHARES_OUTSTANDING;
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
-      if (executionFill(mrr, sentiment, "buy", mid).total <= cash) lo = mid;
+      if (est("buy", mid).total <= cash) lo = mid;
       else hi = mid - 1;
     }
     return lo;

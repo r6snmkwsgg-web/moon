@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
-  executionFill,
+  executionFillAt,
   SHARES_OUTSTANDING,
   type TradeSide,
 } from "@/lib/pricing";
@@ -101,7 +101,8 @@ export async function POST(request: Request) {
     }
   }
 
-  const fill = executionFill(mrr, Number(ticker.sentiment), side, shares);
+  // fill at the flow price — the same number the tape is showing right now
+  const fill = executionFillAt(symbol, mrr, Number(ticker.sentiment), side, shares);
   if (fill.avgPrice <= 0) {
     return NextResponse.json(
       { error: "This ticker has no MRR on record yet — it can't trade." },
