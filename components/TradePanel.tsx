@@ -31,6 +31,7 @@ export default function TradePanel({
 }) {
   const router = useRouter();
   const [shares, setShares] = useState(10);
+  const [note, setNote] = useState("");
   const [pending, setPending] = useState<"buy" | "sell" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filled, setFilled] = useState(false);
@@ -60,7 +61,7 @@ export default function TradePanel({
       const res = await fetch("/api/trade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, side, shares }),
+        body: JSON.stringify({ symbol, side, shares, note: note.trim() }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -69,6 +70,7 @@ export default function TradePanel({
         setMessage(
           `${side === "buy" ? "Bought" : "Sold"} ${shares} × $${symbol} @ avg ${fmtPrice(json.price)}`
         );
+        setNote("");
         setFilled(true);
         setTimeout(() => setFilled(false), 1200);
         router.refresh();
@@ -143,6 +145,15 @@ export default function TradePanel({
           {(buyImpact * 100).toFixed(1)}% above the quote
         </p>
       )}
+
+      <input
+        type="text"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        maxLength={140}
+        placeholder="why? (optional — shows on the tape)"
+        className="input text-xs"
+      />
 
       <div className="grid grid-cols-2 gap-2">
         <button

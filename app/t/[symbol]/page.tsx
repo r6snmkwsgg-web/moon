@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getRecentTrades, getTickerPage, getVoteGauge } from "@/lib/data";
+import {
+  getRecentTrades,
+  getTickerPage,
+  getTickerPosts,
+  getVoteGauge,
+} from "@/lib/data";
 import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { fmtCompact, fmtMonth, fmtPct, fmtPrice, currentMonthISO } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
@@ -10,6 +15,7 @@ import { nextEarningsDate } from "@/lib/xp";
 import type { ChartEvent } from "@/lib/types";
 import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import CountdownChip from "@/components/CountdownChip";
+import Discussion from "@/components/Discussion";
 import InteractiveChart from "@/components/InteractiveChart";
 import LivePrice from "@/components/LivePrice";
 import TradePanel from "@/components/TradePanel";
@@ -69,9 +75,10 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const user = await getUser();
   const isFounder = user !== null && t.claimed_by === user.id;
 
-  const [gauge, recentTrades] = await Promise.all([
+  const [gauge, recentTrades, posts] = await Promise.all([
     getVoteGauge(t.id),
     getRecentTrades(10, t.id),
+    getTickerPosts(t.id, quote.price),
   ]);
 
   // Signed-in extras (own rows only — RLS applies).
@@ -450,16 +457,29 @@ export default async function TickerPage({ params, searchParams }: Props) {
         </section>
       )}
 
-      {/* recent trades */}
-      <section className="panel">
-        <div className="flex items-baseline justify-between border-b border-terminal-line px-3 py-2">
-          <h2 className="microlabel">Recent trades</h2>
-          <Link href="/tape" className="text-[11px] text-terminal-accent">
-            full tape →
-          </Link>
-        </div>
-        <TradesList trades={recentTrades} showSymbol={false} />
-      </section>
+      {/* the floor + recent trades */}
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <Discussion
+          posts={posts}
+          tickerId={t.id}
+          symbol={t.symbol}
+          signedIn={user !== null}
+          viewerId={user?.id ?? null}
+        />
+        <section className="panel">
+          <div className="flex items-baseline justify-between border-b border-terminal-line px-3 py-2">
+            <h2 className="microlabel">Recent trades</h2>
+            <Link href="/tape" className="text-[11px] text-terminal-accent">
+              full tape →
+            </Link>
+          </div>
+          <TradesList
+            trades={recentTrades}
+            showSymbol={false}
+            signedIn={user !== null}
+          />
+        </section>
+      </div>
 
       {/* MRR history */}
       {mrrHistory.length > 0 && (

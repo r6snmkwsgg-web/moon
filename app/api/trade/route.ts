@@ -27,7 +27,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Sign in to trade." }, { status: 401 });
   }
 
-  let body: { symbol?: string; side?: string; shares?: number };
+  let body: {
+    symbol?: string;
+    side?: string;
+    shares?: number;
+    note?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -37,6 +42,10 @@ export async function POST(request: Request) {
   const side = body.side as TradeSide;
   const shares = Number(body.shares);
   const symbol = String(body.symbol ?? "").toUpperCase();
+  const note = String(body.note ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
   if (
     !symbol ||
     (side !== "buy" && side !== "sell") ||
@@ -123,6 +132,52 @@ export async function POST(request: Request) {
     mrr,
     sentiment: fill.newSentiment,
   });
+
+  // attach the public rationale to the print (0003; skipped pre-migration)
+  if (note) {
+    try {
+      const { data: latest } = await admin
+        .from("trades")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("ticker_id", ticker.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latest) {
+        await admin.from("trades").update({ note }).eq("id", latest.id);
+      }
+    } catch {
+      // note column missing pre-migration — the trade itself already landed
+    }
+  }
+
+  // a real print from someone you follow is news — alert followers on size
+  if (fill.total >= 500) {
+    try {
+      const [{ data: followers }, { data: me }] = await Promise.all([
+        admin.from("follows").select("follower_id").eq("followee_id", user.id),
+        admin
+          .from("profiles")
+          .select("display_name")
+          .eq("id", user.id)
+          .maybeSingle(),
+      ]);
+      const ids = ((followers ?? []) as { follower_id: string }[]).map(
+        (f) => f.follower_id
+      );
+      if (ids.length > 0) {
+        const { notifyUsers } = await import("@/lib/notify");
+        await notifyUsers(
+          ids,
+          "move",
+          `${me?.display_name ?? "Someone you follow"} ${side === "buy" ? "bought" : "sold"} ${shares.toLocaleString("en-US")} $${symbol} (~$${Math.round(fill.total).toLocaleString("en-US")})`
+        );
+      }
+    } catch {
+      // follows table missing pre-migration
+    }
+  }
 
   return NextResponse.json({
     ok: true,

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { FeedTrade } from "@/lib/data";
 import { fmtPrice } from "@/lib/format";
+import CopyTradeButton from "@/components/CopyTradeButton";
 
 function timeAgo(iso: string): string {
   const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -16,9 +17,11 @@ function timeAgo(iso: string): string {
 export default function TradesList({
   trades,
   showSymbol = true,
+  signedIn = false,
 }: {
   trades: FeedTrade[];
   showSymbol?: boolean;
+  signedIn?: boolean;
 }) {
   if (trades.length === 0) {
     return (
@@ -30,46 +33,59 @@ export default function TradesList({
   return (
     <ul className="divide-y divide-terminal-line/40">
       {trades.map((t) => (
-        <li
-          key={t.id}
-          className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3 py-2 text-[13px]"
-        >
-          <span
-            className={`font-mono text-[11px] font-bold uppercase ${
-              t.side === "buy" ? "text-terminal-up" : "text-terminal-down"
-            }`}
-          >
-            {t.side}
-          </span>
-          {t.username ? (
-            <Link
-              href={`/u/${t.username}`}
-              className="font-mono text-terminal-text hover:text-terminal-accent"
+        <li key={t.id} className="space-y-0.5 px-3 py-2 text-[13px]">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span
+              className={`font-mono text-[11px] font-bold uppercase ${
+                t.side === "buy" ? "text-terminal-up" : "text-terminal-down"
+              }`}
             >
-              {t.trader}
-            </Link>
-          ) : (
-            <span className="font-mono text-terminal-text">{t.trader}</span>
+              {t.side}
+            </span>
+            {t.username ? (
+              <Link
+                href={`/u/${t.username}`}
+                className="font-mono text-terminal-text hover:text-terminal-accent"
+              >
+                {t.trader}
+              </Link>
+            ) : (
+              <span className="font-mono text-terminal-text">{t.trader}</span>
+            )}
+            <span className="text-terminal-muted">
+              {t.side === "buy" ? "bought" : "sold"}
+            </span>
+            <span className="num font-mono">
+              {t.shares.toLocaleString("en-US")}
+            </span>
+            {showSymbol && (
+              <Link
+                href={`/t/${t.symbol}`}
+                className="font-mono font-bold hover:text-terminal-accent"
+              >
+                ${t.symbol}
+              </Link>
+            )}
+            <span className="text-terminal-muted">@</span>
+            <span className="num font-mono">{fmtPrice(t.price)}</span>
+            <span className="ml-auto flex items-center gap-2">
+              <CopyTradeButton
+                symbol={t.symbol}
+                side={t.side}
+                shares={t.shares}
+                traderUsername={t.username}
+                signedIn={signedIn}
+              />
+              <span className="font-mono text-[11px] text-terminal-muted">
+                {timeAgo(t.created_at)}
+              </span>
+            </span>
+          </div>
+          {t.note && (
+            <p className="border-l-2 border-terminal-line pl-2 text-xs italic leading-snug text-terminal-muted">
+              “{t.note}”
+            </p>
           )}
-          <span className="text-terminal-muted">
-            {t.side === "buy" ? "bought" : "sold"}
-          </span>
-          <span className="num font-mono">
-            {t.shares.toLocaleString("en-US")}
-          </span>
-          {showSymbol && (
-            <Link
-              href={`/t/${t.symbol}`}
-              className="font-mono font-bold hover:text-terminal-accent"
-            >
-              ${t.symbol}
-            </Link>
-          )}
-          <span className="text-terminal-muted">@</span>
-          <span className="num font-mono">{fmtPrice(t.price)}</span>
-          <span className="ml-auto font-mono text-[11px] text-terminal-muted">
-            {timeAgo(t.created_at)}
-          </span>
         </li>
       ))}
     </ul>

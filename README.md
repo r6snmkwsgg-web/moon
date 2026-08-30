@@ -61,13 +61,13 @@ scraping.
 
 1. Create a project at [supabase.com](https://supabase.com).
 2. Run the migrations in order: paste `supabase/migrations/0001_init.sql`,
-   then `supabase/migrations/0002_market_depth.sql` into the SQL editor (or
-   `supabase db push` with the CLI). Fresh install shortcut:
-   `supabase/setup-all-in-one.sql` bundles both migrations + seed data in one
-   paste.
-3. Auth → make sure the **Email** provider is enabled (magic links). Add your
-   deploy URL to the auth redirect allowlist
-   (`https://your-app.vercel.app/auth/callback`).
+   then `0002_market_depth.sql`, then `0003_social.sql` into the SQL editor
+   (or `supabase db push` with the CLI). Fresh install shortcut:
+   `supabase/setup-all-in-one.sql` bundles 0001+0002 + seed data in one
+   paste — run `0003_social.sql` after it.
+3. Auth → Providers → **Email**: leave the provider ON but turn **Confirm
+   email OFF** — sign-in is email + password with no confirmation links, and
+   sign-ups get a live session immediately.
 
 ### 2. Environment
 

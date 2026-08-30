@@ -1,16 +1,25 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getPublicProfile, getStreakFor, getXpMap } from "@/lib/data";
+import {
+  getFollowStats,
+  getIsFollowing,
+  getPublicProfile,
+  getRecentTrades,
+  getStreakFor,
+  getXpMap,
+} from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 import { fmtMoney, fmtPct } from "@/lib/format";
 import { STREAK_FLAME_AT } from "@/lib/xp";
 import { STARTING_CASH, APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import { Flame } from "lucide-react";
 import InteractiveChart from "@/components/InteractiveChart";
+import FollowButton from "@/components/FollowButton";
 import ShareButton from "@/components/ShareButton";
 import ChangePct from "@/components/ChangePct";
 import TierBadge from "@/components/TierBadge";
+import TradesList from "@/components/TradesList";
 
 export const dynamic = "force-dynamic";
 
@@ -32,12 +41,17 @@ export default async function ProfilePage({ params }: Props) {
   if (!data) notFound();
 
   const { profile, valuation, rank, playerCount, history } = data;
-  const [viewer, streak, xpMap] = await Promise.all([
+  const [viewer, streak, xpMap, followStats, theirTrades] = await Promise.all([
     getUser(),
     getStreakFor(profile.id),
     getXpMap(),
+    getFollowStats(profile.id),
+    getRecentTrades(8, undefined, [profile.id]),
   ]);
   const isMe = viewer?.id === profile.id;
+  const following = viewer
+    ? await getIsFollowing(viewer.id, profile.id)
+    : false;
   const pnlPct = valuation.totalPnl / STARTING_CASH;
 
   return (
@@ -71,7 +85,22 @@ export default async function ProfilePage({ params }: Props) {
               month: "short",
               year: "numeric",
             })}
+            {" · "}
+            <span className="num font-mono">{followStats.followers}</span>{" "}
+            follower{followStats.followers === 1 ? "" : "s"} ·{" "}
+            <span className="num font-mono">{followStats.following}</span>{" "}
+            following
           </p>
+          {!isMe && (
+            <div className="mt-2">
+              <FollowButton
+                profileId={profile.id}
+                username={profile.username ?? ""}
+                following={following}
+                signedIn={viewer !== null}
+              />
+            </div>
+          )}
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <span className="num font-mono text-2xl font-bold">
@@ -169,6 +198,17 @@ export default async function ProfilePage({ params }: Props) {
             ))}
           </ul>
         )}
+      </section>
+
+      <section className="panel">
+        <h2 className="microlabel border-b border-terminal-line px-3 py-2">
+          Recent trades
+        </h2>
+        <TradesList
+          trades={theirTrades}
+          showSymbol
+          signedIn={viewer !== null}
+        />
       </section>
 
       <div className="flex items-center justify-between">

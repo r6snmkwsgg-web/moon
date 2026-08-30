@@ -76,6 +76,56 @@ export async function toggleWatch(tickerId: string, symbol: string) {
   revalidatePath(`/t/${symbol}`);
 }
 
+/**
+ * Post a take on a ticker's discussion thread. RLS enforces ownership; the
+ * app enforces a light rate limit (5 posts / 5 min) so raids stay boring.
+ */
+export async function addPost(
+  tickerId: string,
+  symbol: string,
+  body: string,
+  stance: 1 | -1 | null
+) {
+  const user = await getUser();
+  if (!user) throw new Error("Sign in first.");
+  const text = body.replace(/\s+/g, " ").trim();
+  if (text.length < 1 || text.length > 280) {
+    throw new Error("Posts are 1–280 characters.");
+  }
+  if (stance !== null && stance !== 1 && stance !== -1) {
+    throw new Error("Invalid stance.");
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { count } = await admin
+    .from("posts")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .gte("created_at", new Date(Date.now() - 5 * 60_000).toISOString());
+  if ((count ?? 0) >= 5) {
+    throw new Error("Slow down — 5 posts per 5 minutes.");
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from("posts").insert({
+    ticker_id: tickerId,
+    user_id: user.id,
+    body: text,
+    stance,
+  });
+  if (error) throw new Error("Could not post.");
+  revalidatePath(`/t/${symbol}`);
+}
+
+/** Delete your own post (RLS scoped). */
+export async function deletePost(postId: string, symbol: string) {
+  const user = await getUser();
+  if (!user) throw new Error("Sign in first.");
+  const supabase = await createSupabaseServerClient();
+  await supabase.from("posts").delete().eq("id", postId).eq("user_id", user.id);
+  revalidatePath(`/t/${symbol}`);
+}
+
 /** Cast or flip a bull/bear vote. */
 export async function castVote(tickerId: string, symbol: string, vote: 1 | -1) {
   const user = await getUser();

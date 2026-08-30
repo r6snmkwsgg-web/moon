@@ -1,10 +1,13 @@
 import Link from "next/link";
 import {
   getFeedEvents,
+  getFollowedIds,
   getMarket,
   getTrending,
   type FeedFilter,
 } from "@/lib/data";
+import { getUser } from "@/lib/supabase/server";
+import CopyTradeButton from "@/components/CopyTradeButton";
 import { Bell, ChartNoAxesColumn, Zap } from "lucide-react";
 import { changeFraction } from "@/lib/pricing";
 import { fmtCompact, fmtPct, fmtPrice } from "@/lib/format";
@@ -17,6 +20,7 @@ export const metadata = { title: "The Feed" };
 
 const FILTERS: { key: FeedFilter; label: string }[] = [
   { key: "all", label: "All activity" },
+  { key: "following", label: "Following" },
   { key: "trades", label: "Trades" },
   { key: "earnings", label: "Earnings" },
   { key: "listings", label: "Listings" },
@@ -39,16 +43,22 @@ export default async function FeedPage({
 }) {
   const { filter: filterParam } = await searchParams;
   const filter: FeedFilter =
-    filterParam === "trades" || filterParam === "earnings" || filterParam === "listings"
+    filterParam === "trades" ||
+    filterParam === "earnings" ||
+    filterParam === "listings" ||
+    filterParam === "following"
       ? filterParam
       : "all";
 
-  const market = await getMarket();
+  const [market, user] = await Promise.all([getMarket(), getUser()]);
+  const followedIds =
+    filter === "following" && user ? await getFollowedIds(user.id) : undefined;
   const [events, trending] = await Promise.all([
-    getFeedEvents(market, filter),
+    getFeedEvents(market, filter, 50, followedIds),
     getTrending(market, 5),
   ]);
   const bySymbol = new Map(market.map((q) => [q.ticker.symbol, q]));
+  const signedIn = user !== null;
 
   return (
     <div className="space-y-5">
@@ -85,8 +95,9 @@ export default async function FeedPage({
               return (
                 <div
                   key={`t-${t.id}`}
-                  className="panel flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-4 py-2.5 text-sm"
+                  className="panel space-y-1 px-4 py-2.5 text-sm"
                 >
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                   <span
                     className={`font-mono text-[11px] font-bold uppercase ${
                       t.side === "buy" ? "text-terminal-up" : "text-terminal-down"
@@ -118,9 +129,24 @@ export default async function FeedPage({
                   </Link>
                   <span className="text-terminal-muted">@</span>
                   <span className="num font-mono">{fmtPrice(t.price)}</span>
-                  <span className="ml-auto font-mono text-[11px] text-terminal-muted">
-                    {timeAgo(t.created_at)}
+                  <span className="ml-auto flex items-center gap-2">
+                    <CopyTradeButton
+                      symbol={t.symbol}
+                      side={t.side}
+                      shares={t.shares}
+                      traderUsername={t.username}
+                      signedIn={signedIn}
+                    />
+                    <span className="font-mono text-[11px] text-terminal-muted">
+                      {timeAgo(t.created_at)}
+                    </span>
                   </span>
+                </div>
+                {t.note && (
+                  <p className="border-l-2 border-terminal-line pl-2 text-xs italic leading-snug text-terminal-muted">
+                    “{t.note}”
+                  </p>
+                )}
                 </div>
               );
             }
@@ -207,7 +233,29 @@ export default async function FeedPage({
           })}
           {events.length === 0 && (
             <div className="panel px-4 py-10 text-center text-sm text-terminal-muted">
-              Nothing here yet — the feed fills up as the market moves.
+              {filter === "following" ? (
+                signedIn ? (
+                  <>
+                    You&apos;re not following anyone yet — hit follow on a{" "}
+                    <Link
+                      href="/leaderboard"
+                      className="text-terminal-accent"
+                    >
+                      leaderboard profile
+                    </Link>{" "}
+                    and their trades show up here.
+                  </>
+                ) : (
+                  <>
+                    <Link href="/login?next=/tape?filter=following" className="text-terminal-accent">
+                      Sign in
+                    </Link>{" "}
+                    to build a following feed.
+                  </>
+                )
+              ) : (
+                "Nothing here yet — the feed fills up as the market moves."
+              )}
             </div>
           )}
         </section>

@@ -461,13 +461,19 @@ export interface FeedTrade {
   trader: string; // display name
   username: string | null;
   symbol: string;
+  note: string | null; // the public "why" (0003)
 }
 
-/** Recent trades for the tape (global) or one ticker. Service role: joins names. */
+/**
+ * Recent trades for the tape (global), one ticker, or a set of traders
+ * (the "following" filter). Service role: joins names across users.
+ */
 export async function getRecentTrades(
   limit = 40,
-  tickerId?: string
+  tickerId?: string,
+  userIds?: string[]
 ): Promise<FeedTrade[]> {
+  if (userIds && userIds.length === 0) return [];
   const admin = createSupabaseAdminClient();
   let query = admin
     .from("trades")
@@ -475,6 +481,7 @@ export async function getRecentTrades(
     .order("created_at", { ascending: false })
     .limit(limit);
   if (tickerId) query = query.eq("ticker_id", tickerId);
+  if (userIds) query = query.in("user_id", userIds);
   const { data } = await query;
   return ((data ?? []) as Array<Record<string, unknown>>).map((t) => {
     const profile = (t.profiles ?? {}) as Record<string, unknown>;
@@ -489,8 +496,140 @@ export async function getRecentTrades(
       trader: String(profile.display_name ?? "trader"),
       username: (profile.username as string) ?? null,
       symbol: String(ticker.symbol ?? "?"),
+      note: (t.note as string) ?? null,
     };
   });
+}
+
+// ── social core (0003) ──────────────────────────────────────────────────────
+
+export interface TickerPost {
+  id: string;
+  body: string;
+  stance: 1 | -1 | null;
+  created_at: string;
+  author: string;
+  username: string | null;
+  userId: string;
+  /** The poster's REAL position, joined live — never stored, can't be faked. */
+  positionShares: number;
+  positionPnl: number | null; // vs avg cost at the live price
+}
+
+/** Discussion thread for one ticker, each post carrying its author's live position. */
+export async function getTickerPosts(
+  tickerId: string,
+  livePrice: number,
+  limit = 30
+): Promise<TickerPost[]> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from("posts")
+      .select("*, profiles(display_name, username)")
+      .eq("ticker_id", tickerId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    if (rows.length === 0) return [];
+
+    const userIds = [...new Set(rows.map((r) => String(r.user_id)))];
+    const { data: holdings } = await admin
+      .from("holdings")
+      .select("user_id, shares, avg_cost")
+      .eq("ticker_id", tickerId)
+      .in("user_id", userIds);
+    const position = new Map(
+      ((holdings ?? []) as { user_id: string; shares: number; avg_cost: number }[]).map(
+        (h) => [h.user_id, h]
+      )
+    );
+
+    return rows.map((r) => {
+      const profile = (r.profiles ?? {}) as Record<string, unknown>;
+      const pos = position.get(String(r.user_id));
+      const shares = pos ? Number(pos.shares) : 0;
+      return {
+        id: String(r.id),
+        body: String(r.body),
+        stance: (r.stance === null ? null : Number(r.stance)) as 1 | -1 | null,
+        created_at: String(r.created_at),
+        author: String(profile.display_name ?? "trader"),
+        username: (profile.username as string) ?? null,
+        userId: String(r.user_id),
+        positionShares: shares,
+        positionPnl:
+          pos && shares > 0
+            ? shares * livePrice - shares * Number(pos.avg_cost)
+            : null,
+      };
+    });
+  } catch {
+    return []; // posts table missing pre-migration
+  }
+}
+
+export interface FollowStats {
+  followers: number;
+  following: number;
+}
+
+/** Follower/following counts for a profile. */
+export async function getFollowStats(profileId: string): Promise<FollowStats> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const [followersRes, followingRes] = await Promise.all([
+      admin
+        .from("follows")
+        .select("*", { count: "exact", head: true })
+        .eq("followee_id", profileId),
+      admin
+        .from("follows")
+        .select("*", { count: "exact", head: true })
+        .eq("follower_id", profileId),
+    ]);
+    return {
+      followers: followersRes.count ?? 0,
+      following: followingRes.count ?? 0,
+    };
+  } catch {
+    return { followers: 0, following: 0 };
+  }
+}
+
+/** Is the viewer following this profile? */
+export async function getIsFollowing(
+  viewerId: string,
+  profileId: string
+): Promise<boolean> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from("follows")
+      .select("follower_id")
+      .eq("follower_id", viewerId)
+      .eq("followee_id", profileId)
+      .maybeSingle();
+    return Boolean(data);
+  } catch {
+    return false;
+  }
+}
+
+/** Everyone the viewer follows — powers the "Following" feed filter. */
+export async function getFollowedIds(viewerId: string): Promise<string[]> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from("follows")
+      .select("followee_id")
+      .eq("follower_id", viewerId);
+    return ((data ?? []) as { followee_id: string }[]).map(
+      (f) => f.followee_id
+    );
+  } catch {
+    return [];
+  }
 }
 
 /** Community bull/bear tally for one ticker (aggregated with service role). */
@@ -714,20 +853,33 @@ export type FeedEvent =
   | { kind: "earnings"; at: string; earnings: EarningsEvent }
   | { kind: "listing"; at: string; quote: TickerQuote };
 
-export type FeedFilter = "all" | "trades" | "earnings" | "listings";
+export type FeedFilter =
+  | "all"
+  | "trades"
+  | "earnings"
+  | "listings"
+  | "following";
 
 /** The unified activity feed: trades + earnings + listings, newest first. */
 export async function getFeedEvents(
   quotes: TickerQuote[],
   filter: FeedFilter = "all",
-  limit = 50
+  limit = 50,
+  followedIds?: string[]
 ): Promise<FeedEvent[]> {
-  const wantTrades = filter === "all" || filter === "trades";
+  const wantTrades =
+    filter === "all" || filter === "trades" || filter === "following";
   const wantEarnings = filter === "all" || filter === "earnings";
   const wantListings = filter === "all" || filter === "listings";
 
   const [trades, earnings] = await Promise.all([
-    wantTrades ? getRecentTrades(limit) : Promise.resolve([]),
+    wantTrades
+      ? getRecentTrades(
+          limit,
+          undefined,
+          filter === "following" ? (followedIds ?? []) : undefined
+        )
+      : Promise.resolve([]),
     wantEarnings ? getEarningsWire(30) : Promise.resolve([]),
   ]);
 
