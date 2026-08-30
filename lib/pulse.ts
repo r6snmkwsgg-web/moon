@@ -159,18 +159,24 @@ export async function pollRevenuePulse(
     if (moved >= ALERT_MOVE) {
       try {
         const audience = await audienceForTicker(conn.ticker_id);
-        const verb =
-          kind === "new"
+        // the first reading is a catch-up, not an event — say so
+        const firstRead = conn.live_subscriptions === null;
+        const verb = firstRead
+          ? "is trading on live revenue now"
+          : kind === "new"
             ? "picked up a customer"
             : kind === "churn"
               ? "lost a customer"
               : kind === "expansion"
                 ? "expanded an account"
                 : "had an account downgrade";
+        const detail = firstRead
+          ? `Stripe says ${fmtCompact(reading.mrr)} against the last report of ${fmtCompact(previous)} (${fmtPct(changeFraction(previous, reading.mrr))})`
+          : `MRR ${fmtCompact(previous)} → ${fmtCompact(reading.mrr)} (${fmtPct(changeFraction(previous, reading.mrr))})`;
         await notifyUsers(
           audience,
           "mrr",
-          `$${symbol} ${verb} — MRR ${fmtCompact(previous)} → ${fmtCompact(reading.mrr)} (${fmtPct(changeFraction(previous, reading.mrr))})`,
+          `$${symbol} ${verb} — ${detail}`,
           conn.ticker_id
         );
       } catch {
@@ -190,16 +196,22 @@ export async function getRevenueEvents(
 ): Promise<RevenueEvent[]> {
   const { data } = await admin
     .from("revenue_events")
-    .select("at, prev_mrr, mrr")
+    .select("at, prev_mrr, mrr, prev_subscriptions")
     .eq("ticker_id", tickerId)
     .gte("at", new Date(Date.now() - sinceMs).toISOString())
     .order("at", { ascending: true })
     .limit(500);
-  return ((data ?? []) as { at: string; prev_mrr: number; mrr: number }[]).map(
-    (r) => ({
-      at: Date.parse(r.at),
-      mrr: Number(r.mrr),
-      prevMrr: Number(r.prev_mrr),
-    })
-  );
+  return (
+    (data ?? []) as {
+      at: string;
+      prev_mrr: number;
+      mrr: number;
+      prev_subscriptions: number | null;
+    }[]
+  ).map((r) => ({
+    at: Date.parse(r.at),
+    mrr: Number(r.mrr),
+    prevMrr: Number(r.prev_mrr),
+    catchUp: r.prev_subscriptions === null,
+  }));
 }

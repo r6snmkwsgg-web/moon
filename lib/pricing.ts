@@ -354,6 +354,12 @@ export interface RevenueEvent {
   at: number; // epoch ms
   mrr: number; // MRR after the change
   prevMrr: number; // MRR before it
+  /**
+   * True when this is the first reading after a connection — the gap between
+   * a month-old report and today's reality, discovered all at once. The price
+   * steps to the truth, but it is not news, so it gets no overshoot.
+   */
+  catchUp?: boolean;
 }
 
 /** How far past the fundamental move the tape overshoots on fresh news. */
@@ -391,7 +397,7 @@ export function mrrAt(
 export function revenueShock(events: RevenueEvent[], t: number): number {
   let shock = 0;
   for (const e of events) {
-    if (e.at > t || e.prevMrr <= 0) continue;
+    if (e.at > t || e.prevMrr <= 0 || e.catchUp) continue;
     const age = t - e.at;
     if (age > SHOCK_HALFLIFE_MS * 8) continue; // decayed to nothing
     const move = (e.mrr - e.prevMrr) / e.prevMrr;

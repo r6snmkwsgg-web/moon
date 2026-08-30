@@ -49,7 +49,7 @@ export async function getLiveRevenue(
     admin.from("stripe_connections").select("*").eq("status", "active"),
     admin
       .from("revenue_events")
-      .select("ticker_id, at, prev_mrr, mrr")
+      .select("ticker_id, at, prev_mrr, mrr, prev_subscriptions")
       .gte("at", new Date(Date.now() - sinceMs).toISOString())
       .order("at", { ascending: true })
       .limit(1000),
@@ -70,12 +70,14 @@ export async function getLiveRevenue(
     at: string;
     prev_mrr: number;
     mrr: number;
+    prev_subscriptions: number | null;
   }[]) {
     const entry = out.get(e.ticker_id) ?? { liveMrr: null, events: [] };
     entry.events.push({
       at: Date.parse(e.at),
       mrr: Number(e.mrr),
       prevMrr: Number(e.prev_mrr),
+      catchUp: e.prev_subscriptions === null,
     });
     out.set(e.ticker_id, entry);
   }

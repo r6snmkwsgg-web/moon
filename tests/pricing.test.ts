@@ -537,3 +537,30 @@ describe("revenue events between reports", () => {
     expect(fill.avgPrice).toBeLessThan(quiet.avgPrice * 0.9);
   });
 });
+
+describe("the first reading after connecting", () => {
+  const T = 1_700_000_000_000;
+
+  it("steps the price to the truth but does not treat it as news", () => {
+    const catchUp: RevenueEvent = {
+      at: T,
+      prevMrr: 635.5,
+      mrr: 570,
+      catchUp: true,
+    };
+    // no overshoot: a month-old report being stale is not a fresh churn
+    expect(revenueShock([catchUp], T + 1000)).toBe(0);
+    // but the price still moves to what Stripe actually says
+    const before = flowPrice("TEST", 635.5, 0, T - 1000, 2, 1_000, [catchUp]);
+    const after = flowPrice("TEST", 570, 0, T + 1000, 2, 1_000, [catchUp]);
+    expect(after / before).toBeCloseTo(570 / 635.5, 2);
+  });
+
+  it("still overshoots on a real event that follows it", () => {
+    const events: RevenueEvent[] = [
+      { at: T, prevMrr: 635.5, mrr: 570, catchUp: true },
+      { at: T + 3_600_000, prevMrr: 570, mrr: 500 },
+    ];
+    expect(revenueShock(events, T + 3_600_000 + 1000)).toBeLessThan(-0.1);
+  });
+});
