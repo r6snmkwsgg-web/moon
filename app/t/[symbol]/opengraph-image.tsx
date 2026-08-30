@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { changeFraction, livePrice } from "@/lib/pricing";
+import { changeFraction, livePrice, valuationMultiple } from "@/lib/pricing";
 import { APP_NAME } from "@/lib/config";
 
 export const runtime = "edge";
@@ -77,15 +77,23 @@ export default async function OgImage({
       .toISOString()
       .slice(0, 10);
     const [mrrRows, snapRows] = await Promise.all([
-      rest<{ mrr: number }[]>(
-        `mrr_updates?select=mrr&ticker_id=eq.${ticker.id}&order=month.desc&limit=1`
+      rest<{ month: string; mrr: number }[]>(
+        `mrr_updates?select=month,mrr&ticker_id=eq.${ticker.id}&order=month.asc`
       ),
       rest<{ price: number }[]>(
         `price_snapshots?select=price&ticker_id=eq.${ticker.id}&day=gte.${since}&order=day.asc`
       ),
     ]);
-    const mrr = Number(mrrRows?.[0]?.mrr ?? 0);
-    price = livePrice(mrr, Number(ticker.sentiment));
+    const history = (mrrRows ?? []).map((r) => ({
+      month: r.month,
+      mrr: Number(r.mrr),
+    }));
+    const mrr = history.length ? history[history.length - 1].mrr : 0;
+    price = livePrice(
+      mrr,
+      Number(ticker.sentiment),
+      valuationMultiple(history)
+    );
     spark = [...(snapRows ?? []).map((s) => Number(s.price)), price];
     if (spark.length >= 2) change = changeFraction(spark[0], price);
   }

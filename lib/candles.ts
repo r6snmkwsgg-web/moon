@@ -69,6 +69,7 @@ export function makePriceAt(
   mrr: number,
   sentiment: number,
   series: ChartPoint[],
+  multiple?: number,
   liveWindowMs = 12 * 60 * 60 * 1000
 ): (t: number) => number {
   const sorted = series.length > 1 ? series : [];
@@ -82,7 +83,7 @@ export function makePriceAt(
 
   return (t: number): number => {
     if (!first || !last || t >= liveFrom || t >= last.t) {
-      return flowPrice(symbol, mrr, sentiment, t);
+      return flowPrice(symbol, mrr, sentiment, t, multiple);
     }
     if (t <= first.t) return first.price;
     // binary search the bracketing recorded points

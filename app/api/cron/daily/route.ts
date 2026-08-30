@@ -5,6 +5,7 @@ import {
   decaySentiment,
   fairPrice,
   flowPrice,
+  valuationMultiple,
 } from "@/lib/pricing";
 import {
   computeMrrFromStripe,
@@ -45,8 +46,12 @@ export async function GET(request: Request) {
   const tickers = (tickersRes.data ?? []) as Ticker[];
 
   const latestMrr = new Map<string, number>();
+  const revenueHistory = new Map<string, { month: string; mrr: number }[]>();
   for (const u of (mrrRes.data ?? []) as MrrUpdate[]) {
     latestMrr.set(u.ticker_id, Number(u.mrr)); // month-ascending → last wins
+    const list = revenueHistory.get(u.ticker_id) ?? [];
+    list.push({ month: u.month, mrr: Number(u.mrr) });
+    revenueHistory.set(u.ticker_id, list);
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -131,13 +136,14 @@ export async function GET(request: Request) {
       .eq("id", ticker.id);
     if (updateErr) continue;
 
-    const price = flowPrice(ticker.symbol, mrr, sentiment);
+    const multiple = valuationMultiple(revenueHistory.get(ticker.id) ?? []);
+    const price = flowPrice(ticker.symbol, mrr, sentiment, Date.now(), multiple);
     const { error: snapErr } = await admin.from("price_snapshots").upsert(
       {
         ticker_id: ticker.id,
         day: today,
         price,
-        fair_price: fairPrice(mrr),
+        fair_price: fairPrice(mrr, multiple),
         sentiment,
         mrr,
       },

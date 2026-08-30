@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   executionFillAt,
   SHARES_OUTSTANDING,
+  valuationMultiple,
   type TradeSide,
 } from "@/lib/pricing";
 import { recordTickerSnapshot } from "@/lib/snapshot";
@@ -66,14 +67,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unknown ticker." }, { status: 404 });
   }
 
-  const { data: latest } = await admin
+  // the whole revenue record, because the multiple is earned by durability
+  const { data: revenue } = await admin
     .from("mrr_updates")
-    .select("mrr")
+    .select("month, mrr")
     .eq("ticker_id", ticker.id)
-    .order("month", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const mrr = Number(latest?.mrr ?? 0);
+    .order("month", { ascending: true });
+  const history = ((revenue ?? []) as { month: string; mrr: number }[]).map(
+    (r) => ({ month: r.month, mrr: Number(r.mrr) })
+  );
+  const mrr = history.length ? history[history.length - 1].mrr : 0;
+  const multiple = valuationMultiple(history);
 
   // The float is finite: 10,000 shares exist per ticker, full stop. A buy
   // can't take total held past that. (Positions from before this rule are
@@ -102,7 +106,15 @@ export async function POST(request: Request) {
   }
 
   // fill at the flow price — the same number the tape is showing right now
-  const fill = executionFillAt(symbol, mrr, Number(ticker.sentiment), side, shares);
+  const fill = executionFillAt(
+    symbol,
+    mrr,
+    Number(ticker.sentiment),
+    side,
+    shares,
+    Date.now(),
+    multiple
+  );
   if (fill.avgPrice <= 0) {
     return NextResponse.json(
       { error: "This ticker has no MRR on record yet — it can't trade." },

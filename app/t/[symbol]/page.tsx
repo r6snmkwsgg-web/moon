@@ -212,6 +212,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             sentiment={Number(t.sentiment)}
             series={series}
             fairPrice={quote.fairPrice}
+            multiple={quote.multiple}
             trades={tradePoints}
             earliest={earliest}
           />
@@ -221,17 +222,14 @@ export default async function TickerPage({ params, searchParams }: Props) {
             {[
               ["Mkt cap", fmtCompact(quote.marketCap)],
               ["MRR", latestUpdate ? fmtCompact(Number(latestUpdate.mrr)) : "—"],
-              [
-                "Prev close",
-                dayStats.open !== null ? fmtPrice(dayStats.open) : "—",
-              ],
+              ["ARR", fmtCompact(quote.arr)],
+              ["Multiple", `${quote.multiple.toFixed(1)}× ARR`],
               [
                 "Volume today",
                 dayStats.volumeShares > 0
                   ? `${dayStats.volumeShares.toLocaleString("en-US")} shs`
                   : "0",
               ],
-              ["Holders", String(holdersCount)],
               [
                 "Float held",
                 `${Math.min(100, Math.round((floatHeld / SHARES_OUTSTANDING) * 100))}%`,
@@ -286,6 +284,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
             price={quote.price}
             mrr={quote.latestMrr}
             sentiment={Number(t.sentiment)}
+            multiple={quote.multiple}
+            quotedAt={Date.now()}
             signedIn={user !== null}
             cash={cash}
             sharesHeld={sharesHeld}

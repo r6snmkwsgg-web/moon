@@ -121,6 +121,8 @@ export interface ChartEvent {
 export interface TickerQuote {
   ticker: Ticker;
   latestMrr: number;
+  arr: number; // latestMrr × 12
+  multiple: number; // quality-adjusted ARR multiple this ticker earns
   price: number;
   fairPrice: number;
   marketCap: number;

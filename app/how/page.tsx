@@ -2,6 +2,8 @@ import Link from "next/link";
 import { APP_NAME } from "@/lib/config";
 import {
   ARR_MULTIPLE,
+  MULTIPLE_CEILING,
+  MULTIPLE_FLOOR,
   SENTIMENT_CAP,
   SENTIMENT_DAILY_DECAY,
   SHARES_OUTSTANDING,
@@ -36,12 +38,11 @@ export default function HowPage() {
           <p>
             Every startup has exactly{" "}
             <span className="num font-mono">{SHARES_OUTSTANDING.toLocaleString("en-US")}</span>{" "}
-            fake shares. Its fair value per share is a toy{" "}
-            <span className="font-mono">{ARR_MULTIPLE}× annual revenue</span>{" "}
-            multiple:
+            fake shares, and is valued on <b>annual</b> revenue — the way SaaS
+            actually changes hands:
           </p>
           <p className="num rounded-md border border-terminal-amber/20 bg-terminal-bg px-4 py-3.5 text-center font-mono text-sm font-semibold tracking-tight text-terminal-amber sm:text-base">
-            fair_price = (MRR × 12 × {ARR_MULTIPLE}) ÷{" "}
+            fair_price = (MRR × 12 × multiple) ÷{" "}
             {SHARES_OUTSTANDING.toLocaleString("en-US")}
           </p>
           <p className="text-terminal-muted">
@@ -52,8 +53,44 @@ export default function HowPage() {
         </div>
 
         <div className="panel space-y-2 p-4">
+          <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-amber">
+            2 · The multiple — what durability is worth
+          </h2>
+          <p>
+            Not every dollar of revenue is worth the same. A business that has
+            held {"$"}25k/mo for three years is worth far more than one that
+            touched {"$"}25k last month on a spike, so the multiple is earned
+            from the revenue record itself:
+          </p>
+          <ul className="space-y-1 text-terminal-muted">
+            <li>
+              <b className="text-terminal-text">Track record</b> — a brand-new
+              listing prices at 0.75× the {ARR_MULTIPLE}× baseline; two years
+              of reported months earns 1.30×.
+            </li>
+            <li>
+              <b className="text-terminal-text">Growth</b> — trailing monthly
+              compounding, the dominant driver in real markets. Flat is
+              neutral, +10%/mo nearly doubles it, shrinking revenue is
+              discounted hard.
+            </li>
+            <li>
+              <b className="text-terminal-text">Steadiness</b> — the spread of
+              those monthly moves. Boring and consistent earns a premium;
+              spiky earns a discount, because a spike isn&apos;t a business.
+            </li>
+          </ul>
+          <p className="text-terminal-muted">
+            The result is clamped to {MULTIPLE_FLOOR}×–{MULTIPLE_CEILING}× ARR
+            and shown on every ticker page, so you can always see what the
+            market is paying for that revenue — and watch it expand as a
+            founder strings good months together.
+          </p>
+        </div>
+
+        <div className="panel space-y-2 p-4">
           <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-up">
-            2 · The weather — hype
+            3 · The weather — hype
           </h2>
           <p>
             Buying pushes sentiment up, selling pushes it down (trading 10% of
@@ -73,7 +110,7 @@ export default function HowPage() {
 
         <div className="panel space-y-2 p-4">
           <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-accent">
-            3 · Gravity — decay
+            4 · Gravity — decay
           </h2>
           <p>
             Every night, sentiment shrinks{" "}
@@ -84,7 +121,7 @@ export default function HowPage() {
 
         <div className="panel space-y-2 p-4">
           <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-muted">
-            4 · The flow — simulated volatility
+            5 · The flow — simulated volatility
           </h2>
           <p>
             Between real events, prices ride <b>the flow</b>: a per-ticker

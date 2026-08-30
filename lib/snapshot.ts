@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fairPrice, flowPrice } from "@/lib/pricing";
+import { fairPrice, flowPrice, valuationMultiple } from "@/lib/pricing";
 
 /**
  * Upsert TODAY's price snapshot for a ticker so charts and day-change
@@ -25,23 +25,25 @@ export async function recordTickerSnapshot(
     if (!ticker) return;
     if (sentiment === undefined) sentiment = Number(ticker.sentiment ?? 0);
 
+    const { data: revenue } = await admin
+      .from("mrr_updates")
+      .select("month, mrr")
+      .eq("ticker_id", tickerId)
+      .order("month", { ascending: true });
+    const history = ((revenue ?? []) as { month: string; mrr: number }[]).map(
+      (r) => ({ month: r.month, mrr: Number(r.mrr) })
+    );
+    const multiple = valuationMultiple(history);
     if (mrr === undefined) {
-      const { data } = await admin
-        .from("mrr_updates")
-        .select("mrr")
-        .eq("ticker_id", tickerId)
-        .order("month", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      mrr = Number(data?.mrr ?? 0);
+      mrr = history.length ? history[history.length - 1].mrr : 0;
     }
 
     await admin.from("price_snapshots").upsert(
       {
         ticker_id: tickerId,
         day: new Date().toISOString().slice(0, 10),
-        price: flowPrice(ticker.symbol, mrr, sentiment),
-        fair_price: fairPrice(mrr),
+        price: flowPrice(ticker.symbol, mrr, sentiment, Date.now(), multiple),
+        fair_price: fairPrice(mrr, multiple),
         sentiment,
         mrr,
       },

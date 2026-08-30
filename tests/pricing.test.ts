@@ -3,6 +3,9 @@ import {
   SHARES_OUTSTANDING,
   ARR_MULTIPLE,
   MONTHS_PER_YEAR,
+  MULTIPLE_CEILING,
+  MULTIPLE_FLOOR,
+  valuationMultiple,
   SENTIMENT_CAP,
   SENTIMENT_DAILY_DECAY,
   TRADE_IMPACT_FACTOR,
@@ -22,12 +25,16 @@ import {
   volatilityFactor,
 } from "@/lib/pricing";
 
+/** The anchor for a given MRR at the baseline multiple. */
+const A = (mrr: number) =>
+  (mrr * MONTHS_PER_YEAR * ARR_MULTIPLE) / SHARES_OUTSTANDING;
+
 describe("fairPrice — the 3× ARR anchor", () => {
   it("prices MRR at a 3x multiple spread over 10,000 shares", () => {
     // $10,000 MRR → $30,000 "valuation" → $3.00/share
-    expect(fairPrice(10_000)).toBe(36); // $10k/mo = $120k ARR → 3× → $360k ÷ 10k shares
-    expect(fairPrice(5_000)).toBe(18);
-    expect(fairPrice(100_000)).toBe(360);
+    expect(fairPrice(10_000)).toBe(A(10_000)); // $10k/mo → $120k ARR → base multiple ÷ 10k shares
+    expect(fairPrice(5_000)).toBe(A(5_000));
+    expect(fairPrice(100_000)).toBe(A(100_000));
   });
 
   it("uses the published constants", () => {
@@ -47,17 +54,17 @@ describe("fairPrice — the 3× ARR anchor", () => {
 
 describe("livePrice — fair price stretched by sentiment", () => {
   it("is fair price when sentiment is zero", () => {
-    expect(livePrice(10_000, 0)).toBe(36);
+    expect(livePrice(10_000, 0)).toBe(A(10_000));
   });
 
   it("rises and falls with sentiment", () => {
-    expect(livePrice(10_000, 0.2)).toBeCloseTo(43.2, 10);
-    expect(livePrice(10_000, -0.2)).toBeCloseTo(28.8, 10);
+    expect(livePrice(10_000, 0.2)).toBeCloseTo(A(10_000) * 1.2, 10);
+    expect(livePrice(10_000, -0.2)).toBeCloseTo(A(10_000) * 0.8, 10);
   });
 
   it("never strays past the ±40% cap even if stored sentiment is corrupt", () => {
-    expect(livePrice(10_000, 5)).toBeCloseTo(36 * (1 + SENTIMENT_CAP), 10);
-    expect(livePrice(10_000, -5)).toBeCloseTo(36 * (1 - SENTIMENT_CAP), 10);
+    expect(livePrice(10_000, 5)).toBeCloseTo(A(10_000) * (1 + SENTIMENT_CAP), 10);
+    expect(livePrice(10_000, -5)).toBeCloseTo(A(10_000) * (1 - SENTIMENT_CAP), 10);
   });
 
   it("an MRR update reprices immediately — the earnings-report moment", () => {
@@ -70,8 +77,8 @@ describe("livePrice — fair price stretched by sentiment", () => {
 
 describe("marketCap", () => {
   it("is live price times the full float", () => {
-    expect(marketCap(10_000, 0)).toBe(360_000); // 3× $120k ARR
-    expect(marketCap(10_000, 0.4)).toBeCloseTo(504_000, 6);
+    expect(marketCap(10_000, 0)).toBe(A(10_000) * SHARES_OUTSTANDING);
+    expect(marketCap(10_000, 0.4)).toBeCloseTo(A(10_000) * 1.4 * SHARES_OUTSTANDING, 6);
   });
 });
 
@@ -187,11 +194,11 @@ describe("executionFill — slippage along the sentiment curve", () => {
   it("big buys pay MORE than the quoted price, big sells receive LESS", () => {
     const buy = executionFill(MRR, 0, "buy", 1_000); // pushes sentiment 0 → +0.2
     expect(buy.avgPrice).toBeGreaterThan(livePrice(MRR, 0));
-    expect(buy.avgPrice).toBeCloseTo(36 * (1 + 0.1), 10); // mean of 0 and +0.2
+    expect(buy.avgPrice).toBeCloseTo(A(10_000) * (1 + 0.1), 10); // mean of 0 and +0.2
 
     const sell = executionFill(MRR, 0, "sell", 1_000);
     expect(sell.avgPrice).toBeLessThan(livePrice(MRR, 0));
-    expect(sell.avgPrice).toBeCloseTo(36 * (1 - 0.1), 10);
+    expect(sell.avgPrice).toBeCloseTo(A(10_000) * (1 - 0.1), 10);
   });
 
   it("sentiment after the fill matches applyTrade exactly", () => {
@@ -202,8 +209,8 @@ describe("executionFill — slippage along the sentiment curve", () => {
   it("shares past the cap fill flat at the cap price", () => {
     // From 0, +0.4 cap is hit after 2,000 shares; the other 2,000 fill at cap.
     const fill = executionFill(MRR, 0, "buy", 4_000);
-    const movingCost = 2_000 * 36 * (1 + 0.2); // mean sentiment 0 → 0.4 is 0.2
-    const cappedCost = 2_000 * 36 * (1 + SENTIMENT_CAP);
+    const movingCost = 2_000 * A(10_000) * (1 + 0.2); // mean sentiment 0 → 0.4 is 0.2
+    const cappedCost = 2_000 * A(10_000) * (1 + SENTIMENT_CAP);
     expect(fill.total).toBeCloseTo(movingCost + cappedCost, 6);
     expect(fill.newSentiment).toBe(SENTIMENT_CAP);
   });
@@ -242,7 +249,7 @@ describe("the whole mechanic, end to end", () => {
     let sentiment = 0;
 
     const opening = livePrice(mrr, sentiment);
-    expect(opening).toBeCloseTo(28.8, 10); // $8k/mo → $96k ARR → 3× ÷ 10k
+    expect(opening).toBeCloseTo(A(8_000), 10); // $8k/mo → $96k ARR at the base multiple
 
     // A wave of buying: 3,000 shares (30% of float) → sentiment +0.6 → capped +0.4.
     sentiment = applyTrade(sentiment, "buy", 3_000);
@@ -324,5 +331,61 @@ describe("the flow (simulated volatility)", () => {
     );
     expect(p).toBeGreaterThan(0);
     expect(flowPrice("INBX", 0, 0, t)).toBe(0);
+  });
+});
+
+
+describe("valuationMultiple — durable revenue is worth more", () => {
+  const flat = (months: number, mrr: number) =>
+    Array.from({ length: months }, (_, i) => ({
+      month: `2024-${String((i % 12) + 1).padStart(2, "0")}-01`.replace(
+        "2024",
+        String(2024 + Math.floor(i / 12))
+      ),
+      mrr,
+    }));
+
+  it("pays up for a long, steady record over a one-month wonder", () => {
+    const veteran = valuationMultiple(flat(36, 25_000));
+    const rookie = valuationMultiple([{ month: "2026-08-01", mrr: 25_000 }]);
+    expect(veteran).toBeGreaterThan(rookie * 1.5);
+  });
+
+  it("rewards growth and punishes decline", () => {
+    const growing = valuationMultiple(
+      flat(12, 1).map((p, i) => ({ ...p, mrr: 10_000 * 1.1 ** i }))
+    );
+    const flatline = valuationMultiple(flat(12, 10_000));
+    const shrinking = valuationMultiple(
+      flat(12, 1).map((p, i) => ({ ...p, mrr: 10_000 * 0.93 ** i }))
+    );
+    expect(growing).toBeGreaterThan(flatline);
+    expect(flatline).toBeGreaterThan(shrinking);
+  });
+
+  it("discounts spiky revenue against the same average held steadily", () => {
+    const steady = valuationMultiple(flat(12, 20_000));
+    const spiky = valuationMultiple(
+      flat(12, 1).map((p, i) => ({ ...p, mrr: i % 2 === 0 ? 8_000 : 32_000 }))
+    );
+    expect(steady).toBeGreaterThan(spiky);
+  });
+
+  it("never leaves the published band, whatever the inputs", () => {
+    const rocket = flat(30, 1).map((p, i) => ({ ...p, mrr: 100 * 2 ** i }));
+    const collapse = flat(30, 1).map((p, i) => ({ ...p, mrr: 1e9 * 0.5 ** i }));
+    for (const h of [rocket, collapse, [], flat(1, 0)]) {
+      const m = valuationMultiple(h);
+      expect(m).toBeGreaterThanOrEqual(MULTIPLE_FLOOR);
+      expect(m).toBeLessThanOrEqual(MULTIPLE_CEILING);
+    }
+  });
+
+  it("feeds fairPrice — the same MRR prices differently by track record", () => {
+    const veteran = valuationMultiple(flat(36, 25_000));
+    const rookie = valuationMultiple([{ month: "2026-08-01", mrr: 25_000 }]);
+    expect(fairPrice(25_000, veteran)).toBeGreaterThan(
+      fairPrice(25_000, rookie)
+    );
   });
 });

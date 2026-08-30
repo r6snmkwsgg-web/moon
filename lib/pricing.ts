@@ -19,17 +19,92 @@
 export const SHARES_OUTSTANDING = 10_000;
 
 /**
- * Valuation multiple applied to ANNUAL recurring revenue. Small SaaS
- * businesses trade hands at roughly 2–4× ARR, so 3× sits mid-range.
+ * Baseline multiple on ANNUAL recurring revenue, before quality. Small SaaS
+ * changes hands around 2–4× ARR; this is the middle of the road for a
+ * business with no track record yet, and valuationMultiple() moves it.
  * (Applying a multiple to MONTHLY revenue — the old bug — valued a
  * $27k/mo business at $80k, i.e. 0.25× ARR: twelve times too cheap.)
  */
-export const ARR_MULTIPLE = 3;
+export const ARR_MULTIPLE = 2.5;
 
 export const MONTHS_PER_YEAR = 12;
 
-/** The same multiple expressed against MRR, for display and sanity checks. */
-export const MRR_MULTIPLE = ARR_MULTIPLE * MONTHS_PER_YEAR; // 36×
+/** Quality-adjusted multiples never leave this band. */
+export const MULTIPLE_FLOOR = 1.5;
+export const MULTIPLE_CEILING = 8;
+
+/** Months of history at which the track-record premium saturates. */
+export const TRACK_RECORD_MONTHS = 24;
+
+/** One month of reported revenue. */
+export interface RevenuePoint {
+  month: string; // "2026-08-01"
+  mrr: number;
+}
+
+function mean(xs: number[]): number {
+  return xs.reduce((a, b) => a + b, 0) / xs.length;
+}
+
+/**
+ * How much the market pays per dollar of ARR, from the revenue record alone.
+ * Three things move it, the same three that move real SaaS valuations:
+ *
+ *   · track record — durable revenue is worth more than a single month.
+ *     A brand-new listing prices at 0.75× the base; two years of history
+ *     earns 1.30×.
+ *   · growth — trailing monthly compounding, the dominant driver in real
+ *     markets. Flat is neutral; +10%/mo roughly doubles the multiple;
+ *     shrinking revenue is discounted hard.
+ *   · steadiness — the volatility of those monthly moves. Boringly
+ *     consistent earns a premium; spiky earns a discount, because a spike
+ *     is not a business.
+ *
+ * So $25k/mo held for three years prices far above $25k/mo reached last
+ * month on a spike — which is the whole point.
+ */
+export function valuationMultiple(history: RevenuePoint[]): number {
+  const points = [...(history ?? [])]
+    .filter((p) => Number.isFinite(Number(p.mrr)) && Number(p.mrr) > 0)
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  if (points.length === 0) return ARR_MULTIPLE;
+
+  // ── track record ────────────────────────────────────────────────────────
+  const months = points.length;
+  const trackRecord =
+    0.75 + 0.55 * Math.min(1, months / TRACK_RECORD_MONTHS);
+
+  if (months === 1) {
+    return clampMultiple(ARR_MULTIPLE * trackRecord);
+  }
+
+  // ── growth: compound monthly rate over the trailing window ──────────────
+  const window = points.slice(-Math.min(7, months)); // up to 6 transitions
+  const periods = window.length - 1;
+  const first = Number(window[0].mrr);
+  const last = Number(window[window.length - 1].mrr);
+  const monthlyGrowth = Math.pow(last / first, 1 / periods) - 1;
+  const growth = Math.min(2.2, Math.max(0.6, 1 + monthlyGrowth * 8));
+
+  // ── steadiness: spread of the month-over-month moves ────────────────────
+  const moves: number[] = [];
+  for (let i = 1; i < window.length; i++) {
+    const prev = Number(window[i - 1].mrr);
+    moves.push(prev > 0 ? Number(window[i].mrr) / prev - 1 : 0);
+  }
+  const avg = mean(moves);
+  const variance = mean(moves.map((m) => (m - avg) ** 2));
+  const stdev = Math.sqrt(variance);
+  const steadiness = Math.min(1.25, Math.max(0.8, 1.25 - stdev * 3));
+
+  return clampMultiple(ARR_MULTIPLE * trackRecord * growth * steadiness);
+}
+
+function clampMultiple(m: number): number {
+  if (!Number.isFinite(m)) return ARR_MULTIPLE;
+  return Math.min(MULTIPLE_CEILING, Math.max(MULTIPLE_FLOOR, m));
+}
 
 /** Sentiment is clamped to ±40% around fair price. */
 export const SENTIMENT_CAP = 0.4;
@@ -60,22 +135,32 @@ export function annualRevenue(mrr: number): number {
 }
 
 /**
- * The anchor: what the ticker is "worth" per share at a 3× ARR multiple.
- * MRR at or below zero anchors the price at zero — no negative prices.
+ * The anchor: ARR × the ticker's multiple, spread over the float. Callers
+ * that know the revenue record pass its multiple (valuationMultiple); the
+ * default is the no-track-record baseline. MRR at or below zero anchors the
+ * price at zero — no negative prices.
  */
-export function fairPrice(mrr: number): number {
+export function fairPrice(mrr: number, multiple = ARR_MULTIPLE): number {
   if (!Number.isFinite(mrr) || mrr <= 0) return 0;
-  return (annualRevenue(mrr) * ARR_MULTIPLE) / SHARES_OUTSTANDING;
+  return (annualRevenue(mrr) * multiple) / SHARES_OUTSTANDING;
 }
 
 /** What the ticker trades at right now: fair price stretched by sentiment. */
-export function livePrice(mrr: number, sentiment: number): number {
-  return fairPrice(mrr) * (1 + clampSentiment(sentiment));
+export function livePrice(
+  mrr: number,
+  sentiment: number,
+  multiple = ARR_MULTIPLE
+): number {
+  return fairPrice(mrr, multiple) * (1 + clampSentiment(sentiment));
 }
 
 /** Play-money market cap: live price × the full float. */
-export function marketCap(mrr: number, sentiment: number): number {
-  return livePrice(mrr, sentiment) * SHARES_OUTSTANDING;
+export function marketCap(
+  mrr: number,
+  sentiment: number,
+  multiple = ARR_MULTIPLE
+): number {
+  return livePrice(mrr, sentiment, multiple) * SHARES_OUTSTANDING;
 }
 
 /**
@@ -205,9 +290,10 @@ export function flowPrice(
   symbol: string,
   mrr: number,
   sentiment: number,
-  t = Date.now()
+  t = Date.now(),
+  multiple = ARR_MULTIPLE
 ): number {
-  return livePrice(mrr, sentiment) * (1 + marketFlow(symbol, t, mrr));
+  return livePrice(mrr, sentiment, multiple) * (1 + marketFlow(symbol, t, mrr));
 }
 
 /**
@@ -223,12 +309,17 @@ export function executionFill(
   mrr: number,
   sentiment: number,
   side: TradeSide,
-  shares: number
+  shares: number,
+  multiple = ARR_MULTIPLE
 ): Fill {
-  const fair = fairPrice(mrr);
+  const fair = fairPrice(mrr, multiple);
   const s0 = clampSentiment(sentiment);
   if (!Number.isFinite(shares) || shares <= 0 || fair <= 0) {
-    return { avgPrice: livePrice(mrr, s0), total: 0, newSentiment: s0 };
+    return {
+      avgPrice: livePrice(mrr, s0, multiple),
+      total: 0,
+      newSentiment: s0,
+    };
   }
 
   const perShare = TRADE_IMPACT_FACTOR / SHARES_OUTSTANDING;
@@ -255,9 +346,10 @@ export function executionFillAt(
   sentiment: number,
   side: TradeSide,
   shares: number,
-  t = Date.now()
+  t = Date.now(),
+  multiple = ARR_MULTIPLE
 ): Fill {
-  const base = executionFill(mrr, sentiment, side, shares);
+  const base = executionFill(mrr, sentiment, side, shares, multiple);
   const drift = 1 + marketFlow(symbol, t, mrr);
   return {
     avgPrice: base.avgPrice * drift,

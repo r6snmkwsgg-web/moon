@@ -9,7 +9,7 @@ import {
   stripeVerificationConfigured,
   verifyRestrictedKey,
 } from "@/lib/stripe";
-import { fairPrice } from "@/lib/pricing";
+import { fairPrice, valuationMultiple } from "@/lib/pricing";
 import { currentMonthISO } from "@/lib/format";
 import { MAX_LISTINGS_PER_USER } from "@/lib/config";
 import { storeLogo } from "@/lib/logos";
@@ -131,6 +131,11 @@ export async function listStartup(
     return { error: "Listing failed — the symbol may have just been taken." };
   }
 
+  // day one: one month of record, so the ticker opens at the rookie multiple
+  const openingMultiple = valuationMultiple([
+    { month: currentMonthISO(), mrr },
+  ]);
+  const openingPrice = fairPrice(mrr, openingMultiple);
   const today = new Date().toISOString().slice(0, 10);
   await admin.from("mrr_updates").insert({
     ticker_id: ticker.id,
@@ -151,8 +156,8 @@ export async function listStartup(
     {
       ticker_id: ticker.id,
       day: today,
-      price: fairPrice(mrr),
-      fair_price: fairPrice(mrr),
+      price: openingPrice,
+      fair_price: openingPrice,
       sentiment: 0,
       mrr,
     },
@@ -162,6 +167,6 @@ export async function listStartup(
   revalidatePath("/");
   revalidatePath(`/t/${symbol}`);
   return {
-    ok: { symbol, name, mrr, ipoPrice: fairPrice(mrr) },
+    ok: { symbol, name, mrr, ipoPrice: openingPrice },
   };
 }

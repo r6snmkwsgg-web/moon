@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isAdminUser } from "@/lib/auth";
-import { livePrice } from "@/lib/pricing";
+import { livePrice, valuationMultiple } from "@/lib/pricing";
 
 /** Every admin action re-checks the env allowlist server-side. */
 async function requireAdmin() {
@@ -198,14 +198,19 @@ export async function delistTicker(formData: FormData) {
     .maybeSingle();
   if (!ticker) throw new Error("Ticker not found.");
 
-  const { data: latest } = await admin
+  const { data: revenue } = await admin
     .from("mrr_updates")
-    .select("mrr")
+    .select("month, mrr")
     .eq("ticker_id", tickerId)
-    .order("month", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const price = livePrice(Number(latest?.mrr ?? 0), Number(ticker.sentiment));
+    .order("month", { ascending: true });
+  const history = ((revenue ?? []) as { month: string; mrr: number }[]).map(
+    (r) => ({ month: r.month, mrr: Number(r.mrr) })
+  );
+  const price = livePrice(
+    history.length ? history[history.length - 1].mrr : 0,
+    Number(ticker.sentiment),
+    valuationMultiple(history)
+  );
 
   const { data: holders } = await admin
     .from("holdings")

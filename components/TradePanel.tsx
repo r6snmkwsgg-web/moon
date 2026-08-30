@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check } from "lucide-react";
@@ -17,6 +17,8 @@ export default function TradePanel({
   price,
   mrr,
   sentiment,
+  multiple,
+  quotedAt,
   signedIn,
   cash,
   sharesHeld,
@@ -25,6 +27,9 @@ export default function TradePanel({
   price: number;
   mrr: number;
   sentiment: number;
+  multiple: number;
+  /** Server's clock at render — first paint matches, then we go live. */
+  quotedAt: number;
   signedIn: boolean;
   cash: number | null;
   sharesHeld: number;
@@ -38,6 +43,16 @@ export default function TradePanel({
   const [pending, setPending] = useState<"buy" | "sell" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filled, setFilled] = useState(false);
+  // the quote re-prices every second, like the chart — a stale buy price is
+  // the fastest way to make a market feel fake
+  const [nowT, setNowT] = useState<number | null>(null);
+  useEffect(() => {
+    setNowT(Date.now());
+    const id = setInterval(() => {
+      if (!document.hidden) setNowT(Date.now());
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const shares = Math.floor(Number(sharesText) || 0);
 
@@ -55,15 +70,19 @@ export default function TradePanel({
     );
   }
 
-  // minute-bucketed clock: estimates track the flow without SSR/client drift
-  const quoteT = Math.floor(Date.now() / 60_000) * 60_000;
+  const quoteT = nowT ?? quotedAt;
   const est = (side: "buy" | "sell", n: number) =>
-    executionFillAt(symbol, mrr, sentiment, side, n, quoteT);
+    executionFillAt(symbol, mrr, sentiment, side, n, quoteT, multiple);
   const buyEst = shares >= 1 ? est("buy", shares) : null;
   const sellEst = shares >= 1 ? est("sell", shares) : null;
-  const buyImpact = buyEst && price > 0 ? buyEst.avgPrice / price - 1 : 0;
-  const unitBuy = est("buy", 1);
-  const unitSell = est("sell", 1);
+  const liveMid = est("buy", 1).avgPrice;
+  const buyImpact =
+    buyEst && liveMid > 0 ? buyEst.avgPrice / liveMid - 1 : 0;
+  // quote the spread for the SIZE being traded — a 1-share spread rounds to
+  // the same cent on both sides and reads as broken
+  const quoteSize = Math.max(1, shares);
+  const unitBuy = est("buy", quoteSize);
+  const unitSell = est("sell", quoteSize);
 
   // the biggest buy the cash covers, walking the same fill curve + flow
   function maxAffordable(): number {

@@ -1,11 +1,14 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
+  annualRevenue,
   changeFraction,
   fairPrice,
   flowPrice,
   marketFlow,
   SHARES_OUTSTANDING,
+  valuationMultiple,
+  type RevenuePoint,
 } from "@/lib/pricing";
 import { STARTING_CASH } from "@/lib/config";
 import { computeXp } from "@/lib/xp";
@@ -29,21 +32,28 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Latest MRR per ticker from a list of updates sorted month-ascending. */
-function latestMrrByTicker(updates: MrrUpdate[]): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const u of updates) map.set(u.ticker_id, Number(u.mrr)); // sorted asc → last wins
+/** Revenue record per ticker, month-ascending — the input to the multiple. */
+function historyByTicker(updates: MrrUpdate[]): Map<string, RevenuePoint[]> {
+  const map = new Map<string, RevenuePoint[]>();
+  for (const u of updates) {
+    const list = map.get(u.ticker_id) ?? [];
+    list.push({ month: u.month, mrr: Number(u.mrr) });
+    map.set(u.ticker_id, list);
+  }
   return map;
 }
 
 function buildQuote(
   ticker: Ticker,
-  latestMrr: number,
+  history: RevenuePoint[],
   snaps: PriceSnapshot[] // this ticker's snapshots, day ascending
 ): TickerQuote {
   const sentiment = Number(ticker.sentiment);
+  const latestMrr = history.length ? Number(history[history.length - 1].mrr) : 0;
+  // the market pays for durability and growth, not just this month's number
+  const multiple = valuationMultiple(history);
   // anchor × hype × the flow — the one price everything shows and fills at
-  const price = flowPrice(ticker.symbol, latestMrr, sentiment);
+  const price = flowPrice(ticker.symbol, latestMrr, sentiment, Date.now(), multiple);
   const spark = snaps.map((s) => Number(s.price));
 
   // Change vs. the snapshot closest to 1 / 7 days ago.
@@ -63,8 +73,10 @@ function buildQuote(
   return {
     ticker,
     latestMrr,
+    arr: annualRevenue(latestMrr),
+    multiple,
     price,
-    fairPrice: fairPrice(latestMrr),
+    fairPrice: fairPrice(latestMrr, multiple),
     marketCap: price * SHARES_OUTSTANDING,
     dayChange: dayBase ? changeFraction(Number(dayBase.price), price) : 0,
     weekChange: weekBase ? changeFraction(Number(weekBase.price), price) : 0,
@@ -87,7 +99,7 @@ export async function getMarket(): Promise<TickerQuote[]> {
   ]);
 
   const tickers = (tickersRes.data ?? []) as Ticker[];
-  const mrrMap = latestMrrByTicker((mrrRes.data ?? []) as MrrUpdate[]);
+  const histories = historyByTicker((mrrRes.data ?? []) as MrrUpdate[]);
 
   const snapsByTicker = new Map<string, PriceSnapshot[]>();
   for (const s of (snapsRes.data ?? []) as PriceSnapshot[]) {
@@ -98,7 +110,7 @@ export async function getMarket(): Promise<TickerQuote[]> {
 
   return tickers
     .map((t) =>
-      buildQuote(t, mrrMap.get(t.id) ?? 0, snapsByTicker.get(t.id) ?? [])
+      buildQuote(t, histories.get(t.id) ?? [], snapsByTicker.get(t.id) ?? [])
     )
     .sort((a, b) => b.marketCap - a.marketCap);
 }
@@ -114,7 +126,8 @@ export async function getPriceSeries(
   tickerId: string,
   symbol: string,
   mrr: number,
-  sentiment: number
+  sentiment: number,
+  multiple?: number
 ): Promise<ChartPoint[]> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
@@ -148,7 +161,10 @@ export async function getPriceSeries(
     anchors.push({ t: Date.parse(t.created_at), price: Number(t.price) });
   }
   anchors.sort((a, b) => a.t - b.t);
-  anchors.push({ t: Date.now(), price: flowPrice(symbol, mrr, sentiment) });
+  anchors.push({
+    t: Date.now(),
+    price: flowPrice(symbol, mrr, sentiment, Date.now(), multiple),
+  });
 
   // flow-modulated interpolation, pinned to the real values at both ends:
   // p(t) = lerp(real) × (1 + flow(t)) / lerp(1 + flow(endpoints))
@@ -325,13 +341,15 @@ export async function getTickerPage(symbol: string): Promise<{
 
   const mrrHistory = (mrrRes.data ?? []) as MrrUpdate[];
   const snapshots = (snapsRes.data ?? []) as PriceSnapshot[];
-  const latestMrr = mrrHistory.length
-    ? Number(mrrHistory[mrrHistory.length - 1].mrr)
-    : 0;
+  const history: RevenuePoint[] = mrrHistory.map((u) => ({
+    month: u.month,
+    mrr: Number(u.mrr),
+  }));
+  const latestMrr = history.length ? Number(history[history.length - 1].mrr) : 0;
 
   const quote = buildQuote(
     ticker as Ticker,
-    latestMrr,
+    history,
     snapshots.filter((s) => s.day >= isoDaysAgo(SPARK_DAYS))
   );
 
@@ -372,7 +390,8 @@ export async function getTickerPage(symbol: string): Promise<{
       ticker.id,
       (ticker as Ticker).symbol,
       latestMrr,
-      Number((ticker as Ticker).sentiment)
+      Number((ticker as Ticker).sentiment),
+      quote.multiple
     ),
   ]);
 
@@ -400,7 +419,13 @@ export async function getTickerPage(symbol: string): Promise<{
   const sentimentNow = Number((ticker as Ticker).sentiment);
   for (let t = t0; t < Date.now(); t += 15 * 60_000) {
     dayPrices.push(
-      flowPrice((ticker as Ticker).symbol, latestMrr, sentimentNow, t)
+      flowPrice(
+        (ticker as Ticker).symbol,
+        latestMrr,
+        sentimentNow,
+        t,
+        quote.multiple
+      )
     );
   }
   const dayStats: DayStats = {

@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { changeFraction, livePrice } from "@/lib/pricing";
+import { changeFraction, livePrice, valuationMultiple } from "@/lib/pricing";
 import { APP_NAME } from "@/lib/config";
 
 export const runtime = "edge";
@@ -46,7 +46,13 @@ export default async function OgImage() {
   ]);
 
   const latestMrr = new Map<string, number>();
-  for (const m of mrrRows ?? []) latestMrr.set(m.ticker_id, Number(m.mrr));
+  const history = new Map<string, { month: string; mrr: number }[]>();
+  for (const m of mrrRows ?? []) {
+    latestMrr.set(m.ticker_id, Number(m.mrr)); // month-ascending → last wins
+    const list = history.get(m.ticker_id) ?? [];
+    list.push({ month: m.month, mrr: Number(m.mrr) });
+    history.set(m.ticker_id, list);
+  }
   const firstSnap = new Map<string, number>();
   for (const s of snaps ?? []) {
     if (!firstSnap.has(s.ticker_id)) firstSnap.set(s.ticker_id, Number(s.price));
@@ -54,7 +60,11 @@ export default async function OgImage() {
 
   const rows = (tickers ?? [])
     .map((t) => {
-      const price = livePrice(latestMrr.get(t.id) ?? 0, Number(t.sentiment));
+      const price = livePrice(
+        latestMrr.get(t.id) ?? 0,
+        Number(t.sentiment),
+        valuationMultiple(history.get(t.id) ?? [])
+      );
       const base = firstSnap.get(t.id) ?? 0;
       return { symbol: t.symbol, change: changeFraction(base, price), listed_at: t.listed_at };
     })
