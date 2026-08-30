@@ -6,9 +6,11 @@ import {
   MULTIPLE_FLOOR,
   SENTIMENT_CAP,
   SENTIMENT_DAILY_DECAY,
-  SHARES_OUTSTANDING,
+  MAX_POSITION_FRACTION,
+  TARGET_OPENING_PRICE,
   TRADE_IMPACT_FACTOR,
 } from "@/lib/pricing";
+import { fmtPrice } from "@/lib/format";
 import PricingPlayground from "./PricingPlayground";
 
 // re-rendered every 5 minutes so the shared tape stays honest
@@ -36,14 +38,21 @@ export default function HowPage() {
             1 · The anchor — fair value
           </h2>
           <p>
-            Every startup has exactly{" "}
-            <span className="num font-mono">{SHARES_OUTSTANDING.toLocaleString("en-US")}</span>{" "}
-            fake shares, and is valued on <b>annual</b> revenue — the way SaaS
-            actually changes hands:
+            Every startup is valued on <b>annual</b> revenue — the way SaaS
+            actually changes hands — and that value is spread over the shares
+            it issued at IPO:
           </p>
           <p className="num rounded-md border border-terminal-amber/20 bg-terminal-bg px-4 py-3.5 text-center font-mono text-sm font-semibold tracking-tight text-terminal-amber sm:text-base">
-            fair_price = (MRR × 12 × multiple) ÷{" "}
-            {SHARES_OUTSTANDING.toLocaleString("en-US")}
+            fair_price = (MRR × 12 × multiple) ÷ shares
+          </p>
+          <p className="text-terminal-muted">
+            A listing picks its share count so the first print lands near{" "}
+            {fmtPrice(TARGET_OPENING_PRICE)} — the same reason real companies
+            choose one. It changes nothing about what the company is worth:
+            market cap is MRR × 12 × multiple however many slices it is cut
+            into. One account may hold at most{" "}
+            {Math.round(MAX_POSITION_FRACTION * 100)}% of a float, so nobody
+            corners a listing and ends its market.
           </p>
           <p className="text-terminal-muted">
             When a founder&apos;s MRR updates — auto-synced from Stripe

@@ -19,6 +19,8 @@ export interface Ticker {
   handle_verified?: boolean;
   handle_proof_url?: string | null;
   listed_by?: string | null;
+  // 0004_float — the ticker's own share count; falls back to the default
+  shares_outstanding?: number | null;
 }
 
 export interface MrrUpdate {
@@ -123,6 +125,7 @@ export interface TickerQuote {
   latestMrr: number;
   arr: number; // latestMrr × 12
   multiple: number; // quality-adjusted ARR multiple this ticker earns
+  shares: number; // this ticker's float — set at IPO, not global
   price: number;
   fairPrice: number;
   marketCap: number;

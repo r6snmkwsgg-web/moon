@@ -4,9 +4,9 @@ import {
   annualRevenue,
   changeFraction,
   fairPrice,
+  floatOf,
   flowPrice,
   marketFlow,
-  SHARES_OUTSTANDING,
   valuationMultiple,
   type RevenuePoint,
 } from "@/lib/pricing";
@@ -52,8 +52,17 @@ function buildQuote(
   const latestMrr = history.length ? Number(history[history.length - 1].mrr) : 0;
   // the market pays for durability and growth, not just this month's number
   const multiple = valuationMultiple(history);
+  // each listing sized its own float at IPO; older rows use the default
+  const shares = floatOf(ticker.shares_outstanding);
   // anchor × hype × the flow — the one price everything shows and fills at
-  const price = flowPrice(ticker.symbol, latestMrr, sentiment, Date.now(), multiple);
+  const price = flowPrice(
+    ticker.symbol,
+    latestMrr,
+    sentiment,
+    Date.now(),
+    multiple,
+    shares
+  );
   const spark = snaps.map((s) => Number(s.price));
 
   // Change vs. the snapshot closest to 1 / 7 days ago.
@@ -75,9 +84,10 @@ function buildQuote(
     latestMrr,
     arr: annualRevenue(latestMrr),
     multiple,
+    shares,
     price,
-    fairPrice: fairPrice(latestMrr, multiple),
-    marketCap: price * SHARES_OUTSTANDING,
+    fairPrice: fairPrice(latestMrr, multiple, shares),
+    marketCap: price * shares,
     dayChange: dayBase ? changeFraction(Number(dayBase.price), price) : 0,
     weekChange: weekBase ? changeFraction(Number(weekBase.price), price) : 0,
     spark: [...spark, price], // live price as the final point
@@ -127,7 +137,8 @@ export async function getPriceSeries(
   symbol: string,
   mrr: number,
   sentiment: number,
-  multiple?: number
+  multiple?: number,
+  shares?: number
 ): Promise<ChartPoint[]> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
@@ -163,7 +174,7 @@ export async function getPriceSeries(
   anchors.sort((a, b) => a.t - b.t);
   anchors.push({
     t: Date.now(),
-    price: flowPrice(symbol, mrr, sentiment, Date.now(), multiple),
+    price: flowPrice(symbol, mrr, sentiment, Date.now(), multiple, shares),
   });
 
   // flow-modulated interpolation, pinned to the real values at both ends:
@@ -391,7 +402,8 @@ export async function getTickerPage(symbol: string): Promise<{
       (ticker as Ticker).symbol,
       latestMrr,
       Number((ticker as Ticker).sentiment),
-      quote.multiple
+      quote.multiple,
+      quote.shares
     ),
   ]);
 
@@ -424,7 +436,8 @@ export async function getTickerPage(symbol: string): Promise<{
         latestMrr,
         sentimentNow,
         t,
-        quote.multiple
+        quote.multiple,
+        quote.shares
       )
     );
   }

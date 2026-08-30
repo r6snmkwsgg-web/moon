@@ -9,7 +9,7 @@ import {
   stripeVerificationConfigured,
   verifyRestrictedKey,
 } from "@/lib/stripe";
-import { fairPrice, valuationMultiple } from "@/lib/pricing";
+import { fairPrice, shareCountFor, valuationMultiple } from "@/lib/pricing";
 import { currentMonthISO } from "@/lib/format";
 import { MAX_LISTINGS_PER_USER } from "@/lib/config";
 import { storeLogo } from "@/lib/logos";
@@ -35,6 +35,7 @@ export interface ListingResult {
     name: string;
     mrr: number;
     ipoPrice: number;
+    shares: number;
   };
 }
 
@@ -110,32 +111,48 @@ export async function listStartup(
     return { error: "Couldn't compute MRR from Stripe — try again in a minute." };
   }
 
-  const { data: ticker, error: insertErr } = await admin
-    .from("tickers")
-    .insert({
-      symbol,
-      name,
-      pitch,
-      logo_url: logoUrl,
-      founder_handle: handle,
-      claimed: true,
-      claimed_by: user.id,
-      listed_by: user.id,
-      stripe_verified: true,
-      fixture: false,
-      sentiment: 0,
-    })
-    .select("id")
-    .single();
-  if (insertErr || !ticker) {
-    return { error: "Listing failed — the symbol may have just been taken." };
-  }
-
   // day one: one month of record, so the ticker opens at the rookie multiple
   const openingMultiple = valuationMultiple([
     { month: currentMonthISO(), mrr },
   ]);
-  const openingPrice = fairPrice(mrr, openingMultiple);
+  // the IPO decision: how many shares this company is cut into. Sized so the
+  // first print lands in the same band as everything else on the board.
+  const shares = shareCountFor(mrr, openingMultiple);
+
+  const row = {
+    symbol,
+    name,
+    pitch,
+    logo_url: logoUrl,
+    founder_handle: handle,
+    claimed: true,
+    claimed_by: user.id,
+    listed_by: user.id,
+    stripe_verified: true,
+    fixture: false,
+    sentiment: 0,
+    shares_outstanding: shares,
+  };
+  let { data: ticker, error: insertErr } = await admin
+    .from("tickers")
+    .insert(row)
+    .select("id")
+    .single();
+  if (insertErr && /shares_outstanding/.test(insertErr.message)) {
+    // 0004 hasn't been applied yet — list at the default float instead of
+    // failing the founder's IPO over a column
+    const { shares_outstanding: _drop, ...legacy } = row;
+    ({ data: ticker, error: insertErr } = await admin
+      .from("tickers")
+      .insert(legacy)
+      .select("id")
+      .single());
+  }
+  if (insertErr || !ticker) {
+    return { error: "Listing failed — the symbol may have just been taken." };
+  }
+
+  const openingPrice = fairPrice(mrr, openingMultiple, shares);
   const today = new Date().toISOString().slice(0, 10);
   await admin.from("mrr_updates").insert({
     ticker_id: ticker.id,
@@ -167,6 +184,6 @@ export async function listStartup(
   revalidatePath("/");
   revalidatePath(`/t/${symbol}`);
   return {
-    ok: { symbol, name, mrr, ipoPrice: openingPrice },
+    ok: { symbol, name, mrr, ipoPrice: openingPrice, shares },
   };
 }

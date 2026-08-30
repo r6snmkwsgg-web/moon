@@ -13,7 +13,12 @@
  *   npx tsx scripts/rescale-snapshots.ts
  */
 import { config } from "dotenv";
-import { fairPrice, flowPrice, valuationMultiple } from "../lib/pricing";
+import {
+  fairPrice,
+  floatOf,
+  flowPrice,
+  valuationMultiple,
+} from "../lib/pricing";
 
 config({ path: ".env.local" });
 
@@ -36,12 +41,20 @@ interface Snap {
   mrr: number;
 }
 
-async function main() {
-  const tickers: { id: string; symbol: string }[] = await fetch(
-    `${URL_}/rest/v1/tickers?select=id,symbol`,
-    { headers: H }
-  ).then((r) => r.json());
+export async function rescaleSnapshots() {
+  const tickers: {
+    id: string;
+    symbol: string;
+    shares_outstanding?: number;
+  }[] = await fetch(`${URL_}/rest/v1/tickers?select=*`, { headers: H }).then(
+    (r) => r.json()
+  );
   const symbolOf = new Map(tickers.map((t) => [t.id, t.symbol]));
+  // each ticker's own float — history is split-adjusted, the way a real
+  // chart shows a company that split last week
+  const floatById = new Map(
+    tickers.map((t) => [t.id, floatOf(t.shares_outstanding)])
+  );
   console.log(`tickers: ${tickers.length}`);
 
   const revenue: { ticker_id: string; month: string; mrr: number }[] =
@@ -84,11 +97,12 @@ async function main() {
         (p) => p.month <= s.day
       );
       const multiple = valuationMultiple(known);
+      const shares = floatById.get(s.ticker_id);
       return {
         ...s,
-        fair_price: Number(fairPrice(mrr, multiple).toFixed(6)),
+        fair_price: Number(fairPrice(mrr, multiple, shares).toFixed(6)),
         price: Number(
-          flowPrice(symbol, mrr, sentiment, at, multiple).toFixed(6)
+          flowPrice(symbol, mrr, sentiment, at, multiple, shares).toFixed(6)
         ),
       };
     });
@@ -118,4 +132,4 @@ async function main() {
   }
 }
 
-main();
+if (process.argv[1]?.endsWith("rescale-snapshots.ts")) rescaleSnapshots();

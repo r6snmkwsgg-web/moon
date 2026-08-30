@@ -10,7 +10,7 @@ import {
 import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { fmtCompact, fmtMonth, fmtPct, fmtPrice, currentMonthISO } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
-import { changeFraction, SHARES_OUTSTANDING } from "@/lib/pricing";
+import { changeFraction } from "@/lib/pricing";
 import { nextEarningsDate } from "@/lib/xp";
 import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import CountdownChip from "@/components/CountdownChip";
@@ -213,6 +213,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             series={series}
             fairPrice={quote.fairPrice}
             multiple={quote.multiple}
+            shares={quote.shares}
             trades={tradePoints}
             earliest={earliest}
           />
@@ -224,6 +225,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
               ["MRR", latestUpdate ? fmtCompact(Number(latestUpdate.mrr)) : "—"],
               ["ARR", fmtCompact(quote.arr)],
               ["Multiple", `${quote.multiple.toFixed(1)}× ARR`],
+              ["Float", `${quote.shares.toLocaleString("en-US")} shs`],
               [
                 "Volume today",
                 dayStats.volumeShares > 0
@@ -232,7 +234,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
               ],
               [
                 "Float held",
-                `${Math.min(100, Math.round((floatHeld / SHARES_OUTSTANDING) * 100))}%`,
+                `${Math.min(100, Math.round((floatHeld / quote.shares) * 100))}%`,
               ],
             ].map(([label, value]) => (
               <div key={label} className="panel px-3 py-2">
@@ -285,6 +287,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
             mrr={quote.latestMrr}
             sentiment={Number(t.sentiment)}
             multiple={quote.multiple}
+            outstanding={quote.shares}
+            floatHeld={floatHeld}
             quotedAt={Date.now()}
             signedIn={user !== null}
             cash={cash}

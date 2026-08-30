@@ -3,7 +3,9 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   executionFillAt,
-  SHARES_OUTSTANDING,
+  floatOf,
+  MAX_POSITION_FRACTION,
+  positionLimit,
   valuationMultiple,
   type TradeSide,
 } from "@/lib/pricing";
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
   const admin = createSupabaseAdminClient();
   const { data: ticker } = await admin
     .from("tickers")
-    .select("id, sentiment")
+    .select("*")
     .eq("symbol", symbol)
     .maybeSingle();
   if (!ticker) {
@@ -76,24 +78,33 @@ export async function POST(request: Request) {
       .eq("ticker_id", ticker.id)
       .order("month", { ascending: true }),
     side === "buy"
-      ? admin.from("holdings").select("shares").eq("ticker_id", ticker.id)
-      : Promise.resolve({ data: [] as { shares: number }[] }),
+      ? admin
+          .from("holdings")
+          .select("user_id, shares")
+          .eq("ticker_id", ticker.id)
+      : Promise.resolve({ data: [] as { user_id: string; shares: number }[] }),
   ]);
+  const outstanding = floatOf(
+    (ticker as { shares_outstanding?: number }).shares_outstanding
+  );
   const history = ((revenue ?? []) as { month: string; mrr: number }[]).map(
     (r) => ({ month: r.month, mrr: Number(r.mrr) })
   );
   const mrr = history.length ? history[history.length - 1].mrr : 0;
   const multiple = valuationMultiple(history);
 
-  // The float is finite: 10,000 shares exist per ticker, full stop. A buy
-  // can't take total held past that. (Positions from before this rule are
-  // grandfathered — they only ever shrink.)
+  // Two limits, both enforced here and not just in the UI:
+  //   the float is finite — no more shares exist than the ticker issued;
+  //   no single account may corner it (MAX_POSITION_FRACTION of the float).
+  // Positions from before these rules are grandfathered: they only shrink.
   if (side === "buy") {
-    const held = ((heldRows ?? []) as { shares: number }[]).reduce(
-      (sum, h) => sum + Number(h.shares),
-      0
-    );
-    const available = Math.max(0, SHARES_OUTSTANDING - held);
+    const rows = (heldRows ?? []) as { user_id: string; shares: number }[];
+    const held = rows.reduce((sum, h) => sum + Number(h.shares), 0);
+    const mine = rows
+      .filter((h) => h.user_id === user.id)
+      .reduce((sum, h) => sum + Number(h.shares), 0);
+
+    const available = Math.max(0, outstanding - held);
     if (shares > available) {
       return NextResponse.json(
         {
@@ -101,6 +112,21 @@ export async function POST(request: Request) {
             available > 0
               ? `Only ${available.toLocaleString("en-US")} shares left in the float.`
               : "The float is fully held — someone has to sell first.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const limit = positionLimit(outstanding);
+    const room = Math.max(0, limit - mine);
+    if (shares > room) {
+      const pct = Math.round(MAX_POSITION_FRACTION * 100);
+      return NextResponse.json(
+        {
+          error:
+            room > 0
+              ? `Position limit: one account can hold ${pct}% of the float (${limit.toLocaleString("en-US")} shs). You can buy ${room.toLocaleString("en-US")} more.`
+              : `You're at the position limit — ${pct}% of the float (${limit.toLocaleString("en-US")} shs).`,
         },
         { status: 400 }
       );
@@ -115,7 +141,8 @@ export async function POST(request: Request) {
     side,
     shares,
     Date.now(),
-    multiple
+    multiple,
+    outstanding
   );
   if (fill.avgPrice <= 0) {
     return NextResponse.json(

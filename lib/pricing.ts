@@ -19,6 +19,27 @@
 export const SHARES_OUTSTANDING = 10_000;
 
 /**
+ * A new listing sizes its float so the first print lands near this price.
+ * The float is a unit choice, not a supply of ownership — market cap is
+ * ARR × multiple no matter how many slices it is cut into — but a board
+ * where everything opens around the same price is a board you can compare.
+ */
+export const TARGET_OPENING_PRICE = 25;
+
+/**
+ * The most of one ticker's float a single account may hold. Without it a
+ * $10,000 stake buys a micro-cap outright and the market ends for everyone
+ * else — the float reads "fully held" and nobody can buy in.
+ */
+export const MAX_POSITION_FRACTION = 0.1;
+
+/** Round numbers a real cap table would use. */
+const FLOAT_STEPS = [
+  1_000, 2_000, 5_000, 10_000, 20_000, 25_000, 50_000, 100_000, 200_000,
+  500_000, 1_000_000,
+];
+
+/**
  * Baseline multiple on ANNUAL recurring revenue, before quality. Small SaaS
  * changes hands around 2–4× ARR; this is the middle of the road for a
  * business with no track record yet, and valuationMultiple() moves it.
@@ -140,46 +161,90 @@ export function annualRevenue(mrr: number): number {
  * default is the no-track-record baseline. MRR at or below zero anchors the
  * price at zero — no negative prices.
  */
-export function fairPrice(mrr: number, multiple = ARR_MULTIPLE): number {
+export function fairPrice(
+  mrr: number,
+  multiple = ARR_MULTIPLE,
+  shares = SHARES_OUTSTANDING
+): number {
   if (!Number.isFinite(mrr) || mrr <= 0) return 0;
-  return (annualRevenue(mrr) * multiple) / SHARES_OUTSTANDING;
+  return (annualRevenue(mrr) * multiple) / floatOf(shares);
+}
+
+/** A float is a positive integer; anything else falls back to the default. */
+export function floatOf(shares: number | null | undefined): number {
+  const n = Number(shares);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : SHARES_OUTSTANDING;
+}
+
+/**
+ * The float a listing gets at IPO: enough shares to open near
+ * TARGET_OPENING_PRICE, rounded to a number that reads like a cap table.
+ * Changing it never changes what the company is worth.
+ */
+export function shareCountFor(mrr: number, multiple = ARR_MULTIPLE): number {
+  const cap = annualRevenue(mrr) * multiple;
+  if (!(cap > 0)) return SHARES_OUTSTANDING;
+  const want = cap / TARGET_OPENING_PRICE;
+  // nearest on a ratio scale — 5k is "closer" to 4k than 10k is
+  return FLOAT_STEPS.reduce((best, step) =>
+    Math.abs(Math.log(step / want)) < Math.abs(Math.log(best / want))
+      ? step
+      : best
+  );
+}
+
+/** The most one account may hold of a ticker: no cornering the float. */
+export function positionLimit(shares = SHARES_OUTSTANDING): number {
+  return Math.max(1, Math.floor(floatOf(shares) * MAX_POSITION_FRACTION));
 }
 
 /** What the ticker trades at right now: fair price stretched by sentiment. */
 export function livePrice(
   mrr: number,
   sentiment: number,
-  multiple = ARR_MULTIPLE
+  multiple = ARR_MULTIPLE,
+  shares = SHARES_OUTSTANDING
 ): number {
-  return fairPrice(mrr, multiple) * (1 + clampSentiment(sentiment));
+  return fairPrice(mrr, multiple, shares) * (1 + clampSentiment(sentiment));
 }
 
 /** Play-money market cap: live price × the full float. */
 export function marketCap(
   mrr: number,
   sentiment: number,
-  multiple = ARR_MULTIPLE
+  multiple = ARR_MULTIPLE,
+  shares = SHARES_OUTSTANDING
 ): number {
-  return livePrice(mrr, sentiment, multiple) * SHARES_OUTSTANDING;
+  // invariant to the float by construction — price × float cancels it out
+  return livePrice(mrr, sentiment, multiple, shares) * floatOf(shares);
 }
 
 /**
  * Signed sentiment delta caused by one trade. Buys push up, sells push down,
  * proportional to how much of the float changed hands.
  */
-export function tradeImpact(side: TradeSide, shares: number): number {
+export function tradeImpact(
+  side: TradeSide,
+  shares: number,
+  outstanding = SHARES_OUTSTANDING
+): number {
   if (!Number.isFinite(shares) || shares <= 0) return 0;
   const direction = side === "buy" ? 1 : -1;
-  return direction * (shares / SHARES_OUTSTANDING) * TRADE_IMPACT_FACTOR;
+  // impact is a fraction of THIS ticker's float — 100 shares of a 1,000-share
+  // company is a tenth of it and has to move like one
+  return direction * (shares / floatOf(outstanding)) * TRADE_IMPACT_FACTOR;
 }
 
 /** Sentiment after a trade lands, clamped to the ±40% band. */
 export function applyTrade(
   sentiment: number,
   side: TradeSide,
-  shares: number
+  shares: number,
+  outstanding = SHARES_OUTSTANDING
 ): number {
-  return clampSentiment(clampSentiment(sentiment) + tradeImpact(side, shares));
+  return clampSentiment(
+    clampSentiment(sentiment) + tradeImpact(side, shares, outstanding)
+  );
 }
 
 /**
@@ -306,9 +371,13 @@ export function flowPrice(
   mrr: number,
   sentiment: number,
   t = Date.now(),
-  multiple = ARR_MULTIPLE
+  multiple = ARR_MULTIPLE,
+  shares = SHARES_OUTSTANDING
 ): number {
-  return livePrice(mrr, sentiment, multiple) * (1 + marketFlow(symbol, t, mrr));
+  return (
+    livePrice(mrr, sentiment, multiple, shares) *
+    (1 + marketFlow(symbol, t, mrr))
+  );
 }
 
 /**
@@ -325,20 +394,21 @@ export function executionFill(
   sentiment: number,
   side: TradeSide,
   shares: number,
-  multiple = ARR_MULTIPLE
+  multiple = ARR_MULTIPLE,
+  outstanding = SHARES_OUTSTANDING
 ): Fill {
-  const fair = fairPrice(mrr, multiple);
+  const fair = fairPrice(mrr, multiple, outstanding);
   const s0 = clampSentiment(sentiment);
   if (!Number.isFinite(shares) || shares <= 0 || fair <= 0) {
     return {
-      avgPrice: livePrice(mrr, s0, multiple),
+      avgPrice: livePrice(mrr, s0, multiple, outstanding),
       total: 0,
       newSentiment: s0,
     };
   }
 
-  const perShare = TRADE_IMPACT_FACTOR / SHARES_OUTSTANDING;
-  const sEnd = applyTrade(s0, side, shares);
+  const perShare = TRADE_IMPACT_FACTOR / floatOf(outstanding);
+  const sEnd = applyTrade(s0, side, shares, outstanding);
   const movingShares = Math.min(shares, Math.abs(sEnd - s0) / perShare);
   const cappedShares = shares - movingShares;
 
@@ -362,9 +432,17 @@ export function executionFillAt(
   side: TradeSide,
   shares: number,
   t = Date.now(),
-  multiple = ARR_MULTIPLE
+  multiple = ARR_MULTIPLE,
+  outstanding = SHARES_OUTSTANDING
 ): Fill {
-  const base = executionFill(mrr, sentiment, side, shares, multiple);
+  const base = executionFill(
+    mrr,
+    sentiment,
+    side,
+    shares,
+    multiple,
+    outstanding
+  );
   const drift = 1 + marketFlow(symbol, t, mrr);
   return {
     avgPrice: base.avgPrice * drift,

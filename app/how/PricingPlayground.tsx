@@ -68,8 +68,9 @@ export default function PricingPlayground() {
         </div>
       </div>
       <p className="text-[11px] text-terminal-muted">
-        fair = (MRR × 3) ÷ {SHARES_OUTSTANDING.toLocaleString("en-US")} shares
-        · live = fair × (1 + hype) · hype decays 10% toward zero nightly
+        fair = (MRR × 12 × multiple) ÷ this ticker&apos;s{" "}
+        {SHARES_OUTSTANDING.toLocaleString("en-US")}-share float · live = fair
+        × (1 + hype) · hype decays 10% toward zero nightly
       </p>
     </div>
   );

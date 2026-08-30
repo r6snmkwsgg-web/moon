@@ -4,6 +4,7 @@ import {
   changeFraction,
   decaySentiment,
   fairPrice,
+  floatOf,
   flowPrice,
   valuationMultiple,
 } from "@/lib/pricing";
@@ -137,13 +138,21 @@ export async function GET(request: Request) {
     if (updateErr) continue;
 
     const multiple = valuationMultiple(revenueHistory.get(ticker.id) ?? []);
-    const price = flowPrice(ticker.symbol, mrr, sentiment, Date.now(), multiple);
+    const shares = floatOf(ticker.shares_outstanding);
+    const price = flowPrice(
+      ticker.symbol,
+      mrr,
+      sentiment,
+      Date.now(),
+      multiple,
+      shares
+    );
     const { error: snapErr } = await admin.from("price_snapshots").upsert(
       {
         ticker_id: ticker.id,
         day: today,
         price,
-        fair_price: fairPrice(mrr, multiple),
+        fair_price: fairPrice(mrr, multiple, shares),
         sentiment,
         mrr,
       },

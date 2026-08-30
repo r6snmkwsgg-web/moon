@@ -79,6 +79,7 @@ export default function TradingChart({
   series,
   fairPrice,
   multiple,
+  shares,
   trades = [],
   earliest,
   heightClass = "h-[300px] sm:h-[380px]",
@@ -89,6 +90,7 @@ export default function TradingChart({
   series: ChartPoint[];
   fairPrice: number;
   multiple: number;
+  shares: number;
   trades?: { t: number; shares: number }[];
   earliest?: number;
   heightClass?: string;
@@ -184,8 +186,8 @@ export default function TradingChart({
   }, [tf]);
 
   const priceAt = useMemo(
-    () => makePriceAt(symbol, mrr, sentiment, series, multiple),
-    [symbol, mrr, sentiment, series, multiple]
+    () => makePriceAt(symbol, mrr, sentiment, series, multiple, shares),
+    [symbol, mrr, sentiment, series, multiple, shares]
   );
 
   const candles = useMemo<Candle[]>(() => {

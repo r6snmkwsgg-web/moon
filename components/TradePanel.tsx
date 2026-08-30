@@ -4,7 +4,12 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check } from "lucide-react";
-import { executionFillAt, SHARES_OUTSTANDING } from "@/lib/pricing";
+import {
+  executionFillAt,
+  MAX_POSITION_FRACTION,
+  positionLimit,
+  SHARES_OUTSTANDING,
+} from "@/lib/pricing";
 import { fmtMoney, fmtPrice } from "@/lib/format";
 
 /**
@@ -18,6 +23,8 @@ export default function TradePanel({
   mrr,
   sentiment,
   multiple,
+  outstanding = SHARES_OUTSTANDING,
+  floatHeld = 0,
   quotedAt,
   signedIn,
   cash,
@@ -28,6 +35,10 @@ export default function TradePanel({
   mrr: number;
   sentiment: number;
   multiple: number;
+  /** This ticker's float, set at IPO. */
+  outstanding?: number;
+  /** Shares of it already held across every account. */
+  floatHeld?: number;
   /** Server's clock at render — first paint matches, then we go live. */
   quotedAt: number;
   signedIn: boolean;
@@ -86,7 +97,16 @@ export default function TradePanel({
 
   const quoteT = nowT ?? quotedAt;
   const est = (side: "buy" | "sell", n: number) =>
-    executionFillAt(symbol, mrr, sentiment, side, n, quoteT, multiple);
+    executionFillAt(
+      symbol,
+      mrr,
+      sentiment,
+      side,
+      n,
+      quoteT,
+      multiple,
+      outstanding
+    );
   const buyEst = shares >= 1 ? est("buy", shares) : null;
   const sellEst = shares >= 1 ? est("sell", shares) : null;
   const liveMid = est("buy", 1).avgPrice;
@@ -99,11 +119,16 @@ export default function TradePanel({
   const unitSell = est("sell", quoteSize);
 
   // the biggest buy the cash covers, walking the same fill curve + flow
+  const limit = positionLimit(outstanding);
+  const roomInLimit = Math.max(0, limit - shownHeld);
+  const roomInFloat = Math.max(0, outstanding - floatHeld);
+  const buyCeiling = Math.min(roomInLimit, roomInFloat);
+
   function maxAffordable(): number {
     const purse = shownCash;
-    if (purse === null || purse <= 0 || mrr <= 0) return 0;
+    if (purse === null || purse <= 0 || mrr <= 0 || buyCeiling < 1) return 0;
     let lo = 0;
-    let hi = SHARES_OUTSTANDING;
+    let hi = buyCeiling;
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
       if (est("buy", mid).total <= purse) lo = mid;
@@ -113,8 +138,11 @@ export default function TradePanel({
   }
 
   async function trade(side: "buy" | "sell") {
-    // selling clamps to what's actually held — matches the button label
-    const qty = side === "sell" ? Math.min(shares, shownHeld) : shares;
+    // both sides clamp to what's actually possible — matching the labels
+    const qty =
+      side === "sell"
+        ? Math.min(shares, shownHeld)
+        : Math.min(shares, buyCeiling);
     if (qty < 1) return;
     setPending(side);
     setMessage(null);
@@ -265,13 +293,19 @@ export default function TradePanel({
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => trade("buy")}
-          disabled={pending !== null || refreshing || cooling || shares < 1}
+          disabled={
+            pending !== null ||
+            refreshing ||
+            cooling ||
+            shares < 1 ||
+            buyCeiling < 1
+          }
           className="btn-buy"
         >
           {pending === "buy" || (refreshing && filled)
             ? "…"
             : shares >= 1
-              ? `Buy ${shares.toLocaleString("en-US")}`
+              ? `Buy ${Math.min(shares, Math.max(1, buyCeiling)).toLocaleString("en-US")}`
               : "Buy"}
         </button>
         <button
@@ -286,6 +320,14 @@ export default function TradePanel({
               : "Sell"}
         </button>
       </div>
+
+      <p className="font-mono text-[11px] text-terminal-muted">
+        Float {outstanding.toLocaleString("en-US")} shs · one account may hold{" "}
+        {Math.round(MAX_POSITION_FRACTION * 100)}% of it (
+        {limit.toLocaleString("en-US")} shs
+        {shownHeld > 0 ? `, you hold ${shownHeld.toLocaleString("en-US")}` : ""}
+        )
+      </p>
 
       {message && (
         <p className="flex items-center gap-1 font-mono text-xs text-terminal-muted">

@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fairPrice, flowPrice, valuationMultiple } from "@/lib/pricing";
+import {
+  fairPrice,
+  floatOf,
+  flowPrice,
+  valuationMultiple,
+} from "@/lib/pricing";
 
 /**
  * Upsert TODAY's price snapshot for a ticker so charts and day-change
@@ -19,7 +24,7 @@ export async function recordTickerSnapshot(
 
     const { data: ticker } = await admin
       .from("tickers")
-      .select("symbol, sentiment")
+      .select("*")
       .eq("id", tickerId)
       .maybeSingle();
     if (!ticker) return;
@@ -34,6 +39,9 @@ export async function recordTickerSnapshot(
       (r) => ({ month: r.month, mrr: Number(r.mrr) })
     );
     const multiple = valuationMultiple(history);
+    const shares = floatOf(
+      (ticker as { shares_outstanding?: number }).shares_outstanding
+    );
     if (mrr === undefined) {
       mrr = history.length ? history[history.length - 1].mrr : 0;
     }
@@ -42,8 +50,15 @@ export async function recordTickerSnapshot(
       {
         ticker_id: tickerId,
         day: new Date().toISOString().slice(0, 10),
-        price: flowPrice(ticker.symbol, mrr, sentiment, Date.now(), multiple),
-        fair_price: fairPrice(mrr, multiple),
+        price: flowPrice(
+          ticker.symbol,
+          mrr,
+          sentiment,
+          Date.now(),
+          multiple,
+          shares
+        ),
+        fair_price: fairPrice(mrr, multiple, shares),
         sentiment,
         mrr,
       },

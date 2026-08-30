@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  SHARES_OUTSTANDING,
   ARR_MULTIPLE,
+  FLOW_CAP,
+  MAX_POSITION_FRACTION,
   MONTHS_PER_YEAR,
   MULTIPLE_CEILING,
   MULTIPLE_FLOOR,
-  valuationMultiple,
   SENTIMENT_CAP,
   SENTIMENT_DAILY_DECAY,
+  SHARES_OUTSTANDING,
+  TARGET_OPENING_PRICE,
   TRADE_IMPACT_FACTOR,
   applyTrade,
   changeFraction,
@@ -16,12 +18,15 @@ import {
   executionFill,
   executionFillAt,
   fairPrice,
-  FLOW_CAP,
+  floatOf,
   flowPrice,
   livePrice,
   marketCap,
   marketFlow,
+  positionLimit,
+  shareCountFor,
   tradeImpact,
+  valuationMultiple,
   volatilityFactor,
 } from "@/lib/pricing";
 
@@ -387,5 +392,72 @@ describe("valuationMultiple — durable revenue is worth more", () => {
     expect(fairPrice(25_000, veteran)).toBeGreaterThan(
       fairPrice(25_000, rookie)
     );
+  });
+});
+
+// ── the float: a unit choice, not a supply of ownership ──────────────────────
+
+describe("per-ticker floats", () => {
+  const MRR = 10_000;
+
+  it("cuts the same company into different sized slices", () => {
+    expect(fairPrice(MRR, 2.5, 10_000)).toBeCloseTo(30, 6);
+    expect(fairPrice(MRR, 2.5, 50_000)).toBeCloseTo(6, 6);
+    expect(fairPrice(MRR, 2.5, 1_000)).toBeCloseTo(300, 6);
+  });
+
+  it("never changes what the company is worth", () => {
+    const caps = [1_000, 10_000, 50_000, 1_000_000].map((f) =>
+      marketCap(MRR, 0.2, 2.5, f)
+    );
+    for (const cap of caps) expect(cap).toBeCloseTo(caps[0], 6);
+  });
+
+  it("sizes a new listing to open in the same band as everything else", () => {
+    for (const mrr of [500, 1_000, 5_000, 25_000, 100_000, 400_000]) {
+      const shares = shareCountFor(mrr);
+      const open = fairPrice(mrr, ARR_MULTIPLE, shares);
+      expect(open).toBeGreaterThan(TARGET_OPENING_PRICE * 0.5);
+      expect(open).toBeLessThan(TARGET_OPENING_PRICE * 2);
+    }
+  });
+
+  it("falls back to the default float for junk", () => {
+    expect(floatOf(undefined)).toBe(SHARES_OUTSTANDING);
+    expect(floatOf(null)).toBe(SHARES_OUTSTANDING);
+    expect(floatOf(0)).toBe(SHARES_OUTSTANDING);
+    expect(floatOf(-5)).toBe(SHARES_OUTSTANDING);
+    expect(floatOf(2_500)).toBe(2_500);
+  });
+
+  it("moves the price by the fraction of THAT float that traded", () => {
+    // 100 shares is a tenth of a 1,000-share company and a 500th of a 50,000
+    const small = tradeImpact("buy", 100, 1_000);
+    const large = tradeImpact("buy", 100, 50_000);
+    expect(small).toBeGreaterThan(large * 40);
+    expect(tradeImpact("buy", 100, 10_000)).toBeCloseTo(
+      tradeImpact("buy", 500, 50_000),
+      9
+    );
+  });
+
+  it("fills the same fraction of two floats at the same average price", () => {
+    const a = executionFill(MRR, 0, "buy", 100, 2.5, 10_000);
+    const b = executionFill(MRR, 0, "buy", 500, 2.5, 50_000);
+    // same 1% of the company, so the same cost and the same sentiment move
+    expect(a.total).toBeCloseTo(b.total, 6);
+    expect(a.newSentiment).toBeCloseTo(b.newSentiment, 9);
+  });
+});
+
+describe("position limits", () => {
+  it("caps one account at a fraction of the float", () => {
+    expect(positionLimit(10_000)).toBe(10_000 * MAX_POSITION_FRACTION);
+    expect(positionLimit(50_000)).toBe(50_000 * MAX_POSITION_FRACTION);
+  });
+
+  it("always leaves at least one share buyable", () => {
+    expect(positionLimit(1)).toBe(1);
+    expect(positionLimit(5)).toBe(1);
   });
 });

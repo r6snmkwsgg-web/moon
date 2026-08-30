@@ -61,7 +61,9 @@ export default async function ExchangePage() {
           featured.ticker.id,
           featured.ticker.symbol,
           featured.latestMrr,
-          Number(featured.ticker.sentiment)
+          Number(featured.ticker.sentiment),
+          featured.multiple,
+          featured.shares
         );
         const events = await getHeroStory(featured.ticker.id, series);
         return [series, events] as const;

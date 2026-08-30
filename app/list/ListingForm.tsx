@@ -10,7 +10,12 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { ARR_MULTIPLE, fairPrice, SHARES_OUTSTANDING } from "@/lib/pricing";
+import {
+  ARR_MULTIPLE,
+  fairPrice,
+  shareCountFor,
+  TARGET_OPENING_PRICE,
+} from "@/lib/pricing";
 import { fmtCompact, fmtPrice } from "@/lib/format";
 import LogoTile from "@/components/LogoTile";
 import { listStartup, uploadLogo, type ListingResult } from "./actions";
@@ -123,7 +128,8 @@ export default function ListingForm() {
             className="fade-up text-xs text-terminal-muted"
             style={{ animationDelay: "0.5s" }}
           >
-            fair value = {ARR_MULTIPLE}× ARR ÷ {SHARES_OUTSTANDING.toLocaleString("en-US")} shares (ARR = MRR × 12)
+            fair value = {ARR_MULTIPLE}× ARR ÷ your{" "}
+            {o.shares.toLocaleString("en-US")}-share float (ARR = MRR × 12)
           </p>
           <p
             className="fade-up font-mono text-3xl font-bold text-terminal-up"
@@ -476,12 +482,15 @@ export default function ListingForm() {
 
           <p className="rounded-md bg-terminal-raise/60 px-3 py-2 text-[11px] leading-relaxed text-terminal-muted">
             On launch we verify the key, compute your MRR from active
-            subscriptions, and your opening price is set at fair value —{" "}
-            {ARR_MULTIPLE}× ARR over{" "}
-            {SHARES_OUTSTANDING.toLocaleString("en-US")} shares. For{" "}
-            {fmtCompact(1000)} MRR that&apos;s{" "}
-            {fmtPrice(fairPrice(1000))}/share, for {fmtCompact(10000)} it&apos;s{" "}
-            {fmtPrice(fairPrice(10000))}.
+            subscriptions, and set your opening price at fair value —{" "}
+            {ARR_MULTIPLE}× ARR spread over the shares you issue. Like a real
+            IPO, the share count is picked so the first print lands near{" "}
+            {fmtPrice(TARGET_OPENING_PRICE)}: {fmtCompact(1000)} MRR opens at{" "}
+            {fmtPrice(fairPrice(1000, ARR_MULTIPLE, shareCountFor(1000)))} on a{" "}
+            {shareCountFor(1000).toLocaleString("en-US")}-share float,{" "}
+            {fmtCompact(10000)} at{" "}
+            {fmtPrice(fairPrice(10000, ARR_MULTIPLE, shareCountFor(10000)))} on{" "}
+            {shareCountFor(10000).toLocaleString("en-US")}.
           </p>
 
           {state.error && (
