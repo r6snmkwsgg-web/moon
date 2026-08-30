@@ -1,0 +1,61 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Direction A \u2014 Player card",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1030
+    },
+    {
+      "file": "DirectionB.dc.html",
+      "title": "Direction B \u2014 Terminal readout",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 920
+    },
+    {
+      "file": "DirectionC.dc.html",
+      "title": "Direction C \u2014 Editorial",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 1630
+    }
+  ],
+  "annotations": [
+    {
+      "id": "the-problem",
+      "x": 0,
+      "y": -360,
+      "w": 460,
+      "text": "WHAT'S WRONG NOW\n\nSeven .panel boxes with identical 1px borders \u2014 chart, standing, allocation, trades, positions all the same visual weight. Nothing is more important than anything else, so the eye has nowhere to land.\n\nAnd on a page about a person, the person is the smallest thing on it: an 11px handle and a letter in a circle.\n\nEach direction below attacks a different axis."
+    },
+    {
+      "id": "note-a",
+      "x": 500,
+      "y": -360,
+      "w": 420,
+      "text": "A \u2014 PLAYER CARD\n\nThe person becomes the hero. 40px name, rank as a gold medallion, value at 46px. The curve bleeds edge to edge as the page's spine, and the stats drop their boxes for a hairline band.\n\nWhy: it's a profile \u2014 its job is to make someone's standing feel like something worth sharing.\n\nTradeoff: the most 'designed' of the three, so it's the furthest from the rest of the app and the most work to keep consistent."
+    },
+    {
+      "id": "note-b",
+      "x": 1560,
+      "y": -360,
+      "w": 420,
+      "text": "B \u2014 TERMINAL READOUT\n\nNo rounded panels anywhere. Hairline rules only, everything mono, tight rows, a real price axis, a TOTAL line, a blotter. Colour appears only as signal.\n\nWhy: you keep asking for it to feel real. This is what a trading screen actually looks like, and it's nothing like a generic dark dashboard.\n\nTradeoff: cold and dense. Reads as a tool, not a place \u2014 and a shared profile is arguably a place."
+    },
+    {
+      "id": "note-c",
+      "x": 3120,
+      "y": -360,
+      "w": 420,
+      "text": "C \u2014 EDITORIAL\n\nOne 68px number and a full-bleed curve carry the page. Almost no borders \u2014 space does the separating. Sans for names, mono only for numerals.\n\nWhy: calm and premium, and the easiest to read at a glance.\n\nTradeoff: it's the Robinhood/Linear look. Handsome, but it doesn't say 'stock terminal', and it's the least distinctive of the three."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

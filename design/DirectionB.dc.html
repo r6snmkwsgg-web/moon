@@ -1,0 +1,246 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #070b12; }
+    * { box-sizing: border-box; }
+    a { color: #38bdf8; text-decoration: none; }
+    a:hover { color: #7dd3fc; }
+    .m { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+    .s { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; }
+    .lbl { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.18em; color: #8494ab; }
+  </style>
+</helmet>
+<div class="s" style="width: 1440px; background: #070b12; color: #e8eef7; padding-bottom: 40px;">
+
+  <!-- one status line, the way a terminal identifies a session -->
+  <div style="display: flex; align-items: stretch; border-bottom: 1px solid #182236; background: #070b12;">
+    <div style="display: flex; align-items: center; gap: 0; flex: 1;">
+      <div style="display: flex; flex-direction: column; gap: 5px; justify-content: center; padding: 14px 22px; ">
+        <span class="lbl">Trader</span>
+        <span class="m" style="font-size: 13px; font-weight: 700; color: #e8eef7;">HELLO-6725</span>
+      </div><div style="display: flex; flex-direction: column; gap: 5px; justify-content: center; padding: 14px 22px; border-left: 1px solid #182236;">
+        <span class="lbl">Rank</span>
+        <span class="m" style="font-size: 13px; font-weight: 500; color: #fbbf24;">001 / 003</span>
+      </div><div style="display: flex; flex-direction: column; gap: 5px; justify-content: center; padding: 14px 22px; border-left: 1px solid #182236;">
+        <span class="lbl">Tier</span>
+        <span class="m" style="font-size: 13px; font-weight: 500; color: #8494ab;">BRONZE</span>
+      </div><div style="display: flex; flex-direction: column; gap: 5px; justify-content: center; padding: 14px 22px; border-left: 1px solid #182236;">
+        <span class="lbl">Opened</span>
+        <span class="m" style="font-size: 13px; font-weight: 500; color: #8494ab;">2026-08-29</span>
+      </div><div style="display: flex; flex-direction: column; gap: 5px; justify-content: center; padding: 14px 22px; border-left: 1px solid #182236;">
+        <span class="lbl">Follows</span>
+        <span class="m" style="font-size: 13px; font-weight: 500; color: #8494ab;">0 / 0</span>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 22px; padding: 0 22px; border-left: 1px solid #182236;">
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
+        <span class="lbl">Net liquidation</span>
+        <span class="m" style="font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.05;">10,175.50</span>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px; padding-left: 22px; border-left: 1px solid #182236;">
+        <span class="lbl">Session</span>
+        <span class="m" style="font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; color: #22c55e;">+1.80%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- chart with a real price axis; grid, not decoration -->
+  <div style="display: flex; border-bottom: 1px solid #182236;">
+    <svg width="1440" height="300" viewBox="0 0 1440 300" style="display: block;">
+      <g>
+        <line x1="0" y1="40" x2="1352" y2="40" stroke="#182236" stroke-width="1" opacity="0.7"/><line x1="0" y1="92" x2="1352" y2="92" stroke="#182236" stroke-width="1" opacity="0.7"/><line x1="0" y1="144" x2="1352" y2="144" stroke="#182236" stroke-width="1" opacity="0.7"/><line x1="0" y1="196" x2="1352" y2="196" stroke="#182236" stroke-width="1" opacity="0.7"/><line x1="0" y1="248" x2="1352" y2="248" stroke="#182236" stroke-width="1" opacity="0.7"/>
+        <text x="1436" y="44" text-anchor="end" class="m" font-size="9" fill="#8494ab">10,240</text><text x="1436" y="96" text-anchor="end" class="m" font-size="9" fill="#8494ab">10,180</text><text x="1436" y="148" text-anchor="end" class="m" font-size="9" fill="#8494ab">10,120</text><text x="1436" y="200" text-anchor="end" class="m" font-size="9" fill="#8494ab">10,060</text><text x="1436" y="252" text-anchor="end" class="m" font-size="9" fill="#8494ab">10,000</text>
+        <line x1="338" y1="0" x2="338" y2="272" stroke="#182236" stroke-width="1" opacity="0.55"/><line x1="676" y1="0" x2="676" y2="272" stroke="#182236" stroke-width="1" opacity="0.55"/><line x1="1014" y1="0" x2="1014" y2="272" stroke="#182236" stroke-width="1" opacity="0.55"/>
+        <g transform="translate(0 14)">
+          <path d="M 0.0 127.6 L 5.2 134.7 L 10.3 136.4 L 15.5 129.3 L 20.6 125.2 L 25.8 129.2 L 31.0 137.0 L 36.1 137.4 L 41.3 128.3 L 46.5 130.9 L 51.6 140.8 L 56.8 149.5 L 61.9 147.3 L 67.1 143.3 L 72.3 140.7 L 77.4 139.1 L 82.6 142.1 L 87.7 150.7 L 92.9 153.9 L 98.1 151.4 L 103.2 147.4 L 108.4 141.4 L 113.5 139.0 L 118.7 139.8 L 123.9 142.0 L 129.0 150.9 L 134.2 157.8 L 139.4 155.6 L 144.5 155.0 L 149.7 155.3 L 154.8 159.1 L 160.0 159.2 L 165.2 160.1 L 170.3 164.6 L 175.5 161.6 L 180.6 160.6 L 185.8 161.6 L 191.0 161.9 L 196.1 155.9 L 201.3 154.5 L 206.5 151.7 L 211.6 150.1 L 216.8 148.7 L 221.9 145.0 L 227.1 146.2 L 232.3 151.1 L 237.4 156.9 L 242.6 154.7 L 247.7 148.9 L 252.9 146.3 L 258.1 147.8 L 263.2 154.9 L 268.4 152.6 L 273.5 151.5 L 278.7 147.3 L 283.9 149.8 L 289.0 153.8 L 294.2 154.6 L 299.4 161.9 L 304.5 171.8 L 309.7 164.6 L 314.8 154.7 L 320.0 159.1 L 325.2 160.2 L 330.3 161.0 L 335.5 165.4 L 340.6 167.9 L 345.8 169.4 L 351.0 164.9 L 356.1 164.4 L 361.3 168.5 L 366.5 171.1 L 371.6 173.9 L 376.8 176.3 L 381.9 175.8 L 387.1 169.5 L 392.3 165.0 L 397.4 163.1 L 402.6 163.4 L 407.7 164.8 L 412.9 165.1 L 418.1 162.5 L 423.2 166.9 L 428.4 178.0 L 433.5 179.9 L 438.7 183.0 L 443.9 190.8 L 449.0 193.0 L 454.2 188.6 L 459.4 181.5 L 464.5 177.3 L 469.7 182.2 L 474.8 181.6 L 480.0 178.9 L 485.2 178.9 L 490.3 180.4 L 495.5 183.0 L 500.6 178.3 L 505.8 174.8 L 511.0 168.1 L 516.1 156.4 L 521.3 150.9 L 526.5 154.2 L 531.6 155.5 L 536.8 155.9 L 541.9 152.1 L 547.1 155.2 L 552.3 166.0 L 557.4 166.3 L 562.6 165.9 L 567.7 159.7 L 572.9 157.3 L 578.1 161.7 L 583.2 161.9 L 588.4 162.2 L 593.5 162.9 L 598.7 163.3 L 603.9 163.9 L 609.0 164.7 L 614.2 162.4 L 619.4 158.7 L 624.5 162.2 L 629.7 164.9 L 634.8 159.4 L 640.0 156.6 L 645.2 155.0 L 650.3 153.8 L 655.5 152.5 L 660.6 149.3 L 665.8 151.1 L 671.0 153.8 L 676.1 155.6 L 681.3 157.4 L 686.5 159.2 L 691.6 160.7 L 696.8 169.2 L 701.9 175.1 L 707.1 172.4 L 712.3 173.5 L 717.4 179.9 L 722.6 178.5 L 727.7 174.8 L 732.9 172.8 L 738.1 175.6 L 743.2 180.8 L 748.4 174.3 L 753.5 167.0 L 758.7 163.1 L 763.9 167.9 L 769.0 171.3 L 774.2 166.3 L 779.4 161.9 L 784.5 154.5 L 789.7 153.5 L 794.8 155.9 L 800.0 156.9 L 805.2 159.8 L 810.3 165.3 L 815.5 167.1 L 820.6 164.0 L 825.8 162.1 L 831.0 167.3 L 836.1 170.0 L 841.3 167.2 L 846.5 168.3 L 851.6 172.2 L 856.8 171.7 L 861.9 170.8 L 867.1 168.9 L 872.3 170.9 L 877.4 169.9 L 882.6 163.9 L 887.7 159.0 L 892.9 155.4 L 898.1 162.5 L 903.2 165.7 L 908.4 164.8 L 913.5 162.0 L 918.7 160.7 L 923.9 157.8 L 929.0 157.7 L 934.2 154.6 L 939.4 154.2 L 944.5 155.6 L 949.7 154.9 L 954.8 157.1 L 960.0 159.7 L 965.2 166.2 L 970.3 165.6 L 975.5 166.0 L 980.6 169.2 L 985.8 169.1 L 991.0 164.2 L 996.1 160.2 L 1001.3 162.0 L 1006.5 162.3 L 1011.6 157.0 L 1016.8 154.1 L 1021.9 158.6 L 1027.1 159.1 L 1032.3 161.7 L 1037.4 166.7 L 1042.6 167.1 L 1047.7 169.5 L 1052.9 166.7 L 1058.1 162.6 L 1063.2 166.0 L 1068.4 171.5 L 1073.5 180.0 L 1078.7 187.4 L 1083.9 191.2 L 1089.0 187.2 L 1094.2 182.9 L 1099.4 180.3 L 1104.5 176.8 L 1109.7 174.1 L 1114.8 170.1 L 1120.0 170.7 L 1125.2 172.4 L 1130.3 167.9 L 1135.5 163.4 L 1140.6 161.6 L 1145.8 168.9 L 1151.0 178.5 L 1156.1 181.0 L 1161.3 172.0 L 1166.5 168.1 L 1171.6 165.1 L 1176.8 164.5 L 1181.9 165.6 L 1187.1 169.8 L 1192.3 170.0 L 1197.4 169.0 L 1202.6 172.5 L 1207.7 177.5 L 1212.9 181.1 L 1218.1 186.5 L 1223.2 186.0 L 1228.4 174.4 L 1233.5 172.0 L 1238.7 176.4 L 1243.9 173.1 L 1249.0 172.6 L 1254.2 172.4 L 1259.4 175.6 L 1264.5 178.1 L 1269.7 172.6 L 1274.8 173.5 L 1280.0 173.4 L 1285.2 172.9 L 1290.3 172.4 L 1295.5 169.1 L 1300.6 169.8 L 1305.8 171.9 L 1311.0 171.3 L 1316.1 165.4 L 1321.3 162.3 L 1326.5 165.2 L 1331.6 168.0 L 1336.8 170.0 L 1341.9 173.4 L 1347.1 178.8 L 1352.3 187.7 L 1357.4 190.7 L 1362.6 192.7 L 1367.7 182.7 L 1372.9 170.6 L 1378.1 168.7 L 1383.2 166.0 L 1388.4 162.8 L 1393.5 165.4 L 1398.7 163.6 L 1403.9 159.9 L 1409.0 167.0 L 1414.2 169.9 L 1419.4 167.2 L 1424.5 169.4 L 1429.7 171.5 L 1434.8 168.1 L 1440.0 174.0 L 0 260 Z" fill="#22c55e" opacity="0.09"/>
+          <path d="M 0.0 127.6 L 5.2 134.7 L 10.3 136.4 L 15.5 129.3 L 20.6 125.2 L 25.8 129.2 L 31.0 137.0 L 36.1 137.4 L 41.3 128.3 L 46.5 130.9 L 51.6 140.8 L 56.8 149.5 L 61.9 147.3 L 67.1 143.3 L 72.3 140.7 L 77.4 139.1 L 82.6 142.1 L 87.7 150.7 L 92.9 153.9 L 98.1 151.4 L 103.2 147.4 L 108.4 141.4 L 113.5 139.0 L 118.7 139.8 L 123.9 142.0 L 129.0 150.9 L 134.2 157.8 L 139.4 155.6 L 144.5 155.0 L 149.7 155.3 L 154.8 159.1 L 160.0 159.2 L 165.2 160.1 L 170.3 164.6 L 175.5 161.6 L 180.6 160.6 L 185.8 161.6 L 191.0 161.9 L 196.1 155.9 L 201.3 154.5 L 206.5 151.7 L 211.6 150.1 L 216.8 148.7 L 221.9 145.0 L 227.1 146.2 L 232.3 151.1 L 237.4 156.9 L 242.6 154.7 L 247.7 148.9 L 252.9 146.3 L 258.1 147.8 L 263.2 154.9 L 268.4 152.6 L 273.5 151.5 L 278.7 147.3 L 283.9 149.8 L 289.0 153.8 L 294.2 154.6 L 299.4 161.9 L 304.5 171.8 L 309.7 164.6 L 314.8 154.7 L 320.0 159.1 L 325.2 160.2 L 330.3 161.0 L 335.5 165.4 L 340.6 167.9 L 345.8 169.4 L 351.0 164.9 L 356.1 164.4 L 361.3 168.5 L 366.5 171.1 L 371.6 173.9 L 376.8 176.3 L 381.9 175.8 L 387.1 169.5 L 392.3 165.0 L 397.4 163.1 L 402.6 163.4 L 407.7 164.8 L 412.9 165.1 L 418.1 162.5 L 423.2 166.9 L 428.4 178.0 L 433.5 179.9 L 438.7 183.0 L 443.9 190.8 L 449.0 193.0 L 454.2 188.6 L 459.4 181.5 L 464.5 177.3 L 469.7 182.2 L 474.8 181.6 L 480.0 178.9 L 485.2 178.9 L 490.3 180.4 L 495.5 183.0 L 500.6 178.3 L 505.8 174.8 L 511.0 168.1 L 516.1 156.4 L 521.3 150.9 L 526.5 154.2 L 531.6 155.5 L 536.8 155.9 L 541.9 152.1 L 547.1 155.2 L 552.3 166.0 L 557.4 166.3 L 562.6 165.9 L 567.7 159.7 L 572.9 157.3 L 578.1 161.7 L 583.2 161.9 L 588.4 162.2 L 593.5 162.9 L 598.7 163.3 L 603.9 163.9 L 609.0 164.7 L 614.2 162.4 L 619.4 158.7 L 624.5 162.2 L 629.7 164.9 L 634.8 159.4 L 640.0 156.6 L 645.2 155.0 L 650.3 153.8 L 655.5 152.5 L 660.6 149.3 L 665.8 151.1 L 671.0 153.8 L 676.1 155.6 L 681.3 157.4 L 686.5 159.2 L 691.6 160.7 L 696.8 169.2 L 701.9 175.1 L 707.1 172.4 L 712.3 173.5 L 717.4 179.9 L 722.6 178.5 L 727.7 174.8 L 732.9 172.8 L 738.1 175.6 L 743.2 180.8 L 748.4 174.3 L 753.5 167.0 L 758.7 163.1 L 763.9 167.9 L 769.0 171.3 L 774.2 166.3 L 779.4 161.9 L 784.5 154.5 L 789.7 153.5 L 794.8 155.9 L 800.0 156.9 L 805.2 159.8 L 810.3 165.3 L 815.5 167.1 L 820.6 164.0 L 825.8 162.1 L 831.0 167.3 L 836.1 170.0 L 841.3 167.2 L 846.5 168.3 L 851.6 172.2 L 856.8 171.7 L 861.9 170.8 L 867.1 168.9 L 872.3 170.9 L 877.4 169.9 L 882.6 163.9 L 887.7 159.0 L 892.9 155.4 L 898.1 162.5 L 903.2 165.7 L 908.4 164.8 L 913.5 162.0 L 918.7 160.7 L 923.9 157.8 L 929.0 157.7 L 934.2 154.6 L 939.4 154.2 L 944.5 155.6 L 949.7 154.9 L 954.8 157.1 L 960.0 159.7 L 965.2 166.2 L 970.3 165.6 L 975.5 166.0 L 980.6 169.2 L 985.8 169.1 L 991.0 164.2 L 996.1 160.2 L 1001.3 162.0 L 1006.5 162.3 L 1011.6 157.0 L 1016.8 154.1 L 1021.9 158.6 L 1027.1 159.1 L 1032.3 161.7 L 1037.4 166.7 L 1042.6 167.1 L 1047.7 169.5 L 1052.9 166.7 L 1058.1 162.6 L 1063.2 166.0 L 1068.4 171.5 L 1073.5 180.0 L 1078.7 187.4 L 1083.9 191.2 L 1089.0 187.2 L 1094.2 182.9 L 1099.4 180.3 L 1104.5 176.8 L 1109.7 174.1 L 1114.8 170.1 L 1120.0 170.7 L 1125.2 172.4 L 1130.3 167.9 L 1135.5 163.4 L 1140.6 161.6 L 1145.8 168.9 L 1151.0 178.5 L 1156.1 181.0 L 1161.3 172.0 L 1166.5 168.1 L 1171.6 165.1 L 1176.8 164.5 L 1181.9 165.6 L 1187.1 169.8 L 1192.3 170.0 L 1197.4 169.0 L 1202.6 172.5 L 1207.7 177.5 L 1212.9 181.1 L 1218.1 186.5 L 1223.2 186.0 L 1228.4 174.4 L 1233.5 172.0 L 1238.7 176.4 L 1243.9 173.1 L 1249.0 172.6 L 1254.2 172.4 L 1259.4 175.6 L 1264.5 178.1 L 1269.7 172.6 L 1274.8 173.5 L 1280.0 173.4 L 1285.2 172.9 L 1290.3 172.4 L 1295.5 169.1 L 1300.6 169.8 L 1305.8 171.9 L 1311.0 171.3 L 1316.1 165.4 L 1321.3 162.3 L 1326.5 165.2 L 1331.6 168.0 L 1336.8 170.0 L 1341.9 173.4 L 1347.1 178.8 L 1352.3 187.7 L 1357.4 190.7 L 1362.6 192.7 L 1367.7 182.7 L 1372.9 170.6 L 1378.1 168.7 L 1383.2 166.0 L 1388.4 162.8 L 1393.5 165.4 L 1398.7 163.6 L 1403.9 159.9 L 1409.0 167.0 L 1414.2 169.9 L 1419.4 167.2 L 1424.5 169.4 L 1429.7 171.5 L 1434.8 168.1 L 1440.0 174.0" fill="none" stroke="#22c55e" stroke-width="1.4"/>
+        </g>
+        <line x1="0" y1="248" x2="1352" y2="248" stroke="#8494ab" stroke-width="1" stroke-dasharray="2 4" opacity="0.5"/>
+        <g opacity="0.7">
+          <text x="338" y="290" text-anchor="middle" class="m" font-size="9" fill="#8494ab">06:00</text>
+          <text x="676" y="290" text-anchor="middle" class="m" font-size="9" fill="#8494ab">12:00</text>
+          <text x="1014" y="290" text-anchor="middle" class="m" font-size="9" fill="#8494ab">18:00</text>
+          <text x="8" y="290" class="m" font-size="9" fill="#8494ab">00:00 ET</text>
+          <text x="1348" y="290" text-anchor="end" class="m" font-size="9" fill="#8494ab">23:59 ET</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <!-- the readout: label/value pairs on a strict grid, no boxes at all -->
+  <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-bottom: 1px solid #182236;">
+    <div style="display: flex; flex-direction: column; gap: 4px; padding: 13px 20px; ">
+      <span class="lbl">Day P&amp;L</span>
+      <span class="m" style="font-size: 15px; font-weight: 600; color: #22c55e;">+175.50</span>
+    </div><div style="display: flex; flex-direction: column; gap: 4px; padding: 13px 20px; border-left: 1px solid #182236;">
+      <span class="lbl">Open P&amp;L</span>
+      <span class="m" style="font-size: 15px; font-weight: 600; color: #22c55e;">+175.50</span>
+    </div><div style="display: flex; flex-direction: column; gap: 4px; padding: 13px 20px; border-left: 1px solid #182236;">
+      <span class="lbl">Realized</span>
+      <span class="m" style="font-size: 15px; font-weight: 600; color: #8494ab;">0.00</span>
+    </div><div style="display: flex; flex-direction: column; gap: 4px; padding: 13px 20px; border-left: 1px solid #182236;">
+      <span class="lbl">Cash</span>
+      <span class="m" style="font-size: 15px; font-weight: 600; color: #e8eef7;">4.48</span>
+    </div><div style="display: flex; flex-direction: column; gap: 4px; padding: 13px 20px; border-left: 1px solid #182236;">
+      <span class="lbl">Positions</span>
+      <span class="m" style="font-size: 15px; font-weight: 600; color: #e8eef7;">5</span>
+    </div><div style="display: flex; flex-direction: column; gap: 4px; padding: 13px 20px; border-left: 1px solid #182236;">
+      <span class="lbl">Turnover</span>
+      <span class="m" style="font-size: 15px; font-weight: 600; color: #e8eef7;">6</span>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: minmax(0, 1fr) 400px;">
+    <div style="border-right: 1px solid #182236;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 13px 20px; border-bottom: 1px solid #182236;">
+        <span class="lbl">Positions</span>
+        <span class="m" style="font-size: 10px; letter-spacing: 0.14em; color: #8494ab;">MARKED 23:04:11 ET</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 84px minmax(0,1fr) 70px 84px 84px 78px 68px 108px 92px; align-items: center; height: 26px; padding: 0 20px; border-bottom: 1px solid #182236; background: #0b111d;">
+        <span class="lbl">Sym</span><span class="lbl">Name</span><span class="lbl" style="text-align: right;">Qty</span><span class="lbl" style="text-align: right;">Avg</span><span class="lbl" style="text-align: right;">Last</span><span class="lbl" style="text-align: right;">Chg</span><span class="lbl" style="text-align: right;">Wgt</span><span class="lbl" style="text-align: right;">Value</span><span class="lbl" style="text-align: right;">P&amp;L</span>
+      </div>
+      
+        <div style="display: grid; grid-template-columns: 84px minmax(0,1fr) 70px 84px 84px 78px 68px 108px 92px; align-items: center; height: 30px; border-bottom: 1px solid rgba(24,34,54,0.55); padding: 0 20px;">
+          <span class="m" style="font-size: 12px; font-weight: 700; color: #e8eef7;">PLSE</span>
+          <span class="s" style="font-size: 12px; color: #8494ab;">Pulsedash</span>
+          <span class="m" style="text-align: right; font-size: 12px;">55</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">38.28</span>
+          <span class="m" style="text-align: right; font-size: 12px;">38.40</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #22c55e;">+37.6%</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">21.0%</span>
+          <span class="m" style="text-align: right; font-size: 12px;">2,111.73</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #22c55e;">+6.41</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 84px minmax(0,1fr) 70px 84px 84px 78px 68px 108px 92px; align-items: center; height: 30px; border-bottom: 1px solid rgba(24,34,54,0.55); padding: 0 20px;">
+          <span class="m" style="font-size: 12px; font-weight: 700; color: #e8eef7;">GRDN</span>
+          <span class="s" style="font-size: 12px; color: #8494ab;">Guardrail</span>
+          <span class="m" style="text-align: right; font-size: 12px;">40</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">30.13</span>
+          <span class="m" style="text-align: right; font-size: 12px;">30.26</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #22c55e;">+29.0%</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">12.0%</span>
+          <span class="m" style="text-align: right; font-size: 12px;">1,210.34</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #22c55e;">+5.09</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 84px minmax(0,1fr) 70px 84px 84px 78px 68px 108px 92px; align-items: center; height: 30px; border-bottom: 1px solid rgba(24,34,54,0.55); padding: 0 20px;">
+          <span class="m" style="font-size: 12px; font-weight: 700; color: #e8eef7;">SNDR</span>
+          <span class="s" style="font-size: 12px; color: #8494ab;">Sendrly</span>
+          <span class="m" style="text-align: right; font-size: 12px;">30</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">30.26</span>
+          <span class="m" style="text-align: right; font-size: 12px;">30.24</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #22c55e;">+6.6%</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">9.1%</span>
+          <span class="m" style="text-align: right; font-size: 12px;">907.18</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #f43f5e;">-0.48</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 84px minmax(0,1fr) 70px 84px 84px 78px 68px 108px 92px; align-items: center; height: 30px; border-bottom: 1px solid rgba(24,34,54,0.55); padding: 0 20px;">
+          <span class="m" style="font-size: 12px; font-weight: 700; color: #e8eef7;">MTRC</span>
+          <span class="s" style="font-size: 12px; color: #8494ab;">Metricly</span>
+          <span class="m" style="text-align: right; font-size: 12px;">22</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">30.90</span>
+          <span class="m" style="text-align: right; font-size: 12px;">30.86</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #f43f5e;">-18.3%</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">6.8%</span>
+          <span class="m" style="text-align: right; font-size: 12px;">678.86</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #f43f5e;">-0.92</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 84px minmax(0,1fr) 70px 84px 84px 78px 68px 108px 92px; align-items: center; height: 30px; border-bottom: 1px solid rgba(24,34,54,0.55); padding: 0 20px;">
+          <span class="m" style="font-size: 12px; font-weight: 700; color: #e8eef7;">SCRP</span>
+          <span class="s" style="font-size: 12px; color: #8494ab;">Scrapling</span>
+          <span class="m" style="text-align: right; font-size: 12px;">18</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">34.19</span>
+          <span class="m" style="text-align: right; font-size: 12px;">34.19</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #22c55e;">+44.8%</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">6.2%</span>
+          <span class="m" style="text-align: right; font-size: 12px;">615.46</span>
+          <span class="m" style="text-align: right; font-size: 12px; color: #22c55e;">+0.04</span>
+        </div>
+      <div style="display: grid; grid-template-columns: 84px minmax(0,1fr) 70px 84px 84px 78px 68px 108px 92px; align-items: center; height: 30px; padding: 0 20px; background: #0b111d;">
+        <span class="m" style="font-size: 12px; font-weight: 700; color: #8494ab;">TOTAL</span>
+        <span></span><span></span><span></span><span></span><span></span>
+        <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">55.1%</span>
+        <span class="m" style="text-align: right; font-size: 12px; font-weight: 700;">5,523.57</span>
+        <span class="m" style="text-align: right; font-size: 12px; font-weight: 700; color: #22c55e;">+10.14</span>
+      </div>
+    </div>
+
+    <div>
+      <div style="padding: 13px 20px; border-bottom: 1px solid #182236;">
+        <span class="lbl">Blotter</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 34px 46px 62px 78px minmax(0,1fr); align-items: center; height: 30px; padding: 0 20px; border-bottom: 1px solid rgba(24,34,54,0.55);">
+        <span class="m" style="font-size: 10px; font-weight: 700; color: #22c55e;">BUY</span>
+        <span class="m" style="text-align: right; font-size: 12px;">18</span>
+        <span class="m" style="text-align: right; font-size: 12px; font-weight: 700;">SCRP</span>
+        <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">34.19</span>
+        <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">18:04</span>
+      </div><div style="display: grid; grid-template-columns: 34px 46px 62px 78px minmax(0,1fr); align-items: center; height: 30px; padding: 0 20px; border-bottom: 1px solid rgba(24,34,54,0.55);">
+        <span class="m" style="font-size: 10px; font-weight: 700; color: #22c55e;">BUY</span>
+        <span class="m" style="text-align: right; font-size: 12px;">22</span>
+        <span class="m" style="text-align: right; font-size: 12px; font-weight: 700;">MTRC</span>
+        <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">30.90</span>
+        <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">15:04</span>
+      </div><div style="display: grid; grid-template-columns: 34px 46px 62px 78px minmax(0,1fr); align-items: center; height: 30px; padding: 0 20px; border-bottom: 1px solid rgba(24,34,54,0.55);">
+        <span class="m" style="font-size: 10px; font-weight: 700; color: #22c55e;">BUY</span>
+        <span class="m" style="text-align: right; font-size: 12px;">30</span>
+        <span class="m" style="text-align: right; font-size: 12px; font-weight: 700;">SNDR</span>
+        <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">30.26</span>
+        <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">12:04</span>
+      </div><div style="display: grid; grid-template-columns: 34px 46px 62px 78px minmax(0,1fr); align-items: center; height: 30px; padding: 0 20px; border-bottom: 1px solid rgba(24,34,54,0.55);">
+        <span class="m" style="font-size: 10px; font-weight: 700; color: #22c55e;">BUY</span>
+        <span class="m" style="text-align: right; font-size: 12px;">40</span>
+        <span class="m" style="text-align: right; font-size: 12px; font-weight: 700;">GRDN</span>
+        <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">30.13</span>
+        <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">09:04</span>
+      </div><div style="display: grid; grid-template-columns: 34px 46px 62px 78px minmax(0,1fr); align-items: center; height: 30px; padding: 0 20px; border-bottom: 1px solid rgba(24,34,54,0.55);">
+        <span class="m" style="font-size: 10px; font-weight: 700; color: #22c55e;">BUY</span>
+        <span class="m" style="text-align: right; font-size: 12px;">55</span>
+        <span class="m" style="text-align: right; font-size: 12px; font-weight: 700;">PLSE</span>
+        <span class="m" style="text-align: right; font-size: 12px; color: #8494ab;">38.28</span>
+        <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">06:04</span>
+      </div>
+
+      <div style="padding: 18px 20px 13px 20px; border-bottom: 1px solid #182236;">
+        <span class="lbl">Exposure</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 0;">
+        <div style="display: grid; grid-template-columns: 66px minmax(0,1fr) 52px; align-items: center; gap: 12px; height: 28px; padding: 0 20px;">
+          <span class="m" style="font-size: 11px; font-weight: 700;">PLSE</span>
+          <span style="display: block; height: 6px; background: #101828;"><span style="display: block; height: 6px; width: 47%; background: #4f9ed4;"></span></span>
+          <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">21.0%</span>
+        </div><div style="display: grid; grid-template-columns: 66px minmax(0,1fr) 52px; align-items: center; gap: 12px; height: 28px; padding: 0 20px;">
+          <span class="m" style="font-size: 11px; font-weight: 700;">GRDN</span>
+          <span style="display: block; height: 6px; background: #101828;"><span style="display: block; height: 6px; width: 27%; background: #3f83b4;"></span></span>
+          <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">12.0%</span>
+        </div><div style="display: grid; grid-template-columns: 66px minmax(0,1fr) 52px; align-items: center; gap: 12px; height: 28px; padding: 0 20px;">
+          <span class="m" style="font-size: 11px; font-weight: 700;">SNDR</span>
+          <span style="display: block; height: 6px; background: #101828;"><span style="display: block; height: 6px; width: 20%; background: #326b95;"></span></span>
+          <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">9.1%</span>
+        </div><div style="display: grid; grid-template-columns: 66px minmax(0,1fr) 52px; align-items: center; gap: 12px; height: 28px; padding: 0 20px;">
+          <span class="m" style="font-size: 11px; font-weight: 700;">MTRC</span>
+          <span style="display: block; height: 6px; background: #101828;"><span style="display: block; height: 6px; width: 15%; background: #275577;"></span></span>
+          <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">6.8%</span>
+        </div><div style="display: grid; grid-template-columns: 66px minmax(0,1fr) 52px; align-items: center; gap: 12px; height: 28px; padding: 0 20px;">
+          <span class="m" style="font-size: 11px; font-weight: 700;">SCRP</span>
+          <span style="display: block; height: 6px; background: #101828;"><span style="display: block; height: 6px; width: 14%; background: #1e425c;"></span></span>
+          <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">6.2%</span>
+        </div><div style="display: grid; grid-template-columns: 66px minmax(0,1fr) 52px; align-items: center; gap: 12px; height: 28px; padding: 0 20px;">
+          <span class="m" style="font-size: 11px; font-weight: 700;">CASH</span>
+          <span style="display: block; height: 6px; background: #101828;"><span style="display: block; height: 6px; width: 100%; background: #232f45;"></span></span>
+          <span class="m" style="text-align: right; font-size: 11px; color: #8494ab;">44.9%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

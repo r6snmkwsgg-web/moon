@@ -1,0 +1,283 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #070b12; }
+    * { box-sizing: border-box; }
+    a { color: #38bdf8; text-decoration: none; }
+    a:hover { color: #7dd3fc; }
+    .m { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+    .s { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; }
+    .lbl { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.18em; color: #8494ab; }
+  </style>
+</helmet>
+<div class="s" style="width: 1440px; background: #070b12; padding: 0 0 48px 0; color: #e8eef7;">
+
+  <!-- hero: the person is the biggest thing on a page about a person -->
+  <div style="position: relative; overflow: hidden; border-bottom: 1px solid #182236; background: #0b111d;">
+    <div style="position: absolute; inset: 0; background: radial-gradient(760px 300px at 14% -40%, rgba(34,197,94,0.16), transparent 68%); pointer-events: none;"></div>
+    <div style="position: relative; display: flex; align-items: center; gap: 28px; padding: 34px 32px;">
+
+      <div style="display: flex; align-items: center; justify-content: center; width: 76px; height: 76px; flex-shrink: 0; border: 1px solid #223251; border-radius: 10px; background: linear-gradient(160deg, #16233c, #0d1526);">
+        <span class="m" style="font-size: 32px; font-weight: 700; color: #38bdf8;">H</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 7px; min-width: 0;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span class="s" style="font-size: 40px; font-weight: 700; letter-spacing: -0.025em; line-height: 1;">hello</span>
+          <span class="m" style="display: inline-flex; align-items: center; gap: 5px; border: 1px solid rgba(251,191,36,0.34); border-radius: 6px; background: rgba(251,191,36,0.09); padding: 4px 9px; font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: #fbbf24;">
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M5 0.6 8.2 5 5 9.4 1.8 5Z" fill="currentColor"/></svg>BRONZE
+          </span>
+        </div>
+        <div class="m" style="display: flex; align-items: center; gap: 14px; font-size: 12px; color: #8494ab;">
+          <span>@hello-6725</span>
+          <span style="color: #223251;">/</span>
+          <span>trading since Aug 2026</span>
+          <span style="color: #223251;">/</span>
+          <span><span style="color: #e8eef7;">0</span> followers</span>
+        </div>
+      </div>
+
+      <!-- rank as a medal, not a table cell: it is the competitive hook -->
+      <div style="display: flex; align-items: center; gap: 14px; margin-left: 22px; padding-left: 26px; border-left: 1px solid #182236;">
+        <svg width="46" height="52" viewBox="0 0 46 52" fill="none">
+          <path d="M23 1.7 43.5 13.4v23.2L23 48.3 2.5 36.6V13.4Z" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.45)" stroke-width="1.2"/>
+          <text x="23" y="32" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="21" font-weight="700" fill="#fbbf24">1</text>
+        </svg>
+        <div style="display: flex; flex-direction: column; gap: 3px;">
+          <span class="lbl">Rank</span>
+          <span class="m" style="font-size: 13px; color: #8494ab;">of 3 traders</span>
+        </div>
+      </div>
+
+      <div style="margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+        <span class="m" style="font-size: 46px; font-weight: 700; letter-spacing: -0.03em; line-height: 1;">$10,175.50</span>
+        <div style="display: flex; align-items: center; gap: 9px;">
+          <span class="m" style="border-radius: 6px; background: rgba(34,197,94,0.12); padding: 4px 9px; font-size: 13px; font-weight: 600; color: #22c55e;">&#9650; +$175.50 &nbsp;+1.8%</span>
+          <span class="m" style="font-size: 12px; color: #8494ab;">today</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- the curve is the spine of the page: edge to edge, no frame around it -->
+  <div style="position: relative; background: #0b111d; border-bottom: 1px solid #182236;">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 32px 0 32px;">
+      <span class="lbl">Equity &middot; 1 day</span>
+      <div style="display: flex; gap: 2px;">
+        <span class="m" style="border-radius: 6px; background: #101828; padding: 5px 11px; font-size: 11px; font-weight: 600; color: #e8eef7;">1D</span>
+        <span class="m" style="padding: 5px 11px; font-size: 11px; font-weight: 600; color: #8494ab;">1W</span>
+        <span class="m" style="padding: 5px 11px; font-size: 11px; font-weight: 600; color: #8494ab;">1M</span>
+        <span class="m" style="padding: 5px 11px; font-size: 11px; font-weight: 600; color: #8494ab;">ALL</span>
+      </div>
+    </div>
+    <svg width="1440" height="316" viewBox="0 0 1440 316" style="display: block;">
+      <defs>
+        <linearGradient id="aFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#22c55e" stop-opacity="0.20"/>
+          <stop offset="100%" stop-color="#22c55e" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <g transform="translate(32 12)">
+        <line x1="0" y1="150" x2="1376" y2="150" stroke="#8494ab" stroke-width="1" stroke-dasharray="3 5" opacity="0.34"/>
+        <text x="0" y="164" class="m" font-size="9" fill="#8494ab" opacity="0.85" stroke="#0b111d" stroke-width="3" paint-order="stroke">$10,000.00 stake</text>
+        <path d="M 0.0 218.8 L 5.3 212.3 L 10.6 201.8 L 15.9 192.6 L 21.3 197.4 L 26.6 201.8 L 31.9 206.1 L 37.2 208.9 L 42.5 208.7 L 47.8 210.4 L 53.1 205.9 L 58.4 191.3 L 63.8 194.0 L 69.1 198.1 L 74.4 189.5 L 79.7 190.5 L 85.0 191.3 L 90.3 197.3 L 95.6 202.1 L 100.9 201.3 L 106.3 199.9 L 111.6 198.4 L 116.9 192.7 L 122.2 194.7 L 127.5 199.8 L 132.8 198.3 L 138.1 197.0 L 143.4 202.1 L 148.8 201.2 L 154.1 198.5 L 159.4 192.7 L 164.7 193.7 L 170.0 198.4 L 175.3 204.3 L 180.6 212.1 L 185.9 213.1 L 191.3 220.7 L 196.6 226.0 L 201.9 208.4 L 207.2 206.7 L 212.5 213.0 L 217.8 218.4 L 223.1 228.1 L 228.4 231.2 L 233.8 233.4 L 239.1 234.6 L 244.4 227.5 L 249.7 221.6 L 255.0 218.6 L 260.3 212.4 L 265.6 210.8 L 270.9 210.7 L 276.3 211.4 L 281.6 210.8 L 286.9 220.9 L 292.2 223.4 L 297.5 215.8 L 302.8 208.8 L 308.1 206.8 L 313.5 204.0 L 318.8 197.3 L 324.1 191.3 L 329.4 208.2 L 334.7 214.9 L 340.0 208.7 L 345.3 198.8 L 350.6 198.2 L 356.0 204.9 L 361.3 208.4 L 366.6 212.6 L 371.9 223.2 L 377.2 233.5 L 382.5 238.9 L 387.8 236.1 L 393.1 233.0 L 398.5 228.4 L 403.8 224.2 L 409.1 221.2 L 414.4 222.1 L 419.7 222.3 L 425.0 223.6 L 430.3 223.6 L 435.6 225.9 L 441.0 235.3 L 446.3 238.8 L 451.6 242.0 L 456.9 242.9 L 462.2 239.9 L 467.5 238.6 L 472.8 233.7 L 478.1 231.6 L 483.5 224.8 L 488.8 225.5 L 494.1 228.6 L 499.4 224.6 L 504.7 226.9 L 510.0 232.0 L 515.3 233.9 L 520.6 235.7 L 526.0 240.3 L 531.3 244.5 L 536.6 242.7 L 541.9 240.9 L 547.2 227.6 L 552.5 217.8 L 557.8 224.9 L 563.2 226.8 L 568.5 221.6 L 573.8 218.1 L 579.1 219.7 L 584.4 209.1 L 589.7 200.4 L 595.0 198.3 L 600.3 198.7 L 605.7 200.9 L 611.0 206.1 L 616.3 201.5 L 621.6 195.2 L 626.9 192.7 L 632.2 200.1 L 637.5 210.4 L 642.8 219.6 L 648.2 224.0 L 653.5 219.3 L 658.8 219.3 L 664.1 219.8 L 669.4 215.2 L 674.7 217.3 L 680.0 225.6 L 685.3 231.7 L 690.7 235.1 L 696.0 230.1 L 701.3 222.3 L 706.6 224.8 L 711.9 234.8 L 717.2 231.2 L 722.5 226.1 L 727.8 232.9 L 733.2 234.2 L 738.5 231.7 L 743.8 233.5 L 749.1 232.0 L 754.4 229.7 L 759.7 226.8 L 765.0 225.7 L 770.3 222.7 L 775.7 217.2 L 781.0 226.5 L 786.3 226.1 L 791.6 219.4 L 796.9 220.0 L 802.2 222.2 L 807.5 223.2 L 812.8 221.1 L 818.2 222.5 L 823.5 212.9 L 828.8 205.8 L 834.1 204.8 L 839.4 201.9 L 844.7 201.6 L 850.0 207.0 L 855.4 201.5 L 860.7 193.5 L 866.0 190.9 L 871.3 190.8 L 876.6 192.1 L 881.9 199.6 L 887.2 197.5 L 892.5 189.4 L 897.9 186.1 L 903.2 182.6 L 908.5 181.2 L 913.8 190.0 L 919.1 194.2 L 924.4 198.0 L 929.7 199.4 L 935.0 204.7 L 940.4 212.5 L 945.7 207.3 L 951.0 203.7 L 956.3 210.9 L 961.6 213.7 L 966.9 204.9 L 972.2 193.7 L 977.5 189.7 L 982.9 198.2 L 988.2 190.9 L 993.5 174.1 L 998.8 174.0 L 1004.1 172.4 L 1009.4 163.6 L 1014.7 157.4 L 1020.0 163.3 L 1025.4 162.6 L 1030.7 163.2 L 1036.0 169.1 L 1041.3 160.0 L 1046.6 148.6 L 1051.9 146.4 L 1057.2 155.6 L 1062.5 162.6 L 1067.9 149.4 L 1073.2 149.9 L 1078.5 160.4 L 1083.8 162.9 L 1089.1 165.0 L 1094.4 156.4 L 1099.7 149.2 L 1105.1 147.7 L 1110.4 153.3 L 1115.7 157.2 L 1121.0 153.5 L 1126.3 154.2 L 1131.6 154.1 L 1136.9 155.2 L 1142.2 152.0 L 1147.6 149.6 L 1152.9 144.3 L 1158.2 147.7 L 1163.5 158.9 L 1168.8 162.9 L 1174.1 166.8 L 1179.4 163.9 L 1184.7 162.7 L 1190.1 164.8 L 1195.4 164.3 L 1200.7 164.7 L 1206.0 164.1 L 1211.3 161.6 L 1216.6 153.5 L 1221.9 148.9 L 1227.2 146.9 L 1232.6 151.5 L 1237.9 150.2 L 1243.2 153.6 L 1248.5 161.8 L 1253.8 157.5 L 1259.1 153.2 L 1264.4 150.0 L 1269.7 148.0 L 1275.1 146.7 L 1280.4 134.3 L 1285.7 123.3 L 1291.0 119.3 L 1296.3 116.8 L 1301.6 120.5 L 1306.9 115.3 L 1312.2 105.9 L 1317.6 100.6 L 1322.9 102.3 L 1328.2 104.9 L 1333.5 111.1 L 1338.8 113.9 L 1344.1 116.9 L 1349.4 120.9 L 1354.7 122.5 L 1360.1 121.5 L 1365.4 127.4 L 1370.7 132.8 L 1376.0 131.6 L 0 300 Z" fill="url(#aFill)"/>
+        <path d="M 0.0 218.8 L 5.3 212.3 L 10.6 201.8 L 15.9 192.6 L 21.3 197.4 L 26.6 201.8 L 31.9 206.1 L 37.2 208.9 L 42.5 208.7 L 47.8 210.4 L 53.1 205.9 L 58.4 191.3 L 63.8 194.0 L 69.1 198.1 L 74.4 189.5 L 79.7 190.5 L 85.0 191.3 L 90.3 197.3 L 95.6 202.1 L 100.9 201.3 L 106.3 199.9 L 111.6 198.4 L 116.9 192.7 L 122.2 194.7 L 127.5 199.8 L 132.8 198.3 L 138.1 197.0 L 143.4 202.1 L 148.8 201.2 L 154.1 198.5 L 159.4 192.7 L 164.7 193.7 L 170.0 198.4 L 175.3 204.3 L 180.6 212.1 L 185.9 213.1 L 191.3 220.7 L 196.6 226.0 L 201.9 208.4 L 207.2 206.7 L 212.5 213.0 L 217.8 218.4 L 223.1 228.1 L 228.4 231.2 L 233.8 233.4 L 239.1 234.6 L 244.4 227.5 L 249.7 221.6 L 255.0 218.6 L 260.3 212.4 L 265.6 210.8 L 270.9 210.7 L 276.3 211.4 L 281.6 210.8 L 286.9 220.9 L 292.2 223.4 L 297.5 215.8 L 302.8 208.8 L 308.1 206.8 L 313.5 204.0 L 318.8 197.3 L 324.1 191.3 L 329.4 208.2 L 334.7 214.9 L 340.0 208.7 L 345.3 198.8 L 350.6 198.2 L 356.0 204.9 L 361.3 208.4 L 366.6 212.6 L 371.9 223.2 L 377.2 233.5 L 382.5 238.9 L 387.8 236.1 L 393.1 233.0 L 398.5 228.4 L 403.8 224.2 L 409.1 221.2 L 414.4 222.1 L 419.7 222.3 L 425.0 223.6 L 430.3 223.6 L 435.6 225.9 L 441.0 235.3 L 446.3 238.8 L 451.6 242.0 L 456.9 242.9 L 462.2 239.9 L 467.5 238.6 L 472.8 233.7 L 478.1 231.6 L 483.5 224.8 L 488.8 225.5 L 494.1 228.6 L 499.4 224.6 L 504.7 226.9 L 510.0 232.0 L 515.3 233.9 L 520.6 235.7 L 526.0 240.3 L 531.3 244.5 L 536.6 242.7 L 541.9 240.9 L 547.2 227.6 L 552.5 217.8 L 557.8 224.9 L 563.2 226.8 L 568.5 221.6 L 573.8 218.1 L 579.1 219.7 L 584.4 209.1 L 589.7 200.4 L 595.0 198.3 L 600.3 198.7 L 605.7 200.9 L 611.0 206.1 L 616.3 201.5 L 621.6 195.2 L 626.9 192.7 L 632.2 200.1 L 637.5 210.4 L 642.8 219.6 L 648.2 224.0 L 653.5 219.3 L 658.8 219.3 L 664.1 219.8 L 669.4 215.2 L 674.7 217.3 L 680.0 225.6 L 685.3 231.7 L 690.7 235.1 L 696.0 230.1 L 701.3 222.3 L 706.6 224.8 L 711.9 234.8 L 717.2 231.2 L 722.5 226.1 L 727.8 232.9 L 733.2 234.2 L 738.5 231.7 L 743.8 233.5 L 749.1 232.0 L 754.4 229.7 L 759.7 226.8 L 765.0 225.7 L 770.3 222.7 L 775.7 217.2 L 781.0 226.5 L 786.3 226.1 L 791.6 219.4 L 796.9 220.0 L 802.2 222.2 L 807.5 223.2 L 812.8 221.1 L 818.2 222.5 L 823.5 212.9 L 828.8 205.8 L 834.1 204.8 L 839.4 201.9 L 844.7 201.6 L 850.0 207.0 L 855.4 201.5 L 860.7 193.5 L 866.0 190.9 L 871.3 190.8 L 876.6 192.1 L 881.9 199.6 L 887.2 197.5 L 892.5 189.4 L 897.9 186.1 L 903.2 182.6 L 908.5 181.2 L 913.8 190.0 L 919.1 194.2 L 924.4 198.0 L 929.7 199.4 L 935.0 204.7 L 940.4 212.5 L 945.7 207.3 L 951.0 203.7 L 956.3 210.9 L 961.6 213.7 L 966.9 204.9 L 972.2 193.7 L 977.5 189.7 L 982.9 198.2 L 988.2 190.9 L 993.5 174.1 L 998.8 174.0 L 1004.1 172.4 L 1009.4 163.6 L 1014.7 157.4 L 1020.0 163.3 L 1025.4 162.6 L 1030.7 163.2 L 1036.0 169.1 L 1041.3 160.0 L 1046.6 148.6 L 1051.9 146.4 L 1057.2 155.6 L 1062.5 162.6 L 1067.9 149.4 L 1073.2 149.9 L 1078.5 160.4 L 1083.8 162.9 L 1089.1 165.0 L 1094.4 156.4 L 1099.7 149.2 L 1105.1 147.7 L 1110.4 153.3 L 1115.7 157.2 L 1121.0 153.5 L 1126.3 154.2 L 1131.6 154.1 L 1136.9 155.2 L 1142.2 152.0 L 1147.6 149.6 L 1152.9 144.3 L 1158.2 147.7 L 1163.5 158.9 L 1168.8 162.9 L 1174.1 166.8 L 1179.4 163.9 L 1184.7 162.7 L 1190.1 164.8 L 1195.4 164.3 L 1200.7 164.7 L 1206.0 164.1 L 1211.3 161.6 L 1216.6 153.5 L 1221.9 148.9 L 1227.2 146.9 L 1232.6 151.5 L 1237.9 150.2 L 1243.2 153.6 L 1248.5 161.8 L 1253.8 157.5 L 1259.1 153.2 L 1264.4 150.0 L 1269.7 148.0 L 1275.1 146.7 L 1280.4 134.3 L 1285.7 123.3 L 1291.0 119.3 L 1296.3 116.8 L 1301.6 120.5 L 1306.9 115.3 L 1312.2 105.9 L 1317.6 100.6 L 1322.9 102.3 L 1328.2 104.9 L 1333.5 111.1 L 1338.8 113.9 L 1344.1 116.9 L 1349.4 120.9 L 1354.7 122.5 L 1360.1 121.5 L 1365.4 127.4 L 1370.7 132.8 L 1376.0 131.6" fill="none" stroke="#22c55e" stroke-width="1.6" stroke-linejoin="round"/>
+        <circle cx="1376" cy="131.6" r="4" fill="#22c55e"/>
+        <circle cx="1376" cy="131.6" r="9" fill="#22c55e" opacity="0.20"/>
+        <g opacity="0.55">
+          <text x="344" y="292" text-anchor="middle" class="m" font-size="9" fill="#8494ab">6:00 AM</text>
+          <text x="688" y="292" text-anchor="middle" class="m" font-size="9" fill="#8494ab">12:00 PM</text>
+          <text x="1032" y="292" text-anchor="middle" class="m" font-size="9" fill="#8494ab">6:00 PM</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <!-- stats as a hairline band, not five more boxes -->
+  <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: #0b111d; border-bottom: 1px solid #182236;">
+    <div style="display: flex; flex-direction: column; gap: 4px; padding: 15px 32px;">
+      <span class="lbl">Today</span>
+      <span class="m" style="font-size: 17px; font-weight: 600; color: #22c55e;">+$175.50</span>
+      <span class="m" style="font-size: 11px; color: #8494ab;">+1.8%</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px; padding: 15px 24px; border-left: 1px solid #182236;">
+      <span class="lbl">All-time</span>
+      <span class="m" style="font-size: 17px; font-weight: 600; color: #22c55e;">+$175.50</span>
+      <span class="m" style="font-size: 11px; color: #8494ab;">+1.8%</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px; padding: 15px 24px; border-left: 1px solid #182236;">
+      <span class="lbl">Realized</span>
+      <span class="m" style="font-size: 17px; font-weight: 600; color: #8494ab;">&mdash;</span>
+      <span class="m" style="font-size: 11px; color: #8494ab;">nothing sold yet</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px; padding: 15px 24px; border-left: 1px solid #182236;">
+      <span class="lbl">Cash</span>
+      <span class="m" style="font-size: 17px; font-weight: 600;">$4.48</span>
+      <span class="m" style="font-size: 11px; color: #8494ab;">buying power</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px; padding: 15px 24px; border-left: 1px solid #182236;">
+      <span class="lbl">Best position</span>
+      <span class="m" style="font-size: 17px; font-weight: 600; color: #22c55e;">$SCRP</span>
+      <span class="m" style="font-size: 11px; color: #8494ab;">+44.8% in 30d</span>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 40px; padding: 34px 32px 0 32px;">
+
+    <div style="display: flex; flex-direction: column; gap: 14px; min-width: 0;">
+      <span class="lbl">Book &middot; 5 positions</span>
+      <div style="display: flex; flex-direction: column;">
+        <div style="display: grid; grid-template-columns: 210px 78px 96px 96px 84px minmax(0,1fr) 110px; gap: 0; padding: 0 0 9px 0; border-bottom: 1px solid #182236;">
+          <span class="lbl">Position</span><span class="lbl" style="text-align: right;">Shares</span><span class="lbl" style="text-align: right;">Avg cost</span><span class="lbl" style="text-align: right;">Price</span><span class="lbl" style="text-align: right;">Today</span><span class="lbl" style="text-align: right;">Value</span><span class="lbl" style="text-align: right;">PnL</span>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 210px 78px 96px 96px 84px minmax(0,1fr) 110px; align-items: center; padding: 13px 0; border-bottom: 1px solid rgba(24,34,54,0.6);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="m" style="display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; background: #101828; border: 1px solid #182236; font-size: 9px; font-weight: 700; color: #8494ab;">PL</span>
+            <div style="display: flex; flex-direction: column;">
+              <span class="m" style="font-size: 13px; font-weight: 700;">$PLSE</span>
+              <span class="s" style="font-size: 11px; color: #8494ab;">Pulsedash</span>
+            </div>
+          </div>
+          <span class="m" style="text-align: right; font-size: 13px;">55</span>
+          <span class="m" style="text-align: right; font-size: 13px; color: #8494ab;">$38.28</span>
+          <span class="m" style="text-align: right; font-size: 13px;">$38.40</span>
+          <span style="text-align: right;"><span class="m" style="border-radius: 6px; background: rgba(34,197,94,0.12); padding: 3px 7px; font-size: 11px; color: #22c55e;">+37.6%</span></span>
+          <span class="m" style="text-align: right; font-size: 13px;">$2,111.73</span>
+          <span class="m" style="text-align: right; font-size: 13px; color: #22c55e;">+$6.41</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 210px 78px 96px 96px 84px minmax(0,1fr) 110px; align-items: center; padding: 13px 0; border-bottom: 1px solid rgba(24,34,54,0.6);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="m" style="display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; background: #101828; border: 1px solid #182236; font-size: 9px; font-weight: 700; color: #8494ab;">GR</span>
+            <div style="display: flex; flex-direction: column;">
+              <span class="m" style="font-size: 13px; font-weight: 700;">$GRDN</span>
+              <span class="s" style="font-size: 11px; color: #8494ab;">Guardrail</span>
+            </div>
+          </div>
+          <span class="m" style="text-align: right; font-size: 13px;">40</span>
+          <span class="m" style="text-align: right; font-size: 13px; color: #8494ab;">$30.13</span>
+          <span class="m" style="text-align: right; font-size: 13px;">$30.26</span>
+          <span style="text-align: right;"><span class="m" style="border-radius: 6px; background: rgba(34,197,94,0.12); padding: 3px 7px; font-size: 11px; color: #22c55e;">+29.0%</span></span>
+          <span class="m" style="text-align: right; font-size: 13px;">$1,210.34</span>
+          <span class="m" style="text-align: right; font-size: 13px; color: #22c55e;">+$5.09</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 210px 78px 96px 96px 84px minmax(0,1fr) 110px; align-items: center; padding: 13px 0; border-bottom: 1px solid rgba(24,34,54,0.6);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="m" style="display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; background: #101828; border: 1px solid #182236; font-size: 9px; font-weight: 700; color: #8494ab;">SN</span>
+            <div style="display: flex; flex-direction: column;">
+              <span class="m" style="font-size: 13px; font-weight: 700;">$SNDR</span>
+              <span class="s" style="font-size: 11px; color: #8494ab;">Sendrly</span>
+            </div>
+          </div>
+          <span class="m" style="text-align: right; font-size: 13px;">30</span>
+          <span class="m" style="text-align: right; font-size: 13px; color: #8494ab;">$30.26</span>
+          <span class="m" style="text-align: right; font-size: 13px;">$30.24</span>
+          <span style="text-align: right;"><span class="m" style="border-radius: 6px; background: rgba(34,197,94,0.12); padding: 3px 7px; font-size: 11px; color: #22c55e;">+6.6%</span></span>
+          <span class="m" style="text-align: right; font-size: 13px;">$907.18</span>
+          <span class="m" style="text-align: right; font-size: 13px; color: #f43f5e;">&minus;$0.48</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 210px 78px 96px 96px 84px minmax(0,1fr) 110px; align-items: center; padding: 13px 0; border-bottom: 1px solid rgba(24,34,54,0.6);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="m" style="display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; background: #101828; border: 1px solid #182236; font-size: 9px; font-weight: 700; color: #8494ab;">MT</span>
+            <div style="display: flex; flex-direction: column;">
+              <span class="m" style="font-size: 13px; font-weight: 700;">$MTRC</span>
+              <span class="s" style="font-size: 11px; color: #8494ab;">Metricly</span>
+            </div>
+          </div>
+          <span class="m" style="text-align: right; font-size: 13px;">22</span>
+          <span class="m" style="text-align: right; font-size: 13px; color: #8494ab;">$30.90</span>
+          <span class="m" style="text-align: right; font-size: 13px;">$30.86</span>
+          <span style="text-align: right;"><span class="m" style="border-radius: 6px; background: rgba(244,63,94,0.12); padding: 3px 7px; font-size: 11px; color: #f43f5e;">&minus;18.3%</span></span>
+          <span class="m" style="text-align: right; font-size: 13px;">$678.86</span>
+          <span class="m" style="text-align: right; font-size: 13px; color: #f43f5e;">&minus;$0.92</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 210px 78px 96px 96px 84px minmax(0,1fr) 110px; align-items: center; padding: 13px 0; border-bottom: 1px solid rgba(24,34,54,0.6);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="m" style="display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; background: #101828; border: 1px solid #182236; font-size: 9px; font-weight: 700; color: #8494ab;">SC</span>
+            <div style="display: flex; flex-direction: column;">
+              <span class="m" style="font-size: 13px; font-weight: 700;">$SCRP</span>
+              <span class="s" style="font-size: 11px; color: #8494ab;">Scrapling</span>
+            </div>
+          </div>
+          <span class="m" style="text-align: right; font-size: 13px;">18</span>
+          <span class="m" style="text-align: right; font-size: 13px; color: #8494ab;">$34.19</span>
+          <span class="m" style="text-align: right; font-size: 13px;">$34.19</span>
+          <span style="text-align: right;"><span class="m" style="border-radius: 6px; background: rgba(34,197,94,0.12); padding: 3px 7px; font-size: 11px; color: #22c55e;">+44.8%</span></span>
+          <span class="m" style="text-align: right; font-size: 13px;">$615.46</span>
+          <span class="m" style="text-align: right; font-size: 13px; color: #22c55e;">+$0.04</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 28px;">
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <span class="lbl">Allocation</span>
+        <div style="display: flex; align-items: center; gap: 18px;">
+          <svg width="112" height="112" viewBox="0 0 112 112">
+            <g transform="rotate(-90 56 56)">
+              <circle cx="56" cy="56" r="45" fill="none" stroke="#4f9ed4" stroke-width="15" stroke-dasharray="59.4 223.4" stroke-dashoffset="0"/>
+              <circle cx="56" cy="56" r="45" fill="none" stroke="#3f83b4" stroke-width="15" stroke-dasharray="34.0 248.8" stroke-dashoffset="-59.4"/>
+              <circle cx="56" cy="56" r="45" fill="none" stroke="#326b95" stroke-width="15" stroke-dasharray="25.7 257.1" stroke-dashoffset="-93.4"/>
+              <circle cx="56" cy="56" r="45" fill="none" stroke="#275577" stroke-width="15" stroke-dasharray="19.2 263.6" stroke-dashoffset="-119.1"/>
+              <circle cx="56" cy="56" r="45" fill="none" stroke="#1e425c" stroke-width="15" stroke-dasharray="17.5 265.3" stroke-dashoffset="-138.3"/>
+              <circle cx="56" cy="56" r="45" fill="none" stroke="#232f45" stroke-width="15" stroke-dasharray="127.0 155.8" stroke-dashoffset="-155.8"/>
+            </g>
+            <text x="56" y="53" text-anchor="middle" class="m" font-size="14" font-weight="700" fill="#e8eef7">21%</text>
+            <text x="56" y="66" text-anchor="middle" class="m" font-size="9" fill="#8494ab">$PLSE</text>
+          </svg>
+          <div style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
+            <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #4f9ed4;"></span><span class="m" style="font-size: 11px; font-weight: 700;">$PLSE</span><span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">21%</span></div><div style="display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #3f83b4;"></span><span class="m" style="font-size: 11px; font-weight: 700;">$GRDN</span><span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">12%</span></div><div style="display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #326b95;"></span><span class="m" style="font-size: 11px; font-weight: 700;">$SNDR</span><span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">9.1%</span></div><div style="display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #275577;"></span><span class="m" style="font-size: 11px; font-weight: 700;">$MTRC</span><span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">6.8%</span></div><div style="display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #1e425c;"></span><span class="m" style="font-size: 11px; font-weight: 700;">$SCRP</span><span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">6.2%</span></div><div style="display: flex; align-items: center; gap: 8px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #232f45;"></span><span class="m" style="font-size: 11px; font-weight: 700;">Cash</span><span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">45%</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <span class="lbl">Recent trades</span>
+        <div style="display: flex; flex-direction: column; gap: 11px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="m" style="font-size: 10px; font-weight: 700; color: #22c55e;">BUY</span>
+            <span class="m" style="font-size: 12px;">18</span>
+            <span class="m" style="font-size: 12px; font-weight: 700;">$SCRP</span>
+            <span class="m" style="font-size: 12px; color: #8494ab;">@ $34.19</span>
+            <span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">4h</span>
+          </div><div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="m" style="font-size: 10px; font-weight: 700; color: #22c55e;">BUY</span>
+            <span class="m" style="font-size: 12px;">22</span>
+            <span class="m" style="font-size: 12px; font-weight: 700;">$MTRC</span>
+            <span class="m" style="font-size: 12px; color: #8494ab;">@ $30.90</span>
+            <span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">7h</span>
+          </div><div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="m" style="font-size: 10px; font-weight: 700; color: #22c55e;">BUY</span>
+            <span class="m" style="font-size: 12px;">30</span>
+            <span class="m" style="font-size: 12px; font-weight: 700;">$SNDR</span>
+            <span class="m" style="font-size: 12px; color: #8494ab;">@ $30.26</span>
+            <span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">10h</span>
+          </div><div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="m" style="font-size: 10px; font-weight: 700; color: #22c55e;">BUY</span>
+            <span class="m" style="font-size: 12px;">40</span>
+            <span class="m" style="font-size: 12px; font-weight: 700;">$GRDN</span>
+            <span class="m" style="font-size: 12px; color: #8494ab;">@ $30.13</span>
+            <span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">13h</span>
+          </div><div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="m" style="font-size: 10px; font-weight: 700; color: #22c55e;">BUY</span>
+            <span class="m" style="font-size: 12px;">55</span>
+            <span class="m" style="font-size: 12px; font-weight: 700;">$PLSE</span>
+            <span class="m" style="font-size: 12px; color: #8494ab;">@ $38.28</span>
+            <span class="m" style="margin-left: auto; font-size: 11px; color: #8494ab;">16h</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

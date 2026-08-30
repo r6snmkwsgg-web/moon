@@ -1,0 +1,3 @@
+# the seeded canvas is a build artifact: ~2.5 MB of baked editor payload.
+# re-create it from the artboards with seed-canvas.mjs (see README).
+saas-exchange-profile.html
