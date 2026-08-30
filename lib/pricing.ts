@@ -170,7 +170,11 @@ export function marketFlow(symbol: string, t: number, mrr = 0): number {
     0.13 * valueNoise(`${symbol}/b`, t, 18 * H) + // intraday trends
     0.055 * valueNoise(`${symbol}/c`, t, 4 * H) + // hourly waves
     0.022 * valueNoise(`${symbol}/d`, t, (2 / 3) * H) + // 40-min chop
-    0.009 * valueNoise(`${symbol}/e`, t, H / 20); // 3-min shimmer
+    0.009 * valueNoise(`${symbol}/e`, t, H / 20) + // 3-min shimmer
+    // tick-scale octaves: invisible on a 30-day line, but they're what makes
+    // 1s/15s/30s candles a living tape instead of flat bars
+    0.0045 * valueNoise(`${symbol}/f`, t, 25_000) + // ~25s
+    0.0016 * valueNoise(`${symbol}/g`, t, 2_500); // ~2.5s ticks
   const scaled = raw * volatilityFactor(mrr);
   return FLOW_CAP * Math.tanh(scaled / 0.32);
 }

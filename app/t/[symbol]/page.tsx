@@ -10,13 +10,12 @@ import {
 import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { fmtCompact, fmtMonth, fmtPct, fmtPrice, currentMonthISO } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
-import { changeFraction, fairPrice, SHARES_OUTSTANDING } from "@/lib/pricing";
+import { changeFraction, SHARES_OUTSTANDING } from "@/lib/pricing";
 import { nextEarningsDate } from "@/lib/xp";
-import type { ChartEvent } from "@/lib/types";
 import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import CountdownChip from "@/components/CountdownChip";
 import Discussion from "@/components/Discussion";
-import InteractiveChart from "@/components/InteractiveChart";
+import TradingChart from "@/components/TradingChart";
 import ThesisFeed from "@/components/ThesisFeed";
 import LivePrice from "@/components/LivePrice";
 import TradePanel from "@/components/TradePanel";
@@ -69,9 +68,10 @@ export default async function TickerPage({ params, searchParams }: Props) {
     holdersCount,
     watchersCount,
     series,
-    fairSeries,
     dayStats,
     floatHeld,
+    tradePoints,
+    earliest,
   } = data;
   const t = quote.ticker;
   const user = await getUser();
@@ -283,24 +283,14 @@ export default async function TickerPage({ params, searchParams }: Props) {
 
       {/* chart + trade column */}
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-        <InteractiveChart
-          series={series}
-          fair={fairSeries}
-          events={mrrHistory.slice(-6).map((m): ChartEvent => {
-            const at =
-              m.source === "curated"
-                ? Date.parse(`${m.month}T06:00:00Z`)
-                : Date.parse(m.created_at);
-            return {
-              t: at,
-              price: fairPrice(Number(m.mrr)),
-              label: `${fmtCompact(Number(m.mrr))} MRR`,
-              tone: "revenue",
-            };
-          })}
+        <TradingChart
           symbol={t.symbol}
-          variant="panel"
-          defaultRange="30D"
+          mrr={quote.latestMrr}
+          sentiment={Number(t.sentiment)}
+          series={series}
+          fairPrice={quote.fairPrice}
+          trades={tradePoints}
+          earliest={earliest}
         />
         <div className="space-y-3">
           <TradePanel

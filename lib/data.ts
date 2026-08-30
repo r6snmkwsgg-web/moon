@@ -298,6 +298,8 @@ export async function getTickerPage(symbol: string): Promise<{
   fairSeries: ChartPoint[];
   dayStats: DayStats;
   floatHeld: number; // shares currently held across all players
+  tradePoints: { t: number; shares: number }[];
+  earliest: number; // listing time — charts never invent pre-IPO history
 } | null> {
   const supabase = await createSupabaseServerClient();
 
@@ -336,30 +338,47 @@ export async function getTickerPage(symbol: string): Promise<{
   // Cross-user reads (counts, prints, positions) run with the service role.
   const admin = createSupabaseAdminClient();
   const todayStart = new Date().toISOString().slice(0, 10) + "T00:00:00Z";
-  const [holdersRes, watchersRes, heldRes, todayTradesRes, series] =
-    await Promise.all([
-      admin
-        .from("holdings")
-        .select("*", { count: "exact", head: true })
-        .eq("ticker_id", ticker.id)
-        .gt("shares", 0),
-      admin
-        .from("watchlists")
-        .select("*", { count: "exact", head: true })
-        .eq("ticker_id", ticker.id),
-      admin.from("holdings").select("shares").eq("ticker_id", ticker.id),
-      admin
-        .from("trades")
-        .select("price, shares, total")
-        .eq("ticker_id", ticker.id)
-        .gte("created_at", todayStart),
-      getPriceSeries(
-        ticker.id,
-        (ticker as Ticker).symbol,
-        latestMrr,
-        Number((ticker as Ticker).sentiment)
-      ),
-    ]);
+  const [
+    holdersRes,
+    watchersRes,
+    heldRes,
+    todayTradesRes,
+    allTradesRes,
+    series,
+  ] = await Promise.all([
+    admin
+      .from("holdings")
+      .select("*", { count: "exact", head: true })
+      .eq("ticker_id", ticker.id)
+      .gt("shares", 0),
+    admin
+      .from("watchlists")
+      .select("*", { count: "exact", head: true })
+      .eq("ticker_id", ticker.id),
+    admin.from("holdings").select("shares").eq("ticker_id", ticker.id),
+    admin
+      .from("trades")
+      .select("price, shares, total")
+      .eq("ticker_id", ticker.id)
+      .gte("created_at", todayStart),
+    // every print, for the chart's volume histogram at any granularity
+    admin
+      .from("trades")
+      .select("shares, created_at")
+      .eq("ticker_id", ticker.id)
+      .order("created_at", { ascending: true })
+      .limit(2000),
+    getPriceSeries(
+      ticker.id,
+      (ticker as Ticker).symbol,
+      latestMrr,
+      Number((ticker as Ticker).sentiment)
+    ),
+  ]);
+
+  const tradePoints = (
+    (allTradesRes.data ?? []) as { shares: number; created_at: string }[]
+  ).map((t) => ({ t: Date.parse(t.created_at), shares: Number(t.shares) }));
 
   const floatHeld = ((heldRes.data ?? []) as { shares: number }[]).reduce(
     (sum, h) => sum + Number(h.shares),
@@ -409,6 +428,8 @@ export async function getTickerPage(symbol: string): Promise<{
     fairSeries,
     dayStats,
     floatHeld,
+    tradePoints,
+    earliest: Date.parse((ticker as Ticker).listed_at),
   };
 }
 
