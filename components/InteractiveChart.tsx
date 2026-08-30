@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fmtMarketTime, MARKET_TZ } from "@/lib/market-time";
 import Link from "next/link";
 import { fmtPct, fmtPrice } from "@/lib/format";
 import Tri from "@/components/Tri";
@@ -69,14 +70,9 @@ function niceTicks(min: number, max: number, count = 3): number[] {
 }
 
 function fmtWhen(t: number, range: ChartRange): string {
-  const d = new Date(t);
-  if (range === "1D") {
-    return d.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-  return d.toLocaleDateString("en-US", {
+  if (range === "1D") return fmtMarketTime(t);
+  return new Date(t).toLocaleDateString("en-US", {
+    timeZone: MARKET_TZ,
     month: "short",
     day: "numeric",
     ...(range === "ALL" ? { year: "2-digit" as const } : {}),

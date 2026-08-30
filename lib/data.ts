@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { marketDayStart } from "@/lib/market-time";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   annualRevenue,
@@ -455,7 +456,9 @@ export async function getTickerPage(symbol: string): Promise<{
 
   // Cross-user reads (counts, prints, positions) run with the service role.
   const admin = createSupabaseAdminClient();
-  const todayStart = new Date().toISOString().slice(0, 10) + "T00:00:00Z";
+  // "today" is the market's day, the same one the portfolio chart draws —
+  // today's range and today's volume have to reset when the day does
+  const todayStart = new Date(marketDayStart(Date.now())).toISOString();
   const [
     holdersRes,
     watchersRes,

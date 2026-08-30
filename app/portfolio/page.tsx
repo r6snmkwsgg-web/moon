@@ -8,6 +8,7 @@ import {
   TRADE_HISTORY_LIMIT,
 } from "@/lib/data";
 import { fmtMoney, fmtPrice } from "@/lib/format";
+import { fmtMarketDateTime, MARKET_TZ_LABEL } from "@/lib/market-time";
 import { tierFor } from "@/lib/xp";
 import ChangePct from "@/components/ChangePct";
 import AllocationDonut from "@/components/AllocationDonut";
@@ -185,12 +186,7 @@ export default async function PortfolioPage() {
                       </div>
                       <div className="mt-0.5 flex items-baseline gap-2 text-[10px] text-terminal-muted">
                         <span className="num font-mono">
-                          {new Date(t.t).toLocaleString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {fmtMarketDateTime(t.t)}
                         </span>
                         {t.note && (
                           <span className="min-w-0 flex-1 truncate italic">
@@ -213,7 +209,9 @@ export default async function PortfolioPage() {
       </div>
 
       <p className="text-xs text-terminal-muted">
-        PnL is vs. your average cost; rank is by total portfolio value.
+        PnL is vs. your average cost; rank is by total portfolio value. The
+        trading day runs midnight to midnight {MARKET_TZ_LABEL}, so everyone
+        reads the same day wherever they are.
       </p>
     </div>
   );

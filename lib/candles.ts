@@ -1,5 +1,10 @@
 import type { ChartPoint } from "@/lib/types";
 import { flowPrice, microFlow, type RevenueEvent } from "@/lib/pricing";
+import {
+  fmtMarketClock,
+  fmtMarketDate,
+  marketOffset,
+} from "@/lib/market-time";
 
 /** One OHLC bar. Volume is trade-derived and may be 0 on quiet buckets. */
 export interface Candle {
@@ -195,9 +200,13 @@ export function niceTimeStep(spanMs: number, count: number, floorMs = 0): number
   return NICE_STEPS.find((s) => s >= want) ?? NICE_STEPS[NICE_STEPS.length - 1];
 }
 
-/** Minutes the viewer's clock is offset from UTC, as ms — ticks land local. */
-export function tzOffsetMs(): number {
-  return new Date().getTimezoneOffset() * 60_000;
+/**
+ * How far to shift an instant so round tick boundaries land on round times
+ * on the market's clock rather than the viewer's. Everyone reads the same
+ * axis wherever they are, which is the point of having a house clock.
+ */
+export function tzOffsetMs(at: number = Date.now()): number {
+  return -marketOffset(at);
 }
 
 /**
@@ -206,42 +215,13 @@ export function tzOffsetMs(): number {
  * shows the date so a multi-day window stays readable.
  */
 export function axisTimeLabel(t: number, stepMs: number, dayMark = false): string {
-  const d = new Date(t);
-  if (stepMs >= D || dayMark) {
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  }
-  if (stepMs < M) {
-    return d.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-  }
-  return d.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  if (stepMs >= D || dayMark) return fmtMarketDate(t);
+  return stepMs < M ? fmtMarketClock(t, true) : fmtMarketClock(t);
 }
 
 /** Axis label for a bucket at this granularity. */
 export function labelFor(t: number, tf: Timeframe): string {
-  const d = new Date(t);
-  if (tf.ms < M) {
-    return d.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-  }
-  if (tf.ms < D) {
-    return d.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  }
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (tf.ms < M) return fmtMarketClock(t, true);
+  if (tf.ms < D) return fmtMarketClock(t);
+  return fmtMarketDate(t);
 }

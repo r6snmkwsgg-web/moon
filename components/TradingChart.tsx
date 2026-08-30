@@ -357,7 +357,7 @@ export default function TradingChart({
     if (!geo || candles.length < 2) return [];
     const span = candles[candles.length - 1].t - candles[0].t + tf.ms;
     const step = niceTimeStep(span, Math.max(2, Math.floor(geo.plotW / 92)), tf.ms);
-    const tzo = tzOffsetMs();
+    const tzo = tzOffsetMs(candles[candles.length - 1].t);
     const slot = (t: number) => Math.floor((t - tzo) / step);
     const day = (t: number) => Math.floor((t - tzo) / 86_400_000);
     const out: { x: number; label: string; major: boolean }[] = [];

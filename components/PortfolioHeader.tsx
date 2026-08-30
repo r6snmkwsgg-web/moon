@@ -20,6 +20,14 @@ import {
   type EquityTrade,
 } from "@/lib/equity";
 import Tri from "@/components/Tri";
+import {
+  fmtMarketDateTime,
+  fmtMarketTime,
+  marketDayEnd,
+  marketDayStart,
+  marketHour,
+  MARKET_TZ_LABEL,
+} from "@/lib/market-time";
 
 const UP = "#22c55e";
 const DOWN = "#f43f5e";
@@ -38,24 +46,8 @@ const RANGE_WORDS: Record<EquityRangeKey, string> = {
   ALL: "all time",
 };
 
-/** Local midnight on the day containing t — the 1D chart's left edge. */
-function dayStartOf(t: number): number {
-  const d = new Date(t);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
 function stamp(t: number, range: EquityRangeKey): string {
-  const d = new Date(t);
-  if (range === "1D") {
-    return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-  }
-  return d.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return range === "1D" ? fmtMarketTime(t) : fmtMarketDateTime(t);
 }
 
 function Stat({
@@ -182,8 +174,13 @@ export default function PortfolioHeader({
   const view = useMemo(() => {
     if (now === null) return null;
     if (range === "1D") {
-      const t0 = dayStartOf(now);
-      return { t0, t1: t0 + 86_400_000, from: Math.max(t0, startedAt), to: now };
+      const t0 = marketDayStart(now);
+      return {
+        t0,
+        t1: marketDayEnd(t0),
+        from: Math.max(t0, startedAt),
+        to: now,
+      };
     }
     const span = EQUITY_RANGES.find((r) => r.key === range)!.ms;
     // Hours of flat cash before the first trade say nothing and eat the whole
@@ -235,10 +232,10 @@ export default function PortfolioHeader({
   const hourMarks = useMemo(() => {
     if (!geo || range !== "1D" || !view) return [];
     return [6, 12, 18].map((hour) => {
-      const t = view.t0 + hour * 3_600_000;
+      const t = marketHour(view.t0, hour);
       return {
         x: geo.x(t),
-        label: hour === 12 ? "12 PM" : hour === 6 ? "6 AM" : "6 PM",
+        label: fmtMarketTime(t),
         past: t <= view.to,
       };
     });
@@ -285,10 +282,10 @@ export default function PortfolioHeader({
   // tick. "Today" opens at local midnight, so it means the same thing the 1D
   // chart draws and the same thing the word does.
   const dayOpenAt =
-    now === null ? startedAt : Math.max(startedAt, dayStartOf(now));
+    now === null ? startedAt : Math.max(startedAt, marketDayStart(now));
   const dayOpen = now === null ? startingCash : valueAt(dayOpenAt);
   // an account opened today has no earlier value to compare against
-  const dayIsAll = now !== null && dayStartOf(now) <= startedAt;
+  const dayIsAll = now !== null && marketDayStart(now) <= startedAt;
   const dayChange = live - dayOpen;
   const allTime = live - startingCash;
 
@@ -521,7 +518,7 @@ export default function PortfolioHeader({
       <div className="flex items-center justify-between border-t border-terminal-line/60 px-4 py-1 font-mono text-[10px] text-terminal-muted">
         <span>
           {range === "1D"
-            ? "12:00 AM"
+            ? `12:00 AM ${MARKET_TZ_LABEL}`
             : series.length > 1
               ? stamp(series[0].t, range)
               : ""}
@@ -539,7 +536,7 @@ export default function PortfolioHeader({
             revenue moves
           </span>
         </span>
-        <span>{range === "1D" ? "11:59 PM" : "now"}</span>
+        <span>{range === "1D" ? `11:59 PM ${MARKET_TZ_LABEL}` : "now"}</span>
       </div>
 
       {/* every figure below reads off the same function on the same tick */}
