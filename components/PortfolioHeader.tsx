@@ -25,7 +25,6 @@ const UP = "#22c55e";
 const DOWN = "#f43f5e";
 const MUTED = "#8494ab";
 const AMBER = "#fbbf24";
-const LAST_SEEN = "sx.portfolio.lastSeen";
 
 /** Live edge re-ticks by the second on a day view, slower on a month. */
 function tickMs(range: EquityRangeKey): number {
@@ -38,6 +37,13 @@ const RANGE_WORDS: Record<EquityRangeKey, string> = {
   "1M": "past month",
   ALL: "all time",
 };
+
+/** Local midnight on the day containing t — the 1D chart's left edge. */
+function dayStartOf(t: number): number {
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
 
 function stamp(t: number, range: EquityRangeKey): string {
   const d = new Date(t);
@@ -56,16 +62,21 @@ function Stat({
   label,
   value,
   tone = "plain",
+  delta,
   sub,
 }: {
   label: string;
   value: string;
   tone?: "plain" | "signed";
+  /** The number behind `value`. Colour comes from this, never from the text —
+   *  these strings are formatted with a typographic minus, so reading the
+   *  sign back off them painted every losing day green. */
+  delta?: number;
   sub?: string;
 }) {
   const color =
     tone === "signed"
-      ? value.startsWith("-")
+      ? (delta ?? 0) < 0
         ? "text-terminal-down"
         : "text-terminal-up"
       : "text-terminal-text";
@@ -110,7 +121,6 @@ export default function PortfolioHeader({
   const [range, setRange] = useState<EquityRangeKey>("1D");
   const [now, setNow] = useState<number | null>(null);
   const [scrub, setScrub] = useState<number | null>(null);
-  const [lastSeen, setLastSeen] = useState<number | null>(null);
 
   useEffect(() => {
     const el = wrap.current;
@@ -130,17 +140,6 @@ export default function PortfolioHeader({
     }, tickMs(range));
     return () => clearInterval(id);
   }, [range]);
-
-  // read the previous visit once, then stamp this one — the band stays put
-  useEffect(() => {
-    try {
-      const prior = Number(localStorage.getItem(LAST_SEEN));
-      if (Number.isFinite(prior) && prior > 0) setLastSeen(prior);
-      localStorage.setItem(LAST_SEEN, String(Date.now()));
-    } catch {
-      // private mode — no band, no harm
-    }
-  }, []);
 
   const inputs = useMemo(
     () => ({ cash, holdings, trades, startedAt, startingCash }),
@@ -166,8 +165,26 @@ export default function PortfolioHeader({
   }, [holdings, pricesAt, now]);
   const bookValue = positions.reduce((s, p) => s + p.value, 0) + cash;
 
-  const series = useMemo(() => {
-    if (now === null) return [];
+  /**
+   * What the x-axis covers, and what part of it has actually happened.
+   *
+   * On 1D these differ, which is the whole point. A real exchange draws its
+   * day chart on the session — the axis is the whole trading day from the
+   * moment it opens, and the line grows into it as the hours pass, so an
+   * empty right-hand side means "the day isn't over", not "no data". This
+   * market never closes, so the container here is the calendar day: midnight
+   * to midnight, local. It also makes the word TODAY honest — it used to
+   * mean "the last 24 hours", which is a different measurement wearing the
+   * same label.
+   *
+   * Every other range is trailing, ending at now, the way they always were.
+   */
+  const view = useMemo(() => {
+    if (now === null) return null;
+    if (range === "1D") {
+      const t0 = dayStartOf(now);
+      return { t0, t1: t0 + 86_400_000, from: Math.max(t0, startedAt), to: now };
+    }
     const span = EQUITY_RANGES.find((r) => r.key === range)!.ms;
     // Hours of flat cash before the first trade say nothing and eat the whole
     // chart, so the curve opens just before the account did something.
@@ -175,8 +192,13 @@ export default function PortfolioHeader({
     const lead = Math.max(60_000, (now - firstMove) * 0.06);
     const earliest = Math.max(startedAt, firstMove - lead);
     const from = span === Infinity ? earliest : Math.max(earliest, now - span);
-    return sampleEquity(valueAt, from, now, 220);
-  }, [valueAt, range, now, startedAt, trades]);
+    return { t0: from, t1: now, from, to: now };
+  }, [range, now, startedAt, trades]);
+
+  const series = useMemo(
+    () => (view ? sampleEquity(valueAt, view.from, view.to, 220) : []),
+    [valueAt, view]
+  );
 
   const geo = useMemo(() => {
     if (!dims || series.length < 2) return null;
@@ -197,13 +219,30 @@ export default function PortfolioHeader({
     const pad = (max - min || max || 1) * 0.14;
     min -= pad;
     max += pad;
-    const t0 = series[0].t;
-    const t1 = series[series.length - 1].t;
+    const t0 = view!.t0;
+    const t1 = view!.t1;
     const x = (t: number) => ((t - t0) / (t1 - t0 || 1)) * w;
     const y = (v: number) =>
       padT + (1 - (v - min) / (max - min || 1)) * (h - padT - padB);
     return { w, h, x, y, t0, t1, min, max };
-  }, [dims, series, startingCash]);
+  }, [dims, series, startingCash, view]);
+
+  /**
+   * Six-hourly marks across the day. Without them the unfilled right-hand
+   * side is just blank canvas; with them it reads as the hours that haven't
+   * happened yet, which is the only reason to draw the day as a container.
+   */
+  const hourMarks = useMemo(() => {
+    if (!geo || range !== "1D" || !view) return [];
+    return [6, 12, 18].map((hour) => {
+      const t = view.t0 + hour * 3_600_000;
+      return {
+        x: geo.x(t),
+        label: hour === 12 ? "12 PM" : hour === 6 ? "6 AM" : "6 PM",
+        past: t <= view.to,
+      };
+    });
+  }, [geo, range, view]);
 
   /** Revenue changes that actually moved this account's money. */
   const revenueMarks = useMemo(() => {
@@ -242,11 +281,14 @@ export default function PortfolioHeader({
   const up = shown >= first;
   const color = up ? UP : DOWN;
 
-  // today, all-time and realized all read off the same function and the same tick
-  const dayAgo = now === null ? startedAt : Math.max(startedAt, now - 86_400_000);
-  const dayOpen = now === null ? startingCash : valueAt(dayAgo);
-  // an account younger than a day has no "yesterday" to compare against
-  const dayIsAll = now !== null && dayAgo <= startedAt;
+  // today, all-time and realized all read off the same function and the same
+  // tick. "Today" opens at local midnight, so it means the same thing the 1D
+  // chart draws and the same thing the word does.
+  const dayOpenAt =
+    now === null ? startedAt : Math.max(startedAt, dayStartOf(now));
+  const dayOpen = now === null ? startingCash : valueAt(dayOpenAt);
+  // an account opened today has no earlier value to compare against
+  const dayIsAll = now !== null && dayStartOf(now) <= startedAt;
   const dayChange = live - dayOpen;
   const allTime = live - startingCash;
 
@@ -254,7 +296,13 @@ export default function PortfolioHeader({
     if (!geo || series.length < 2) return;
     const rect = wrap.current?.getBoundingClientRect();
     if (!rect) return;
-    const frac = (e.clientX - rect.left) / rect.width;
+    // pointer → instant on the axis, then to the nearest sample. The line no
+    // longer spans the full width on a part-finished day, so reading the
+    // fraction of the canvas directly would scrub into hours that
+    // haven't happened.
+    const t = geo.t0 + ((e.clientX - rect.left) / rect.width) * (geo.t1 - geo.t0);
+    const span = series[series.length - 1].t - series[0].t || 1;
+    const frac = (t - series[0].t) / span;
     setScrub(
       Math.max(0, Math.min(series.length - 1, Math.round(frac * (series.length - 1))))
     );
@@ -268,10 +316,6 @@ export default function PortfolioHeader({
         )
         .join(" ")
     : "";
-  const bandFrom =
-    geo && lastSeen && lastSeen > geo.t0 && now !== null && now - lastSeen > 300_000
-      ? geo.x(lastSeen)
-      : null;
 
   return (
     <>
@@ -335,37 +379,30 @@ export default function PortfolioHeader({
               </linearGradient>
             </defs>
 
-            {bandFrom !== null && (
-              <>
-                <rect
-                  x={bandFrom}
-                  y={0}
-                  width={geo.w - bandFrom}
-                  height={geo.h}
-                  fill="#38bdf8"
-                  opacity="0.04"
-                />
+            {hourMarks.map((m) => (
+              <g key={m.label}>
                 <line
-                  x1={bandFrom}
-                  x2={bandFrom}
+                  x1={m.x}
+                  x2={m.x}
                   y1={0}
-                  y2={geo.h}
-                  stroke="#38bdf8"
+                  y2={geo.h - 12}
+                  stroke={MUTED}
                   strokeWidth="1"
-                  opacity="0.3"
+                  opacity={m.past ? 0.12 : 0.07}
                 />
                 <text
-                  x={bandFrom + 5}
-                  y={12}
-                  fill="#38bdf8"
+                  x={m.x}
+                  y={geo.h - 2}
+                  textAnchor="middle"
+                  fill={MUTED}
                   fontSize="9"
                   fontFamily="ui-monospace, monospace"
-                  opacity="0.75"
+                  opacity={m.past ? 0.7 : 0.4}
                 >
-                  since you last looked
+                  {m.label}
                 </text>
-              </>
-            )}
+              </g>
+            ))}
 
             {startingCash > geo.min && startingCash < geo.max && (
               <>
@@ -396,7 +433,10 @@ export default function PortfolioHeader({
               </>
             )}
 
-            <path d={`${line} L ${geo.w} ${geo.h} L 0 ${geo.h} Z`} fill="url(#equity-fill)" />
+            <path
+              d={`${line} L ${geo.x(series[series.length - 1].t).toFixed(1)} ${geo.h} L ${geo.x(series[0].t).toFixed(1)} ${geo.h} Z`}
+              fill="url(#equity-fill)"
+            />
             <path
               d={line}
               fill="none"
@@ -479,7 +519,13 @@ export default function PortfolioHeader({
       </div>
 
       <div className="flex items-center justify-between border-t border-terminal-line/60 px-4 py-1 font-mono text-[10px] text-terminal-muted">
-        <span>{series.length > 1 ? stamp(series[0].t, range) : ""}</span>
+        <span>
+          {range === "1D"
+            ? "12:00 AM"
+            : series.length > 1
+              ? stamp(series[0].t, range)
+              : ""}
+        </span>
         <span className="flex items-center gap-3">
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: UP }} />
@@ -493,7 +539,7 @@ export default function PortfolioHeader({
             revenue moves
           </span>
         </span>
-        <span>now</span>
+        <span>{range === "1D" ? "11:59 PM" : "now"}</span>
       </div>
 
       {/* every figure below reads off the same function on the same tick */}
@@ -501,6 +547,7 @@ export default function PortfolioHeader({
         <Stat
           label="Today"
           tone="signed"
+          delta={dayChange}
           value={`${dayChange >= 0 ? "+" : "−"}${fmtMoney(Math.abs(dayChange))}`}
           sub={
             dayIsAll
@@ -513,12 +560,14 @@ export default function PortfolioHeader({
         <Stat
           label="All-time"
           tone="signed"
+          delta={allTime}
           value={`${allTime >= 0 ? "+" : "−"}${fmtMoney(Math.abs(allTime))}`}
           sub={fmtPct(allTime / startingCash)}
         />
         <Stat
           label="Realized"
           tone={realized === 0 ? "plain" : "signed"}
+          delta={realized}
           value={
             realized === 0
               ? "—"
