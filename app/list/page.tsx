@@ -21,23 +21,6 @@ export default async function ListPage() {
         </p>
       </div>
 
-      <ol className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-terminal-muted">
-        <li>
-          <span className="font-mono text-terminal-up">1</span> sign in
-        </li>
-        <li>
-          <span className="font-mono text-terminal-up">2</span> pick a symbol
-        </li>
-        <li>
-          <span className="font-mono text-terminal-up">3</span> paste a
-          read-only Stripe key
-        </li>
-        <li>
-          <span className="font-mono text-terminal-up">4</span> you&apos;re
-          public — share the chart
-        </li>
-      </ol>
-
       {user ? (
         <ListingForm />
       ) : (

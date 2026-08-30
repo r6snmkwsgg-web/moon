@@ -1,6 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -16,6 +15,13 @@ import { MAX_LISTINGS_PER_USER } from "@/lib/config";
 
 export interface ListingResult {
   error?: string;
+  /** Set on success — powers the IPO-reveal celebration screen. */
+  ok?: {
+    symbol: string;
+    name: string;
+    mrr: number;
+    ipoPrice: number;
+  };
 }
 
 /**
@@ -140,5 +146,8 @@ export async function listStartup(
   );
 
   revalidatePath("/");
-  redirect(`/t/${symbol}?ipo=1`);
+  revalidatePath(`/t/${symbol}`);
+  return {
+    ok: { symbol, name, mrr, ipoPrice: fairPrice(mrr) },
+  };
 }
