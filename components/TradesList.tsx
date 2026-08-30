@@ -19,11 +19,13 @@ export default function TradesList({
   showSymbol = true,
   signedIn = false,
   showNotes = true,
+  showTrader = true,
 }: {
   trades: FeedTrade[];
   showSymbol?: boolean;
   signedIn?: boolean;
   showNotes?: boolean; // off where a ThesisFeed already shows them
+  showTrader?: boolean; // off on a profile, where every row is the same person
 }) {
   if (trades.length === 0) {
     return (
@@ -49,19 +51,22 @@ export default function TradesList({
             >
               {t.side}
             </span>
-            {t.username ? (
-              <Link
-                href={`/u/${t.username}`}
-                className="relative z-[2] font-mono text-terminal-text hover:text-terminal-accent"
-              >
-                {t.trader}
-              </Link>
-            ) : (
-              <span className="font-mono text-terminal-text">{t.trader}</span>
+            {showTrader &&
+              (t.username ? (
+                <Link
+                  href={`/u/${t.username}`}
+                  className="relative z-[2] font-mono text-terminal-text hover:text-terminal-accent"
+                >
+                  {t.trader}
+                </Link>
+              ) : (
+                <span className="font-mono text-terminal-text">{t.trader}</span>
+              ))}
+            {showTrader && (
+              <span className="text-terminal-muted">
+                {t.side === "buy" ? "bought" : "sold"}
+              </span>
             )}
-            <span className="text-terminal-muted">
-              {t.side === "buy" ? "bought" : "sold"}
-            </span>
             <span className="num font-mono">
               {t.shares.toLocaleString("en-US")}
             </span>

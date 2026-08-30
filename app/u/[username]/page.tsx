@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
+  getEquityInputs,
   getFollowStats,
   getIsFollowing,
   getPublicProfile,
@@ -9,12 +9,13 @@ import {
   getXpMap,
 } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
-import { fmtMoney, fmtPct } from "@/lib/format";
+import { fmtMoney } from "@/lib/format";
 import { STARTING_CASH, APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
-import InteractiveChart from "@/components/InteractiveChart";
+import { MARKET_TZ_LABEL } from "@/lib/market-time";
+import EquityPanel from "@/components/EquityPanel";
+import AllocationDonut from "@/components/AllocationDonut";
 import FollowButton from "@/components/FollowButton";
 import ShareButton from "@/components/ShareButton";
-import ChangePct from "@/components/ChangePct";
 import TierBadge from "@/components/TierBadge";
 import TradesList from "@/components/TradesList";
 
@@ -37,18 +38,22 @@ export default async function ProfilePage({ params }: Props) {
   const data = await getPublicProfile(username);
   if (!data) notFound();
 
-  const { profile, valuation, rank, playerCount, history } = data;
-  const [viewer, xpMap, followStats, theirTrades] = await Promise.all([
+  const { profile, valuation, rank, playerCount } = data;
+  const [viewer, xpMap, followStats, theirTrades, equity] = await Promise.all([
     getUser(),
     getXpMap(),
     getFollowStats(profile.id),
     getRecentTrades(8, undefined, [profile.id]),
+    // the same inputs the owner's own page uses — a public curve is
+    // reconstructed from prices and the trade log, not from daily dots
+    getEquityInputs(profile.id),
   ]);
   const isMe = viewer?.id === profile.id;
   const following = viewer
     ? await getIsFollowing(viewer.id, profile.id)
     : false;
-  const pnlPct = valuation.totalPnl / STARTING_CASH;
+  // one instant for every time-dependent number this render produces
+  const renderedAt = Date.now();
 
   return (
     <div className="space-y-6">
@@ -89,120 +94,81 @@ export default async function ProfilePage({ params }: Props) {
             </div>
           )}
         </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <span className="num font-mono text-2xl font-bold">
-            {fmtMoney(valuation.totalValue)}
-          </span>
-          <ChangePct value={pnlPct} chip className="text-sm" />
-        </div>
+
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <div className="panel px-3 py-2">
-          <div className="microlabel">Rank</div>
-          <div className="num mt-0.5 font-mono text-sm font-semibold">
-            <span
-              style={
-                rank <= 3 ? { color: MEDAL_COLORS[rank - 1] } : undefined
-              }
-            >
-              #{rank}
-            </span>{" "}
-            <span className="text-xs font-normal text-terminal-muted">
-              of {playerCount}
-            </span>
-          </div>
+      <div className="grid items-start gap-4 xl:grid-cols-[1fr_330px]">
+        <div className="min-w-0 space-y-4">
+          <EquityPanel
+            cash={Number(valuation.profile.cash)}
+            holdings={equity.holdings}
+            trades={equity.trades}
+            startedAt={equity.startedAt}
+            startingCash={STARTING_CASH}
+            renderedAt={renderedAt}
+            rank={rank}
+            playerCount={playerCount}
+            own={isMe}
+          />
         </div>
-        <div className="panel px-3 py-2">
-          <div className="microlabel">All-time PnL</div>
-          <div
-            className={`num mt-0.5 font-mono text-sm font-semibold ${
-              valuation.totalPnl >= 0 ? "text-terminal-up" : "text-terminal-down"
-            }`}
-          >
-            {valuation.totalPnl >= 0 ? "+" : ""}
-            {fmtMoney(valuation.totalPnl)}
-          </div>
-        </div>
-        <div className="panel px-3 py-2">
-          <div className="microlabel">Positions</div>
-          <div className="num mt-0.5 font-mono text-sm font-semibold">
-            {valuation.positions.length}
-          </div>
+
+        <div className="space-y-4 xl:sticky xl:top-[68px]">
+          <section className="panel">
+            <div className="border-b border-terminal-line px-3 py-2">
+              <span className="microlabel font-bold !text-terminal-text">
+                Standing
+              </span>
+            </div>
+            <div className="grid grid-cols-2 divide-x divide-terminal-line/60">
+              <div className="px-3 py-2">
+                <div className="microlabel">Rank</div>
+                <div className="num mt-0.5 font-mono text-sm font-semibold">
+                  <span
+                    style={rank <= 3 ? { color: MEDAL_COLORS[rank - 1] } : undefined}
+                  >
+                    #{rank}
+                  </span>{" "}
+                  <span className="text-xs font-normal text-terminal-muted">
+                    of {playerCount}
+                  </span>
+                </div>
+              </div>
+              <div className="px-3 py-2">
+                <div className="microlabel">Positions</div>
+                <div className="num mt-0.5 font-mono text-sm font-semibold">
+                  {valuation.positions.length}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <AllocationDonut
+            holdings={equity.holdings}
+            cash={Number(valuation.profile.cash)}
+            renderedAt={renderedAt}
+          />
+
+          <section className="panel">
+            <h2 className="microlabel border-b border-terminal-line px-3 py-2">
+              Recent trades
+            </h2>
+            <TradesList
+              trades={theirTrades}
+              showSymbol
+              showTrader={false}
+              signedIn={viewer !== null}
+            />
+          </section>
         </div>
       </div>
-
-      <InteractiveChart
-        series={[
-          ...history.map((h) => ({
-            t: Date.parse(`${h.day}T06:00:00Z`),
-            price: Number(h.total_value),
-          })),
-          { t: Date.now(), price: valuation.totalValue },
-        ]}
-        symbol=""
-        variant="panel"
-        defaultRange="ALL"
-        heightClass="h-[180px]"
-        baseline={STARTING_CASH}
-        baselineLabel="$10k stake"
-      />
-
-      <section className="panel">
-        <h2 className="microlabel border-b border-terminal-line px-3 py-2">
-          Top positions
-        </h2>
-        {valuation.positions.length === 0 ? (
-          <p className="px-3 py-6 text-center text-sm text-terminal-muted">
-            All cash, no conviction — yet.
-          </p>
-        ) : (
-          <ul className="divide-y divide-terminal-line/40">
-            {valuation.positions.slice(0, 5).map((p) => (
-              <li
-                key={p.holding.ticker_id}
-                className="row-hover flex cursor-pointer items-baseline gap-2 px-3 py-2 text-sm"
-              >
-                <Link
-                  href={`/t/${p.quote.ticker.symbol}`}
-                  aria-label={`$${p.quote.ticker.symbol}`}
-                  className="row-link font-mono font-bold"
-                >
-                  ${p.quote.ticker.symbol}
-                </Link>
-                <span className="num font-mono text-xs text-terminal-muted">
-                  {Number(p.holding.shares).toLocaleString("en-US")} sh
-                </span>
-                <span className="num ml-auto font-mono">{fmtMoney(p.value)}</span>
-                <span
-                  className={`num w-20 text-right font-mono text-xs ${
-                    p.pnl >= 0 ? "text-terminal-up" : "text-terminal-down"
-                  }`}
-                >
-                  {p.pnl >= 0 ? "+" : ""}
-                  {fmtMoney(p.pnl)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="panel">
-        <h2 className="microlabel border-b border-terminal-line px-3 py-2">
-          Recent trades
-        </h2>
-        <TradesList
-          trades={theirTrades}
-          showSymbol
-          signedIn={viewer !== null}
-        />
-      </section>
 
       <div className="flex items-center justify-between">
         <ShareButton url={`${siteUrl()}/u/${profile.username}`} />
         <span className="text-[11px] text-terminal-muted">
-          {fmtPct(pnlPct)} on {fmtMoney(STARTING_CASH, 0)} of play money
+          {/* the PnL lives in the stat strip, on the live clock — repeating it
+              here off the server's snapshot only ever disagreed with it */}
+          Everyone starts with {fmtMoney(STARTING_CASH, 0)} of play money · the
+          day resets midnight {MARKET_TZ_LABEL}
         </span>
       </div>
     </div>

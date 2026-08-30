@@ -25,11 +25,14 @@ const NAMED = SHADES.length - 1;
 export default function AllocationDonut({
   holdings,
   cash,
+  renderedAt,
 }: {
   holdings: EquityHolding[];
   cash: number;
+  /** The server's instant, so the first client render prices the same book. */
+  renderedAt: number;
 }) {
-  const [now, setNow] = useState<number | null>(null);
+  const [now, setNow] = useState(renderedAt);
   const [hover, setHover] = useState<number | null>(null);
 
   useEffect(() => {
@@ -43,7 +46,7 @@ export default function AllocationDonut({
   const pricesAt = useMemo(() => makePricesAt(holdings), [holdings]);
 
   const slices = useMemo(() => {
-    const at = now ?? Date.now();
+    const at = now;
     const positions = holdings
       .filter((h) => h.shares > 0)
       .map((h) => ({

@@ -84,14 +84,18 @@ function Stat({
 }
 
 /**
- * The portfolio's header: one number, one clock, one curve.
+ * A book, drawn: one number, one clock, one curve.
+ *
+ * Used for your own portfolio and for anyone else's public profile — the
+ * same component either way, because a stranger's equity curve should be
+ * built the same honest way yours is, not from a thinner set of numbers.
  *
  * Everything here — the hero, the change, every stat below the chart — is
  * derived from the same value function on the same tick, so no two figures
  * on the page can disagree with each other. The curve itself is computed,
  * not recorded: cash plus what the holdings were worth at that instant.
  */
-export default function PortfolioHeader({
+export default function EquityPanel({
   cash,
   holdings,
   trades,
@@ -99,6 +103,8 @@ export default function PortfolioHeader({
   startingCash,
   rank,
   playerCount,
+  renderedAt,
+  own = true,
 }: {
   cash: number;
   holdings: EquityHolding[];
@@ -107,11 +113,21 @@ export default function PortfolioHeader({
   startingCash: number;
   rank: number;
   playerCount: number;
+  /**
+   * When the server drew this. Prices are functions of time, so if the client
+   * started its own clock at mount the two renders would price the book a few
+   * hundred milliseconds apart and React would throw out the tree. Seeding
+   * from the server makes the first client render identical by construction;
+   * the interval below takes over immediately after.
+   */
+  renderedAt: number;
+  /** Whose book this is — flips the handful of second-person labels. */
+  own?: boolean;
 }) {
   const wrap = useRef<HTMLDivElement | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [range, setRange] = useState<EquityRangeKey>("1D");
-  const [now, setNow] = useState<number | null>(null);
+  const [now, setNow] = useState(renderedAt);
   const [scrub, setScrub] = useState<number | null>(null);
 
   useEffect(() => {
@@ -145,7 +161,7 @@ export default function PortfolioHeader({
   // The positions read off the same price functions at the same instant as
   // the curve above them, so no two numbers on this page can disagree.
   const positions = useMemo(() => {
-    const at = now ?? Date.now();
+    const at = now;
     return holdings
       .filter((h) => h.shares > 0)
       .map((h) => {
@@ -172,7 +188,6 @@ export default function PortfolioHeader({
    * Every other range is trailing, ending at now, the way they always were.
    */
   const view = useMemo(() => {
-    if (now === null) return null;
     if (range === "1D") {
       const t0 = marketDayStart(now);
       return {
@@ -243,7 +258,7 @@ export default function PortfolioHeader({
 
   /** Revenue changes that actually moved this account's money. */
   const revenueMarks = useMemo(() => {
-    if (!geo || now === null) return [];
+    if (!geo) return [];
     const marks: {
       x: number;
       y: number;
@@ -282,10 +297,10 @@ export default function PortfolioHeader({
   // tick. "Today" opens at local midnight, so it means the same thing the 1D
   // chart draws and the same thing the word does.
   const dayOpenAt =
-    now === null ? startedAt : Math.max(startedAt, marketDayStart(now));
-  const dayOpen = now === null ? startingCash : valueAt(dayOpenAt);
+    Math.max(startedAt, marketDayStart(now));
+  const dayOpen = valueAt(dayOpenAt);
   // an account opened today has no earlier value to compare against
-  const dayIsAll = now !== null && marketDayStart(now) <= startedAt;
+  const dayIsAll = marketDayStart(now) <= startedAt;
   const dayChange = live - dayOpen;
   const allTime = live - startingCash;
 
@@ -395,6 +410,9 @@ export default function PortfolioHeader({
                   fontSize="9"
                   fontFamily="ui-monospace, monospace"
                   opacity={m.past ? 0.7 : 0.4}
+                  stroke="#0b111d"
+                  strokeWidth="3"
+                  paintOrder="stroke"
                 >
                   {m.label}
                 </text>
@@ -423,7 +441,13 @@ export default function PortfolioHeader({
                   fill={MUTED}
                   fontSize="9"
                   fontFamily="ui-monospace, monospace"
-                  opacity="0.8"
+                  opacity="0.9"
+                  // the curve crosses its own stake line constantly, and on a
+                  // narrow screen the label lands right on it — an outline in
+                  // the panel colour keeps it readable without a solid chip
+                  stroke="#0b111d"
+                  strokeWidth="3"
+                  paintOrder="stroke"
                 >
                   {fmtMoney(startingCash)} stake
                 </text>
@@ -526,7 +550,7 @@ export default function PortfolioHeader({
         <span className="flex items-center gap-3">
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: UP }} />
-            your trades
+            {own ? "your" : "their"} trades
           </span>
           <span className="flex items-center gap-1">
             <span
@@ -548,7 +572,7 @@ export default function PortfolioHeader({
           value={`${dayChange >= 0 ? "+" : "−"}${fmtMoney(Math.abs(dayChange))}`}
           sub={
             dayIsAll
-              ? "since you started"
+              ? `since ${own ? "you" : "they"} started`
               : dayOpen > 0
                 ? fmtPct(dayChange / dayOpen)
                 : undefined

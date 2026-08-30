@@ -12,7 +12,7 @@ import { fmtMarketDateTime, MARKET_TZ_LABEL } from "@/lib/market-time";
 import { tierFor } from "@/lib/xp";
 import ChangePct from "@/components/ChangePct";
 import AllocationDonut from "@/components/AllocationDonut";
-import PortfolioHeader from "@/components/PortfolioHeader";
+import EquityPanel from "@/components/EquityPanel";
 import InviteBox from "@/components/InviteBox";
 import TierBadge from "@/components/TierBadge";
 import { STARTING_CASH, siteUrl } from "@/lib/config";
@@ -22,6 +22,8 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Portfolio" };
 
 export default async function PortfolioPage() {
+  // one instant for every time-dependent number this render produces
+  const renderedAt = Date.now();
   const user = await getUser();
   if (!user) redirect("/login?next=/portfolio");
 
@@ -67,12 +69,13 @@ export default async function PortfolioPage() {
 
       <div className="grid items-start gap-4 xl:grid-cols-[1fr_330px]">
         <div className="min-w-0 space-y-4">
-      <PortfolioHeader
+      <EquityPanel
         cash={Number(valuation.profile.cash)}
         holdings={equity.holdings}
         trades={equity.trades}
         startedAt={equity.startedAt}
         startingCash={STARTING_CASH}
+        renderedAt={renderedAt}
         rank={rank}
         playerCount={playerCount}
       />
@@ -204,6 +207,7 @@ export default async function PortfolioPage() {
           <AllocationDonut
             holdings={equity.holdings}
             cash={Number(valuation.profile.cash)}
+            renderedAt={renderedAt}
           />
         </div>
       </div>
