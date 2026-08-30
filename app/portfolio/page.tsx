@@ -45,14 +45,22 @@ export default async function PortfolioPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-mono text-lg font-bold">Portfolio</h1>
-        {username && (
+        <span className="flex items-center gap-3 text-xs">
           <Link
-            href={`/u/${username}`}
-            className="text-xs text-terminal-accent hover:underline"
+            href="/welcome"
+            className="text-terminal-muted hover:text-terminal-text"
           >
-            view public profile →
+            edit handle
           </Link>
-        )}
+          {username && (
+            <Link
+              href={`/u/${username}`}
+              className="text-terminal-accent hover:underline"
+            >
+              view public profile →
+            </Link>
+          )}
+        </span>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
