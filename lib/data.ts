@@ -986,6 +986,35 @@ export async function getXpMap(): Promise<Map<string, number>> {
   return xp;
 }
 
+/** Unread alert count for the nav badges. */
+export async function getUnreadCount(userId: string): Promise<number> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const { count } = await admin
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("read", false);
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Lifetime trade count — zero means the welcome mat is still out. */
+export async function getTradeCountFor(userId: string): Promise<number> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const { count } = await admin
+      .from("trades")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId);
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** One user's streak, from their trade history (service role — works for any user). */
 export async function getStreakFor(userId: string): Promise<Streak> {
   try {

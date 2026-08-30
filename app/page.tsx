@@ -8,6 +8,7 @@ import {
   getPriceSeries,
   getRecentTrades,
   getStreakFor,
+  getTradeCountFor,
 } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 import { fmtCompact, fmtPrice } from "@/lib/format";
@@ -34,11 +35,12 @@ function timeAgo(iso: string): string {
 export default async function ExchangePage() {
   const [market, user] = await Promise.all([getMarket(), getUser()]);
 
-  const [wire, tapeTrades, streak, missed] = await Promise.all([
+  const [wire, tapeTrades, streak, missed, tradeCount] = await Promise.all([
     getEarningsWire(3),
     user ? getRecentTrades(6) : Promise.resolve([]),
     user ? getStreakFor(user.id) : Promise.resolve(null),
     user ? getMissedToday(market, user.id) : Promise.resolve(null),
+    user ? getTradeCountFor(user.id) : Promise.resolve(0),
   ]);
 
   // The landing hero leads with the top GAINER so first impressions aren't a
@@ -97,7 +99,29 @@ export default async function ExchangePage() {
 
       {user ? (
         <>
-          {streak && <DayStrip streak={streak} missed={missed} />}
+          {tradeCount === 0 ? (
+            <div className="panel flex flex-wrap items-center gap-x-4 gap-y-2 border-terminal-up/30 bg-gradient-to-r from-terminal-up/10 to-transparent px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold">
+                  You&apos;re in — $10,000 of play money is loaded.
+                </div>
+                <div className="text-xs text-terminal-muted">
+                  Pick any startup below and buy your first shares. That first
+                  print starts your streak and puts you on the leaderboard.
+                </div>
+              </div>
+              {featured && (
+                <Link
+                  href={`/t/${featured.ticker.symbol}`}
+                  className="whitespace-nowrap rounded-md bg-terminal-up px-3.5 py-2 text-sm font-bold text-black hover:bg-terminal-up/85"
+                >
+                  Start with ${featured.ticker.symbol} →
+                </Link>
+              )}
+            </div>
+          ) : (
+            streak && <DayStrip streak={streak} missed={missed} />
+          )}
           <div className="grid gap-4 lg:grid-cols-[1fr_290px]">
             <Board quotes={market} />
             <section className="panel self-start">

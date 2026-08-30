@@ -18,11 +18,10 @@ export default function LoginForm() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const nextParam = searchParams.get("next") ?? "/portfolio";
+  // fresh sign-ins land on the market, not an empty portfolio
+  const nextParam = searchParams.get("next") ?? "/";
   const next =
-    nextParam.startsWith("/") && !nextParam.startsWith("//")
-      ? nextParam
-      : "/portfolio";
+    nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
