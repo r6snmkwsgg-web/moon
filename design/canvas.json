@@ -6,7 +6,8 @@
       "x": 0,
       "y": 0,
       "w": 1440,
-      "h": 1030
+      "h": 1030,
+      "page": "page-1"
     },
     {
       "file": "DirectionB.dc.html",
@@ -14,7 +15,8 @@
       "x": 1560,
       "y": 0,
       "w": 1440,
-      "h": 920
+      "h": 920,
+      "page": "page-1"
     },
     {
       "file": "DirectionC.dc.html",
@@ -22,7 +24,44 @@
       "x": 3120,
       "y": 0,
       "w": 1440,
-      "h": 1630
+      "h": 1630,
+      "page": "page-1"
+    },
+    {
+      "file": "PaletteSlate.dc.html",
+      "title": "Slate \u2014 today",
+      "x": 0,
+      "y": 0,
+      "w": 1120,
+      "h": 700,
+      "page": "page-2"
+    },
+    {
+      "file": "PaletteCarbon.dc.html",
+      "title": "Carbon \u2014 warm",
+      "x": 1240,
+      "y": 0,
+      "w": 1120,
+      "h": 700,
+      "page": "page-2"
+    },
+    {
+      "file": "PaletteVoid.dc.html",
+      "title": "Void \u2014 high contrast",
+      "x": 0,
+      "y": 860,
+      "w": 1120,
+      "h": 700,
+      "page": "page-2"
+    },
+    {
+      "file": "PaletteInk.dc.html",
+      "title": "Ink \u2014 widest steps",
+      "x": 1240,
+      "y": 860,
+      "w": 1120,
+      "h": 700,
+      "page": "page-2"
     }
   ],
   "annotations": [
@@ -31,31 +70,54 @@
       "x": 0,
       "y": -360,
       "w": 460,
-      "text": "WHAT'S WRONG NOW\n\nSeven .panel boxes with identical 1px borders \u2014 chart, standing, allocation, trades, positions all the same visual weight. Nothing is more important than anything else, so the eye has nowhere to land.\n\nAnd on a page about a person, the person is the smallest thing on it: an 11px handle and a letter in a circle.\n\nEach direction below attacks a different axis."
+      "text": "WHAT'S WRONG NOW\n\nSeven .panel boxes with identical 1px borders \u2014 chart, standing, allocation, trades, positions all the same visual weight. Nothing is more important than anything else, so the eye has nowhere to land.\n\nAnd on a page about a person, the person is the smallest thing on it: an 11px handle and a letter in a circle.\n\nEach direction below attacks a different axis.",
+      "page": "page-1"
     },
     {
       "id": "note-a",
       "x": 500,
       "y": -360,
       "w": 420,
-      "text": "A \u2014 PLAYER CARD\n\nThe person becomes the hero. 40px name, rank as a gold medallion, value at 46px. The curve bleeds edge to edge as the page's spine, and the stats drop their boxes for a hairline band.\n\nWhy: it's a profile \u2014 its job is to make someone's standing feel like something worth sharing.\n\nTradeoff: the most 'designed' of the three, so it's the furthest from the rest of the app and the most work to keep consistent."
+      "text": "A \u2014 PLAYER CARD\n\nThe person becomes the hero. 40px name, rank as a gold medallion, value at 46px. The curve bleeds edge to edge as the page's spine, and the stats drop their boxes for a hairline band.\n\nWhy: it's a profile \u2014 its job is to make someone's standing feel like something worth sharing.\n\nTradeoff: the most 'designed' of the three, so it's the furthest from the rest of the app and the most work to keep consistent.",
+      "page": "page-1"
     },
     {
       "id": "note-b",
       "x": 1560,
       "y": -360,
       "w": 420,
-      "text": "B \u2014 TERMINAL READOUT\n\nNo rounded panels anywhere. Hairline rules only, everything mono, tight rows, a real price axis, a TOTAL line, a blotter. Colour appears only as signal.\n\nWhy: you keep asking for it to feel real. This is what a trading screen actually looks like, and it's nothing like a generic dark dashboard.\n\nTradeoff: cold and dense. Reads as a tool, not a place \u2014 and a shared profile is arguably a place."
+      "text": "B \u2014 TERMINAL READOUT\n\nNo rounded panels anywhere. Hairline rules only, everything mono, tight rows, a real price axis, a TOTAL line, a blotter. Colour appears only as signal.\n\nWhy: you keep asking for it to feel real. This is what a trading screen actually looks like, and it's nothing like a generic dark dashboard.\n\nTradeoff: cold and dense. Reads as a tool, not a place \u2014 and a shared profile is arguably a place.",
+      "page": "page-1"
     },
     {
       "id": "note-c",
       "x": 3120,
       "y": -360,
       "w": 420,
-      "text": "C \u2014 EDITORIAL\n\nOne 68px number and a full-bleed curve carry the page. Almost no borders \u2014 space does the separating. Sans for names, mono only for numerals.\n\nWhy: calm and premium, and the easiest to read at a glance.\n\nTradeoff: it's the Robinhood/Linear look. Handsome, but it doesn't say 'stock terminal', and it's the least distinctive of the three."
+      "text": "C \u2014 EDITORIAL\n\nOne 68px number and a full-bleed curve carry the page. Almost no borders \u2014 space does the separating. Sans for names, mono only for numerals.\n\nWhy: calm and premium, and the easiest to read at a glance.\n\nTradeoff: it's the Robinhood/Linear look. Handsome, but it doesn't say 'stock terminal', and it's the least distinctive of the three.",
+      "page": "page-1"
+    },
+    {
+      "id": "colour-diagnosis",
+      "x": 0,
+      "y": -330,
+      "w": 900,
+      "page": "page-2",
+      "text": "WHY THE PALETTE READS FLAT\n\nMeasured on the colours in tailwind.config.ts:\n\n1. The surfaces barely differ. bg\u2192panel is 1.04:1, panel\u2192raise 1.06:1, raise\u2192line 1.12:1. A panel is essentially invisible AS a surface \u2014 the 1px border is doing 100% of the structural work. That is the wireframe feeling, and no amount of layout fixes it.\n\n2. Every neutral is the same hue. bg 218\u00b0, panel 220\u00b0, raise 220\u00b0, line 220\u00b0, muted 215\u00b0, text 216\u00b0. Six colours, one hue, so nothing recedes and nothing advances \u2014 the screen is a flat sheet.\n\n3. The accents are stock Tailwind. #22c55e is green-500, #f43f5e is rose-500, #38bdf8 is sky-400, #fbbf24 is amber-400. That is the default dark-dashboard palette, which is exactly what it looks like.\n\nAll three alternatives below widen the surface steps and drop the defaults. Same UI slice in each, so only the colour differs."
     }
   ],
   "launch": {
-    "view": "canvas"
-  }
+    "view": "canvas",
+    "page": "page-2"
+  },
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Layout"
+    },
+    {
+      "id": "page-2",
+      "name": "Colour"
+    }
+  ]
 }
