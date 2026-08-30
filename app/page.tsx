@@ -165,34 +165,32 @@ export default async function ExchangePage() {
                 ) : (
                   <ul className="divide-y divide-terminal-line/40">
                     {tapeTrades.map((t) => (
-                      <li
-                        key={t.id}
-                        className="flex items-baseline gap-1.5 px-3 py-1.5 font-mono text-[11px]"
-                      >
-                        <span
-                          className={`font-bold uppercase ${
-                            t.side === "buy"
-                              ? "text-terminal-up"
-                              : "text-terminal-down"
-                          }`}
-                        >
-                          {t.side}
-                        </span>
-                        <span className="truncate text-terminal-text">
-                          {t.trader}
-                        </span>
-                        <span className="num text-terminal-muted">
-                          {t.shares.toLocaleString("en-US")}
-                        </span>
+                      <li key={t.id}>
                         <Link
                           href={`/t/${t.symbol}`}
-                          className="font-bold hover:text-terminal-accent"
+                          aria-label={`${t.side} ${t.shares} $${t.symbol}`}
+                          className="flex items-baseline gap-1.5 px-3 py-1.5 font-mono text-[11px] hover:bg-terminal-raise/60"
                         >
-                          ${t.symbol}
+                          <span
+                            className={`font-bold uppercase ${
+                              t.side === "buy"
+                                ? "text-terminal-up"
+                                : "text-terminal-down"
+                            }`}
+                          >
+                            {t.side}
+                          </span>
+                          <span className="truncate text-terminal-text">
+                            {t.trader}
+                          </span>
+                          <span className="num text-terminal-muted">
+                            {t.shares.toLocaleString("en-US")}
+                          </span>
+                          <span className="font-bold">${t.symbol}</span>
+                          <span className="num ml-auto text-terminal-muted">
+                            {timeAgo(t.created_at)}
+                          </span>
                         </Link>
-                        <span className="num ml-auto text-terminal-muted">
-                          {timeAgo(t.created_at)}
-                        </span>
                       </li>
                     ))}
                   </ul>

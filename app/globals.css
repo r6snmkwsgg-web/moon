@@ -71,6 +71,17 @@
   .row-hover:hover {
     box-shadow: inset 2px 0 0 0 rgba(56, 189, 248, 0.6);
   }
+  /*
+   * The whole row is the link. A stretched anchor resolves against the row
+   * (.row-hover is positioned), so the price cell, the sparkline and the gaps
+   * between them all navigate — and it stays a real <a>, so middle-click,
+   * cmd-click and the keyboard behave. Anything else interactive in the row
+   * needs to sit above it: `relative z-[2]`.
+   */
+  .row-link::after {
+    content: "";
+    @apply absolute inset-0 z-[1];
+  }
 }
 
 /* ── ticker tape ──────────────────────────────────────────────────── */

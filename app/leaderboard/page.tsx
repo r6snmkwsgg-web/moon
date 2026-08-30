@@ -82,8 +82,8 @@ export default async function LeaderboardPage({
                 <tr
                   key={v.profile.id}
                   className={`border-b border-terminal-line/50 last:border-0 ${
-                    isMe ? "bg-terminal-accent/5" : ""
-                  }`}
+                    v.profile.username ? "row-hover cursor-pointer" : ""
+                  } ${isMe ? "bg-terminal-accent/5" : ""}`}
                 >
                   <td
                     className="num px-3 py-2.5 font-mono text-terminal-muted"
@@ -100,7 +100,8 @@ export default async function LeaderboardPage({
                       {v.profile.username ? (
                         <Link
                           href={`/u/${v.profile.username}`}
-                          className="hover:text-terminal-accent"
+                          aria-label={`${v.profile.display_name}'s portfolio`}
+                          className="row-link"
                         >
                           {v.profile.display_name}
                         </Link>

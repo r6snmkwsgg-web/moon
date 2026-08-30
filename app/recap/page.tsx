@@ -72,10 +72,14 @@ export default async function RecapPage() {
           </h2>
           <ul className="divide-y divide-terminal-line/40">
             {stats.mrrMoves.map(({ quote, from, to }) => (
-              <li key={quote.ticker.id} className="flex items-baseline gap-2 px-3 py-2.5 text-sm">
+              <li
+                key={quote.ticker.id}
+                className="row-hover flex cursor-pointer items-baseline gap-2 px-3 py-2.5 text-sm"
+              >
                 <Link
                   href={`/t/${quote.ticker.symbol}`}
-                  className="font-mono font-bold hover:text-terminal-accent"
+                  aria-label={`$${quote.ticker.symbol}`}
+                  className="row-link font-mono font-bold"
                 >
                   ${quote.ticker.symbol}
                 </Link>
@@ -99,10 +103,14 @@ export default async function RecapPage() {
           </h2>
           <ul className="divide-y divide-terminal-line/40">
             {stats.newListings.map((q) => (
-              <li key={q.ticker.id} className="flex items-baseline gap-2 px-3 py-2.5 text-sm">
+              <li
+                key={q.ticker.id}
+                className="row-hover flex cursor-pointer items-baseline gap-2 px-3 py-2.5 text-sm"
+              >
                 <Link
                   href={`/t/${q.ticker.symbol}`}
-                  className="font-mono font-bold hover:text-terminal-accent"
+                  aria-label={`$${q.ticker.symbol}`}
+                  className="row-link font-mono font-bold"
                 >
                   ${q.ticker.symbol}
                 </Link>
@@ -125,10 +133,14 @@ export default async function RecapPage() {
           </h2>
           <ul className="divide-y divide-terminal-line/40">
             {stats.mostTraded.map(({ quote, volume, trades }) => (
-              <li key={quote.ticker.id} className="flex items-baseline gap-2 px-3 py-2.5 text-sm">
+              <li
+                key={quote.ticker.id}
+                className="row-hover flex cursor-pointer items-baseline gap-2 px-3 py-2.5 text-sm"
+              >
                 <Link
                   href={`/t/${quote.ticker.symbol}`}
-                  className="font-mono font-bold hover:text-terminal-accent"
+                  aria-label={`$${quote.ticker.symbol}`}
+                  className="row-link font-mono font-bold"
                 >
                   ${quote.ticker.symbol}
                 </Link>

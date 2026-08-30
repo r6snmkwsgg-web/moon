@@ -161,11 +161,12 @@ export default async function ProfilePage({ params }: Props) {
             {valuation.positions.slice(0, 5).map((p) => (
               <li
                 key={p.holding.ticker_id}
-                className="flex items-baseline gap-2 px-3 py-2 text-sm"
+                className="row-hover flex cursor-pointer items-baseline gap-2 px-3 py-2 text-sm"
               >
                 <Link
                   href={`/t/${p.quote.ticker.symbol}`}
-                  className="font-mono font-bold hover:text-terminal-accent"
+                  aria-label={`$${p.quote.ticker.symbol}`}
+                  className="row-link font-mono font-bold"
                 >
                   ${p.quote.ticker.symbol}
                 </Link>

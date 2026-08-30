@@ -370,7 +370,7 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
   ];
 
   return (
-    <section className="grid items-start gap-3 xl:grid-cols-[184px_1fr]">
+    <section className="grid min-w-0 items-start gap-3 xl:grid-cols-[184px_1fr]">
       {/* sector rail — the shelves */}
       <aside className="panel hidden self-start overflow-hidden xl:sticky xl:top-[68px] xl:block">
         <div className="microlabel border-b border-terminal-line px-2.5 py-2">
@@ -621,12 +621,13 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
               {rows.map(({ q, sector: id }) => (
                 <tr
                   key={q.ticker.id}
-                  className="row-hover border-b border-terminal-line/40 last:border-0"
+                  className="row-hover cursor-pointer border-b border-terminal-line/40 last:border-0"
                 >
                   <td className="px-3 py-2">
                     <Link
                       href={`/t/${q.ticker.symbol}`}
-                      className="flex items-center gap-2.5"
+                      aria-label={`${q.ticker.symbol} — ${q.ticker.name}`}
+                      className="row-link flex items-center gap-2.5"
                     >
                       <LogoTile
                         symbol={q.ticker.symbol}

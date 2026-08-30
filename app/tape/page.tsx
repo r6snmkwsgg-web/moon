@@ -160,7 +160,7 @@ export default async function FeedPage({
               return (
                 <div
                   key={`e-${i}`}
-                  className="panel space-y-1.5 border-terminal-amber/25 px-4 py-3"
+                  className="row-hover panel cursor-pointer space-y-1.5 border-terminal-amber/25 px-4 py-3"
                 >
                   <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
                     <span className="self-center text-terminal-amber">
@@ -172,7 +172,8 @@ export default async function FeedPage({
                     </span>
                     <Link
                       href={`/t/${ev.symbol}`}
-                      className="font-mono font-bold hover:text-terminal-accent"
+                      aria-label={`$${ev.symbol} earnings`}
+                      className="row-link font-mono font-bold"
                     >
                       ${ev.symbol}
                     </Link>
@@ -270,14 +271,18 @@ export default async function FeedPage({
             </div>
             <ul className="divide-y divide-terminal-line/40">
               {trending.map((row, i) => (
-                <li key={row.quote.ticker.id} className="flex items-center gap-2.5 px-3 py-2">
+                <li
+                  key={row.quote.ticker.id}
+                  className="row-hover flex cursor-pointer items-center gap-2.5 px-3 py-2"
+                >
                   <span className="font-mono text-xs font-bold text-terminal-muted">
                     {i + 1}
                   </span>
                   <div className="min-w-0">
                     <Link
                       href={`/t/${row.quote.ticker.symbol}`}
-                      className="font-mono text-[13px] font-bold hover:text-terminal-accent"
+                      aria-label={`$${row.quote.ticker.symbol} — ${row.quote.ticker.name}`}
+                      className="row-link font-mono text-[13px] font-bold"
                     >
                       ${row.quote.ticker.symbol}
                     </Link>

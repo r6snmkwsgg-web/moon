@@ -118,12 +118,13 @@ export default async function PortfolioPage() {
             {valuation.positions.map((p) => (
               <tr
                 key={p.holding.ticker_id}
-                className="border-b border-terminal-line/50 last:border-0"
+                className="row-hover cursor-pointer border-b border-terminal-line/50 last:border-0"
               >
                 <td className="px-3 py-2.5">
                   <Link
                     href={`/t/${p.quote.ticker.symbol}`}
-                    className="font-mono font-bold hover:text-terminal-accent"
+                    aria-label={`${p.quote.ticker.symbol} — ${p.quote.ticker.name}`}
+                    className="row-link font-mono font-bold"
                   >
                     ${p.quote.ticker.symbol}
                   </Link>
