@@ -22,6 +22,10 @@
 }
 
 @layer components {
+  /* one page width, everywhere — a wide monitor gets more market, not more margin */
+  .shell {
+    @apply mx-auto w-full max-w-6xl px-4 2xl:max-w-[1600px] 2xl:px-8;
+  }
   .panel {
     @apply rounded-lg border border-terminal-line bg-terminal-panel;
   }

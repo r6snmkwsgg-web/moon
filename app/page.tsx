@@ -11,6 +11,7 @@ import {
 } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 import { fmtCompact, fmtPrice } from "@/lib/format";
+import ChangePct from "@/components/ChangePct";
 import DayStrip from "@/components/DayStrip";
 import InteractiveChart from "@/components/InteractiveChart";
 import LivePrice from "@/components/LivePrice";
@@ -43,12 +44,14 @@ export default async function ExchangePage() {
 
   // The landing hero leads with the top GAINER so first impressions aren't a
   // cliff-dive (unless the whole board is red — then honesty wins).
-  const movers = [...market]
-    .filter((q) => q.spark.length > 2)
-    .sort((a, b) => Math.abs(b.dayChange) - Math.abs(a.dayChange));
-  const topGainer = [...movers].sort((a, b) => b.dayChange - a.dayChange)[0];
+  const live = [...market].filter((q) => q.spark.length > 2);
+  const biggest = [...live].sort(
+    (a, b) => Math.abs(b.dayChange) - Math.abs(a.dayChange)
+  );
+  const movers = [...live].sort((a, b) => b.dayChange - a.dayChange);
+  const topGainer = movers[0];
   const featured =
-    topGainer && topGainer.dayChange > 0 ? topGainer : movers[0];
+    topGainer && topGainer.dayChange > 0 ? topGainer : biggest[0];
 
   // Dense series + real story dots for the hero (signed-out only).
   const [heroSeries, heroEvents] = !user && featured
@@ -63,6 +66,10 @@ export default async function ExchangePage() {
         return [series, events] as const;
       })()
     : [[], []];
+
+  // the right rail's second panel: the day's three best and three worst
+  const gainers = movers.slice(0, 3);
+  const losers = market.length > 6 ? [...movers].reverse().slice(0, 3) : [];
 
   // ONE banner slot: the newest IPO wins, else fresh earnings news, else nothing.
   const freshIpo = market
@@ -125,61 +132,91 @@ export default async function ExchangePage() {
           ) : (
             <DayStrip missed={missed} />
           )}
-          <div className="grid gap-4 lg:grid-cols-[1fr_290px]">
+          <div className="grid gap-4 lg:grid-cols-[1fr_290px] 2xl:grid-cols-[1fr_330px]">
             <MarketBoard quotes={market} />
-            <section className="panel self-start">
-              <div className="flex items-center gap-2 border-b border-terminal-line px-3 py-2">
-                <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-terminal-up" />
-                <span className="microlabel font-bold !text-terminal-text">
-                  Live tape
-                </span>
-                <Link
-                  href="/tape"
-                  className="ml-auto text-[11px] text-terminal-accent"
-                >
-                  full feed →
-                </Link>
-              </div>
-              {tapeTrades.length === 0 ? (
-                <p className="px-3 py-4 text-xs text-terminal-muted">
-                  Quiet tape. The first print today gets seen.
-                </p>
-              ) : (
-                <ul className="divide-y divide-terminal-line/40">
-                  {tapeTrades.map((t) => (
-                    <li
-                      key={t.id}
-                      className="flex items-baseline gap-1.5 px-3 py-1.5 font-mono text-[11px]"
-                    >
-                      <span
-                        className={`font-bold uppercase ${
-                          t.side === "buy"
-                            ? "text-terminal-up"
-                            : "text-terminal-down"
-                        }`}
+            <div className="space-y-4 self-start lg:sticky lg:top-[68px]">
+              <section className="panel">
+                <div className="flex items-center gap-2 border-b border-terminal-line px-3 py-2">
+                  <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-terminal-up" />
+                  <span className="microlabel font-bold !text-terminal-text">
+                    Live tape
+                  </span>
+                  <Link
+                    href="/tape"
+                    className="ml-auto text-[11px] text-terminal-accent"
+                  >
+                    full feed →
+                  </Link>
+                </div>
+                {tapeTrades.length === 0 ? (
+                  <p className="px-3 py-4 text-xs text-terminal-muted">
+                    Quiet tape. The first print today gets seen.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-terminal-line/40">
+                    {tapeTrades.map((t) => (
+                      <li
+                        key={t.id}
+                        className="flex items-baseline gap-1.5 px-3 py-1.5 font-mono text-[11px]"
                       >
-                        {t.side}
-                      </span>
-                      <span className="truncate text-terminal-text">
-                        {t.trader}
-                      </span>
-                      <span className="num text-terminal-muted">
-                        {t.shares.toLocaleString("en-US")}
-                      </span>
-                      <Link
-                        href={`/t/${t.symbol}`}
-                        className="font-bold hover:text-terminal-accent"
-                      >
-                        ${t.symbol}
-                      </Link>
-                      <span className="num ml-auto text-terminal-muted">
-                        {timeAgo(t.created_at)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                        <span
+                          className={`font-bold uppercase ${
+                            t.side === "buy"
+                              ? "text-terminal-up"
+                              : "text-terminal-down"
+                          }`}
+                        >
+                          {t.side}
+                        </span>
+                        <span className="truncate text-terminal-text">
+                          {t.trader}
+                        </span>
+                        <span className="num text-terminal-muted">
+                          {t.shares.toLocaleString("en-US")}
+                        </span>
+                        <Link
+                          href={`/t/${t.symbol}`}
+                          className="font-bold hover:text-terminal-accent"
+                        >
+                          ${t.symbol}
+                        </Link>
+                        <span className="num ml-auto text-terminal-muted">
+                          {timeAgo(t.created_at)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              {movers.length >= 4 && (
+                <section className="panel">
+                  <div className="border-b border-terminal-line px-3 py-2">
+                    <span className="microlabel font-bold !text-terminal-text">
+                      Movers today
+                    </span>
+                  </div>
+                  <ul className="divide-y divide-terminal-line/40">
+                    {[...gainers, ...losers].map((q) => (
+                      <li key={q.ticker.id}>
+                        <Link
+                          href={`/t/${q.ticker.symbol}`}
+                          className="flex items-center gap-2 px-3 py-1.5 hover:bg-terminal-raise/60"
+                        >
+                          <span className="font-mono text-[12px] font-bold">
+                            ${q.ticker.symbol}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[11px] text-terminal-muted">
+                            {q.ticker.name}
+                          </span>
+                          <ChangePct value={q.dayChange} className="text-[11px]" />
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               )}
-            </section>
+            </div>
           </div>
         </>
       ) : (

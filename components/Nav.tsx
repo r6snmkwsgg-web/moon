@@ -22,7 +22,7 @@ export default async function Nav() {
 
   return (
     <header className="sticky top-0 z-20 border-b border-terminal-line bg-terminal-bg/85 backdrop-blur">
-      <div className="relative mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+      <div className="shell relative flex items-center gap-3 py-3">
         <Link href="/">
           <Wordmark />
         </Link>

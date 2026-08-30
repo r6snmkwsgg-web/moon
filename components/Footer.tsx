@@ -6,8 +6,8 @@ import Wordmark from "@/components/Wordmark";
 /** Guardrail footer — rendered on every page via the root layout. */
 export default function Footer() {
   return (
-    <footer className="mt-12 border-t border-terminal-line bg-terminal-panel/40 px-4 py-6 pb-24 sm:pb-6">
-      <div className="mx-auto max-w-6xl space-y-4 text-xs text-terminal-muted">
+    <footer className="mt-12 border-t border-terminal-line bg-terminal-panel/40 py-6 pb-24 sm:pb-6">
+      <div className="shell space-y-4 text-xs text-terminal-muted">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <Wordmark compact />
           <nav className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px]">

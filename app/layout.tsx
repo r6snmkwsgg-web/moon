@@ -46,7 +46,7 @@ export default async function RootLayout({
         <LiveRefresh />
         <Nav />
         <TickerTape />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 pb-24 sm:pb-6">
+        <main className="shell flex-1 py-6 pb-24 sm:pb-6">
           {children}
         </main>
         <Footer />

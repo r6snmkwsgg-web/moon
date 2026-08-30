@@ -29,7 +29,7 @@ import Tri from "@/components/Tri";
 
 /* ── the filter model ──────────────────────────────────────────────── */
 
-type SortKey = "cap" | "price" | "day" | "week" | "mrr" | "symbol" | "new";
+type SortKey = "cap" | "price" | "day" | "week" | "mrr" | "mult" | "symbol" | "new";
 type Trust = "any" | "verified" | "founder";
 type MrrBand = "any" | "micro" | "small" | "mid" | "large";
 type ValueBand = "any" | "value" | "fair" | "premium";
@@ -63,6 +63,7 @@ const SORTS: Record<SortKey, (a: TickerQuote, b: TickerQuote) => number> = {
   day: (a, b) => b.dayChange - a.dayChange,
   week: (a, b) => b.weekChange - a.weekChange,
   mrr: (a, b) => b.latestMrr - a.latestMrr,
+  mult: (a, b) => b.multiple - a.multiple,
   symbol: (a, b) => a.ticker.symbol.localeCompare(b.ticker.symbol),
   new: (a, b) => b.ticker.listed_at.localeCompare(a.ticker.listed_at),
 };
@@ -101,6 +102,7 @@ const SORT_LABELS: { v: SortKey; label: string }[] = [
   { v: "day", label: "24h" },
   { v: "week", label: "7d" },
   { v: "mrr", label: "MRR" },
+  { v: "mult", label: "Multiple" },
   { v: "symbol", label: "A–Z" },
   { v: "new", label: "Newest" },
 ];
@@ -355,12 +357,14 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
     );
   }
 
-  const headers: { key: SortKey | null; label: string; hideSm?: boolean }[] = [
+  // `at` gates a column to wider screens — the widest ones earn extra signal
+  const headers: { key: SortKey | null; label: string; at?: string }[] = [
     { key: "symbol", label: "Ticker" },
     { key: "price", label: "Price" },
     { key: "day", label: "24h" },
-    { key: "week", label: "7d", hideSm: true },
-    { key: "mrr", label: "MRR", hideSm: true },
+    { key: "week", label: "7d", at: "hidden sm:table-cell" },
+    { key: "mrr", label: "MRR", at: "hidden sm:table-cell" },
+    { key: "mult", label: "× ARR", at: "hidden lg:table-cell" },
     { key: "cap", label: "Mkt cap" },
     { key: null, label: "30d" },
   ];
@@ -591,7 +595,7 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
                     key={h.label}
                     className={`px-3 py-2 font-normal ${
                       i === 0 ? "" : "text-right"
-                    } ${h.hideSm ? "hidden sm:table-cell" : ""}`}
+                    } ${h.at ?? ""}`}
                   >
                     {h.key ? (
                       <button
@@ -658,6 +662,12 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
                   <td className="num hidden px-3 py-2 text-right font-mono text-terminal-amber sm:table-cell">
                     {fmtCompact(q.latestMrr)}
                   </td>
+                  <td
+                    className="num hidden px-3 py-2 text-right font-mono text-terminal-muted lg:table-cell"
+                    title="The ARR multiple this ticker's revenue record earns"
+                  >
+                    {q.multiple.toFixed(1)}×
+                  </td>
                   <td className="num px-3 py-2 text-right font-mono text-terminal-muted">
                     {fmtCompact(q.marketCap)}
                   </td>
@@ -671,7 +681,7 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-3 py-10 text-center text-sm text-terminal-muted"
                   >
                     {quotes.length === 0 ? (
