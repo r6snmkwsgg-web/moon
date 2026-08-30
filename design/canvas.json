@@ -62,6 +62,33 @@
       "w": 1120,
       "h": 700,
       "page": "page-2"
+    },
+    {
+      "file": "ProToday.dc.html",
+      "title": "Today",
+      "x": 0,
+      "y": 0,
+      "w": 1060,
+      "h": 700,
+      "page": "page-3"
+    },
+    {
+      "file": "ProPass.dc.html",
+      "title": "Professional pass \u2014 same colours",
+      "x": 1180,
+      "y": 0,
+      "w": 1060,
+      "h": 700,
+      "page": "page-3"
+    },
+    {
+      "file": "ProInk.dc.html",
+      "title": "Professional pass \u2014 on Ink",
+      "x": 2360,
+      "y": 0,
+      "w": 1060,
+      "h": 700,
+      "page": "page-3"
     }
   ],
   "annotations": [
@@ -104,11 +131,19 @@
       "w": 900,
       "page": "page-2",
       "text": "WHY THE PALETTE READS FLAT\n\nMeasured on the colours in tailwind.config.ts:\n\n1. The surfaces barely differ. bg\u2192panel is 1.04:1, panel\u2192raise 1.06:1, raise\u2192line 1.12:1. A panel is essentially invisible AS a surface \u2014 the 1px border is doing 100% of the structural work. That is the wireframe feeling, and no amount of layout fixes it.\n\n2. Every neutral is the same hue. bg 218\u00b0, panel 220\u00b0, raise 220\u00b0, line 220\u00b0, muted 215\u00b0, text 216\u00b0. Six colours, one hue, so nothing recedes and nothing advances \u2014 the screen is a flat sheet.\n\n3. The accents are stock Tailwind. #22c55e is green-500, #f43f5e is rose-500, #38bdf8 is sky-400, #fbbf24 is amber-400. That is the default dark-dashboard palette, which is exactly what it looks like.\n\nAll three alternatives below widen the surface steps and drop the defaults. Same UI slice in each, so only the colour differs."
+    },
+    {
+      "id": "pro-tells",
+      "x": 0,
+      "y": -430,
+      "w": 980,
+      "page": "page-3",
+      "text": "WHAT READS AS AMATEUR (all counted in the repo, not guessed)\n\n1. Mood lighting. A green radial glow sits behind every page (globals.css, rgba(34,197,94,0.07)). Serious instruments have flat backgrounds; a glow is a landing-page move.\n\n2. The label style, 58 times. Every section header is 10px uppercase mono at 0.18em tracking. Once it is a nice detail; 58 times it is the signature of a dark-dashboard template \u2014 and it is genuinely hard to read at 10px.\n\n3. Low density. Rows are ~53px for one line of data. Instruments run 28-32px. Fitting twice the information is itself what capability looks like \u2014 and right now a five-position book does not fill a screen.\n\n4. A pill on every number. 32 tinted chips for percentage changes. Colour the digits instead; pills are a consumer-app habit and they fight the table's alignment.\n\n5. Jokes where facts go. \"building your tape\u2026\", \"the tape starts when someone pulls the trigger\", \"All cash, no conviction \u2014 yet\", \"Movers in your book\". Each is fine alone; together they cost authority. A professional tool says \"Marked 18:04:11 ET\".\n\n6. No units, no totals. Every cell repeats the $. Real tables state the unit once in the header, fix the decimals, right-align, and foot the columns with a total.\n\n7. 10px radii everywhere. Friendly. 4px reads like an instrument.\n\nMiddle board is the treatment ALONE on the current palette \u2014 which is most of the distance. Right board adds Ink."
     }
   ],
   "launch": {
     "view": "canvas",
-    "page": "page-2"
+    "page": "page-3"
   },
   "pages": [
     {
@@ -118,6 +153,10 @@
     {
       "id": "page-2",
       "name": "Colour"
+    },
+    {
+      "id": "page-3",
+      "name": "Professional"
     }
   ]
 }
