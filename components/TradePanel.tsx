@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check } from "lucide-react";
-import { executionFill } from "@/lib/pricing";
+import { executionFill, SHARES_OUTSTANDING } from "@/lib/pricing";
 import { fmtMoney, fmtPrice } from "@/lib/format";
 
 /**
@@ -30,11 +30,16 @@ export default function TradePanel({
   sharesHeld: number;
 }) {
   const router = useRouter();
-  const [shares, setShares] = useState(10);
+  // stored as text so the field can be cleared and retyped freely —
+  // forcing it back to a number on every keystroke is what makes inputs
+  // "impossible to edit"
+  const [sharesText, setSharesText] = useState("10");
   const [note, setNote] = useState("");
   const [pending, setPending] = useState<"buy" | "sell" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filled, setFilled] = useState(false);
+
+  const shares = Math.floor(Number(sharesText) || 0);
 
   if (!signedIn) {
     return (
@@ -50,25 +55,44 @@ export default function TradePanel({
     );
   }
 
-  const buyEst = executionFill(mrr, sentiment, "buy", shares);
-  const sellEst = executionFill(mrr, sentiment, "sell", shares);
-  const buyImpact = price > 0 ? buyEst.avgPrice / price - 1 : 0;
+  const buyEst = shares >= 1 ? executionFill(mrr, sentiment, "buy", shares) : null;
+  const sellEst = shares >= 1 ? executionFill(mrr, sentiment, "sell", shares) : null;
+  const buyImpact =
+    buyEst && price > 0 ? buyEst.avgPrice / price - 1 : 0;
+  const unitBuy = executionFill(mrr, sentiment, "buy", 1);
+  const unitSell = executionFill(mrr, sentiment, "sell", 1);
+
+  // the biggest buy the cash covers, walking the same fill curve
+  function maxAffordable(): number {
+    if (cash === null || cash <= 0 || mrr <= 0) return 0;
+    let lo = 0;
+    let hi = SHARES_OUTSTANDING;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (executionFill(mrr, sentiment, "buy", mid).total <= cash) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  }
 
   async function trade(side: "buy" | "sell") {
+    // selling clamps to what's actually held — matches the button label
+    const qty = side === "sell" ? Math.min(shares, sharesHeld) : shares;
+    if (qty < 1) return;
     setPending(side);
     setMessage(null);
     try {
       const res = await fetch("/api/trade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, side, shares, note: note.trim() }),
+        body: JSON.stringify({ symbol, side, shares: qty, note: note.trim() }),
       });
       const json = await res.json();
       if (!res.ok) {
         setMessage(json.error ?? "Trade failed.");
       } else {
         setMessage(
-          `${side === "buy" ? "Bought" : "Sold"} ${shares} × $${symbol} @ avg ${fmtPrice(json.price)}`
+          `${side === "buy" ? "Bought" : "Sold"} ${qty.toLocaleString("en-US")} × $${symbol} @ avg ${fmtPrice(json.price)}`
         );
         setNote("");
         setFilled(true);
@@ -106,40 +130,79 @@ export default function TradePanel({
         <div className="border-r border-terminal-line bg-terminal-up/[0.06] px-2.5 py-1.5">
           <div className="microlabel !tracking-[0.12em]">Buy at</div>
           <div className="num mt-0.5 font-semibold text-terminal-up">
-            {fmtPrice(buyEst.avgPrice)}
+            {fmtPrice(unitBuy.avgPrice)}
           </div>
         </div>
         <div className="bg-terminal-down/[0.06] px-2.5 py-1.5 text-right">
           <div className="microlabel !tracking-[0.12em]">Sell at</div>
           <div className="num mt-0.5 font-semibold text-terminal-down">
-            {fmtPrice(sellEst.avgPrice)}
+            {fmtPrice(unitSell.avgPrice)}
           </div>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
         <input
-          type="number"
-          min={1}
-          step={1}
-          value={shares}
+          type="text"
+          inputMode="numeric"
+          value={sharesText}
           onChange={(e) =>
-            setShares(Math.max(1, Math.floor(Number(e.target.value) || 1)))
+            setSharesText(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))
           }
+          placeholder="shares"
           className="input num w-24 font-mono"
           aria-label="Shares"
         />
         <span className="text-xs leading-snug text-terminal-muted">
           <span className="num block font-mono">
-            buy ≈ {fmtMoney(buyEst.total)}
+            buy ≈ {buyEst ? fmtMoney(buyEst.total) : "—"}
           </span>
           <span className="num block font-mono">
-            sell ≈ {fmtMoney(sellEst.total)}
+            sell ≈ {sellEst ? fmtMoney(sellEst.total) : "—"}
           </span>
         </span>
       </div>
 
-      {buyImpact > 0.005 && (
+      {/* size chips — nobody should be arrow-clicking share counts */}
+      <div className="flex flex-wrap gap-1.5">
+        {[10, 100, 1000].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setSharesText(String(n))}
+            className={`rounded border px-2 py-0.5 font-mono text-[11px] transition-colors ${
+              shares === n
+                ? "border-terminal-accent/60 bg-terminal-accent/10 text-terminal-accent"
+                : "border-terminal-line text-terminal-muted hover:border-terminal-muted hover:text-terminal-text"
+            }`}
+          >
+            {n >= 1000 ? `${n / 1000}k` : n}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            const max = maxAffordable();
+            if (max > 0) setSharesText(String(max));
+          }}
+          title="The most your cash covers, slippage included"
+          className="rounded border border-terminal-line px-2 py-0.5 font-mono text-[11px] text-terminal-muted transition-colors hover:border-terminal-up/60 hover:text-terminal-up"
+        >
+          max buy
+        </button>
+        {sharesHeld > 0 && (
+          <button
+            type="button"
+            onClick={() => setSharesText(String(sharesHeld))}
+            title="Everything you hold"
+            className="rounded border border-terminal-line px-2 py-0.5 font-mono text-[11px] text-terminal-muted transition-colors hover:border-terminal-down/60 hover:text-terminal-down"
+          >
+            all {sharesHeld.toLocaleString("en-US")}
+          </button>
+        )}
+      </div>
+
+      {buyEst && buyImpact > 0.005 && (
         <p className="font-mono text-[11px] text-terminal-muted">
           size impact: this order moves your avg fill{" "}
           {(buyImpact * 100).toFixed(1)}% above the quote
@@ -158,17 +221,25 @@ export default function TradePanel({
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => trade("buy")}
-          disabled={pending !== null}
+          disabled={pending !== null || shares < 1}
           className="btn-buy"
         >
-          {pending === "buy" ? "…" : "Buy"}
+          {pending === "buy"
+            ? "…"
+            : shares >= 1
+              ? `Buy ${shares.toLocaleString("en-US")}`
+              : "Buy"}
         </button>
         <button
           onClick={() => trade("sell")}
-          disabled={pending !== null || sharesHeld < 1}
+          disabled={pending !== null || sharesHeld < 1 || shares < 1}
           className="btn-sell"
         >
-          {pending === "sell" ? "…" : "Sell"}
+          {pending === "sell"
+            ? "…"
+            : shares >= 1 && sharesHeld >= 1
+              ? `Sell ${Math.min(shares, sharesHeld).toLocaleString("en-US")}`
+              : "Sell"}
         </button>
       </div>
 
