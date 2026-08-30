@@ -6,14 +6,11 @@ import {
   getIsFollowing,
   getPublicProfile,
   getRecentTrades,
-  getStreakFor,
   getXpMap,
 } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 import { fmtMoney, fmtPct } from "@/lib/format";
-import { STREAK_FLAME_AT } from "@/lib/xp";
 import { STARTING_CASH, APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
-import { Flame } from "lucide-react";
 import InteractiveChart from "@/components/InteractiveChart";
 import FollowButton from "@/components/FollowButton";
 import ShareButton from "@/components/ShareButton";
@@ -41,9 +38,8 @@ export default async function ProfilePage({ params }: Props) {
   if (!data) notFound();
 
   const { profile, valuation, rank, playerCount, history } = data;
-  const [viewer, streak, xpMap, followStats, theirTrades] = await Promise.all([
+  const [viewer, xpMap, followStats, theirTrades] = await Promise.all([
     getUser(),
-    getStreakFor(profile.id),
     getXpMap(),
     getFollowStats(profile.id),
     getRecentTrades(8, undefined, [profile.id]),
@@ -64,15 +60,6 @@ export default async function ProfilePage({ params }: Props) {
           <h1 className="flex flex-wrap items-center gap-2 font-mono text-xl font-bold">
             {profile.display_name}
             <TierBadge xp={xpMap.get(profile.id) ?? 0} />
-            {streak.days >= STREAK_FLAME_AT && (
-              <span
-                title={`${streak.days}-day trade streak`}
-                className="flex items-center gap-0.5 rounded bg-terminal-amber/15 px-1.5 py-0.5 font-mono text-[11px] font-bold text-terminal-amber"
-              >
-                <Flame size={11} fill="currentColor" />
-                {streak.days}
-              </span>
-            )}
             {isMe && (
               <span className="text-xs font-normal text-terminal-accent">
                 you

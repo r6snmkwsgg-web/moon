@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 import { Bell, ChartLine, Rss, Trophy, Wallet } from "lucide-react";
 
 const TABS = [
+  { href: "/portfolio", label: "Portfolio", icon: Wallet },
   { href: "/", label: "Market", icon: ChartLine },
   { href: "/tape", label: "Feed", icon: Rss },
-  { href: "/portfolio", label: "Portfolio", icon: Wallet },
   { href: "/leaderboard", label: "Leaders", icon: Trophy },
   { href: "/notifications", label: "Alerts", icon: Bell },
 ] as const;

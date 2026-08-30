@@ -4,7 +4,6 @@ import { getUser } from "@/lib/supabase/server";
 import {
   getPortfolio,
   getPortfolioHistory,
-  getStreakFor,
   getXpMap,
 } from "@/lib/data";
 import { fmtMoney, fmtPrice } from "@/lib/format";
@@ -13,7 +12,6 @@ import ChangePct from "@/components/ChangePct";
 import InteractiveChart from "@/components/InteractiveChart";
 import LivePrice from "@/components/LivePrice";
 import InviteBox from "@/components/InviteBox";
-import StreakCard from "@/components/StreakCard";
 import TierBadge from "@/components/TierBadge";
 import { STARTING_CASH, siteUrl } from "@/lib/config";
 
@@ -25,10 +23,9 @@ export default async function PortfolioPage() {
   const user = await getUser();
   if (!user) redirect("/login?next=/portfolio");
 
-  const [data, history, streak, xpMap] = await Promise.all([
+  const [data, history, xpMap] = await Promise.all([
     getPortfolio(user.id),
     getPortfolioHistory(),
-    getStreakFor(user.id),
     getXpMap(),
   ]);
   const standing = tierFor(xpMap.get(user.id) ?? 0);
@@ -183,8 +180,7 @@ export default async function PortfolioPage() {
         baselineLabel="$10k stake"
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <StreakCard streak={streak} />
+      <div className="grid items-start gap-4 sm:grid-cols-2">
         <div className="panel space-y-2 p-4">
           <div className="flex items-center justify-between">
             <span className="microlabel">Ranked tier</span>
@@ -205,11 +201,10 @@ export default async function PortfolioPage() {
               : "Diamond. There is nothing above this — only maintaining the aura."}
           </p>
         </div>
+        {inviteCode && (
+          <InviteBox inviteUrl={`${siteUrl()}/?ref=${inviteCode}`} />
+        )}
       </div>
-
-      {inviteCode && (
-        <InviteBox inviteUrl={`${siteUrl()}/?ref=${inviteCode}`} />
-      )}
 
       <div className="flex items-center justify-between text-xs text-terminal-muted">
         <span>PnL is vs. your average cost; rank is by total portfolio value.</span>

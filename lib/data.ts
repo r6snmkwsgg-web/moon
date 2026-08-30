@@ -7,7 +7,7 @@ import {
   marketCap,
 } from "@/lib/pricing";
 import { STARTING_CASH } from "@/lib/config";
-import { computeXp, streakFromDays, type Streak } from "@/lib/xp";
+import { computeXp } from "@/lib/xp";
 import type {
   ChartEvent,
   ChartPoint,
@@ -1012,24 +1012,6 @@ export async function getTradeCountFor(userId: string): Promise<number> {
     return count ?? 0;
   } catch {
     return 0;
-  }
-}
-
-/** One user's streak, from their trade history (service role — works for any user). */
-export async function getStreakFor(userId: string): Promise<Streak> {
-  try {
-    const admin = createSupabaseAdminClient();
-    const { data } = await admin
-      .from("trades")
-      .select("created_at")
-      .eq("user_id", userId)
-      .gte("created_at", new Date(Date.now() - 60 * 86400_000).toISOString());
-    const days = ((data ?? []) as { created_at: string }[]).map((t) =>
-      t.created_at.slice(0, 10)
-    );
-    return streakFromDays(days);
-  } catch {
-    return { days: 0, tradedToday: false };
   }
 }
 

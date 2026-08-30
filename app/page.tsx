@@ -7,7 +7,6 @@ import {
   getMissedToday,
   getPriceSeries,
   getRecentTrades,
-  getStreakFor,
   getTradeCountFor,
 } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
@@ -35,10 +34,9 @@ function timeAgo(iso: string): string {
 export default async function ExchangePage() {
   const [market, user] = await Promise.all([getMarket(), getUser()]);
 
-  const [wire, tapeTrades, streak, missed, tradeCount] = await Promise.all([
+  const [wire, tapeTrades, missed, tradeCount] = await Promise.all([
     getEarningsWire(3),
     user ? getRecentTrades(6) : Promise.resolve([]),
-    user ? getStreakFor(user.id) : Promise.resolve(null),
     user ? getMissedToday(market, user.id) : Promise.resolve(null),
     user ? getTradeCountFor(user.id) : Promise.resolve(0),
   ]);
@@ -106,8 +104,8 @@ export default async function ExchangePage() {
                   You&apos;re in — $10,000 of play money is loaded.
                 </div>
                 <div className="text-xs text-terminal-muted">
-                  Pick any startup below and buy your first shares. That first
-                  print starts your streak and puts you on the leaderboard.
+                  Pick any startup below and buy your first shares — your
+                  first print puts you on the leaderboard.
                 </div>
               </div>
               {featured && (
@@ -120,7 +118,7 @@ export default async function ExchangePage() {
               )}
             </div>
           ) : (
-            streak && <DayStrip streak={streak} missed={missed} />
+            <DayStrip missed={missed} />
           )}
           <div className="grid gap-4 lg:grid-cols-[1fr_290px]">
             <Board quotes={market} />
