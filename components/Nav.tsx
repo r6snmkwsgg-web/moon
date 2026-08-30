@@ -5,6 +5,8 @@ import { isAdminUser } from "@/lib/auth";
 import { createSupabaseServerClient, getUser } from "@/lib/supabase/server";
 import { getUnreadCount } from "@/lib/data";
 import NavLinks from "@/components/NavLinks";
+import MobileSearch from "@/components/MobileSearch";
+import SearchBar from "@/components/SearchBar";
 import Wordmark from "@/components/Wordmark";
 
 async function signOut() {
@@ -20,18 +22,19 @@ export default async function Nav() {
 
   return (
     <header className="sticky top-0 z-20 border-b border-terminal-line bg-terminal-bg/85 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+      <div className="relative mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
         <Link href="/">
           <Wordmark />
         </Link>
 
-        <span className="hidden items-center gap-1.5 rounded-full border border-terminal-line px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-terminal-up lg:flex">
-          <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-terminal-up" />
-          market open
-        </span>
+        {/* search is available from every page */}
+        <div className="ml-2 hidden flex-1 justify-center md:flex">
+          <SearchBar />
+        </div>
 
         <nav className="ml-auto flex items-center gap-1 text-sm">
           <NavLinks />
+          <MobileSearch />
 
           {user && (
             <Link
