@@ -11,10 +11,10 @@ import {
 } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 import { fmtCompact, fmtPrice } from "@/lib/format";
-import Board from "@/components/Board";
 import DayStrip from "@/components/DayStrip";
 import InteractiveChart from "@/components/InteractiveChart";
 import LivePrice from "@/components/LivePrice";
+import MarketBoard from "@/components/MarketBoard";
 import WireBanner from "@/components/WireBanner";
 
 export const dynamic = "force-dynamic";
@@ -126,7 +126,7 @@ export default async function ExchangePage() {
             <DayStrip missed={missed} />
           )}
           <div className="grid gap-4 lg:grid-cols-[1fr_290px]">
-            <Board quotes={market} />
+            <MarketBoard quotes={market} />
             <section className="panel self-start">
               <div className="flex items-center gap-2 border-b border-terminal-line px-3 py-2">
                 <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-terminal-up" />
@@ -240,7 +240,7 @@ export default async function ExchangePage() {
               [
                 "02",
                 "Revenue sets the anchor",
-                "One open formula: fair value = 3× annual revenue over 10,000 shares. Monthly reports are earnings day — beats rip, misses dump.",
+                "One open formula: fair value = annual revenue × a multiple the market earns — 2.5× at par, more for a long steady record, less for a spike. Monthly reports are earnings day.",
               ],
               [
                 "03",
@@ -260,7 +260,7 @@ export default async function ExchangePage() {
             ))}
           </div>
 
-          <Board quotes={market} />
+          <MarketBoard quotes={market} />
 
           {/* closing CTA */}
           <div className="flex flex-col items-center gap-4 rounded-lg bg-gradient-to-b from-transparent to-terminal-up/[0.07] py-10">
