@@ -203,96 +203,84 @@ export default async function TickerPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      {/* the microstructure block — all of it real, none of it decorative */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {[
-          ["Mkt cap", fmtCompact(quote.marketCap)],
-          ["MRR", latestUpdate ? fmtCompact(Number(latestUpdate.mrr)) : "—"],
-          ["Prev close", dayStats.open !== null ? fmtPrice(dayStats.open) : "—"],
-          [
-            "Day range",
-            dayStats.low !== null && dayStats.high !== null
-              ? `${fmtPrice(dayStats.low)} – ${fmtPrice(dayStats.high)}`
-              : "—",
-          ],
-          [
-            "Volume today",
-            dayStats.volumeShares > 0
-              ? `${dayStats.volumeShares.toLocaleString("en-US")} shs`
-              : "0",
-          ],
-          [
-            "Trades today",
-            String(dayStats.trades),
-          ],
-          ["Holders", String(holdersCount)],
-          [
-            "Float held",
-            `${Math.min(100, Math.round((floatHeld / SHARES_OUTSTANDING) * 100))}% of ${(SHARES_OUTSTANDING / 1000).toFixed(0)}k`,
-          ],
-        ].map(([label, value]) => (
-          <div key={label} className="panel px-3 py-2">
-            <div className="microlabel">{label}</div>
-            <div className="num mt-0.5 font-mono text-sm font-semibold">
-              {value}
-            </div>
+      {/* split rail: chart + market data left, a permanent trade rail right */}
+      <div className="grid items-start gap-4 lg:grid-cols-[1fr_330px]">
+        <div className="min-w-0 space-y-4">
+          <TradingChart
+            symbol={t.symbol}
+            mrr={quote.latestMrr}
+            sentiment={Number(t.sentiment)}
+            series={series}
+            fairPrice={quote.fairPrice}
+            trades={tradePoints}
+            earliest={earliest}
+          />
+
+          {/* the microstructure block — all of it real, none of it decorative */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              ["Mkt cap", fmtCompact(quote.marketCap)],
+              ["MRR", latestUpdate ? fmtCompact(Number(latestUpdate.mrr)) : "—"],
+              [
+                "Prev close",
+                dayStats.open !== null ? fmtPrice(dayStats.open) : "—",
+              ],
+              [
+                "Volume today",
+                dayStats.volumeShares > 0
+                  ? `${dayStats.volumeShares.toLocaleString("en-US")} shs`
+                  : "0",
+              ],
+              ["Holders", String(holdersCount)],
+              [
+                "Float held",
+                `${Math.min(100, Math.round((floatHeld / SHARES_OUTSTANDING) * 100))}%`,
+              ],
+            ].map(([label, value]) => (
+              <div key={label} className="panel px-3 py-2">
+                <div className="microlabel">{label}</div>
+                <div className="num mt-0.5 font-mono text-sm font-semibold">
+                  {value}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {latestUpdate && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-terminal-muted">
-          <span>
-            Latest MRR ({fmtMonth(latestUpdate.month)}):{" "}
-            {latestUpdate.source === "stripe" ? (
-              <span className="inline-flex items-center gap-1 font-semibold text-terminal-amber">
-                <Zap size={11} fill="currentColor" strokeWidth={0} />
-                Stripe-verified — computed from active subscriptions, refreshed
-                monthly
-              </span>
-            ) : latestUpdate.source === "self-reported" ? (
-              <span className="text-terminal-amber">
-                self-reported by the founder (honor system)
-              </span>
-            ) : (
+          {latestUpdate && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-terminal-muted">
               <span>
-                curated from public build-in-public posts — founder hasn&apos;t
-                claimed this ticker yet
+                Latest MRR ({fmtMonth(latestUpdate.month)}):{" "}
+                {latestUpdate.source === "stripe" ? (
+                  <span className="inline-flex items-center gap-1 font-semibold text-terminal-amber">
+                    <Zap size={11} fill="currentColor" strokeWidth={0} />
+                    Stripe-verified — computed from active subscriptions,
+                    refreshed monthly
+                  </span>
+                ) : latestUpdate.source === "self-reported" ? (
+                  <span className="text-terminal-amber">
+                    self-reported by the founder (honor system)
+                  </span>
+                ) : (
+                  <span>
+                    curated from public build-in-public posts — founder
+                    hasn&apos;t claimed this ticker yet
+                  </span>
+                )}
               </span>
-            )}
-          </span>
-          {mom !== null && (
-            <span
-              className={`num font-mono ${mom >= 0 ? "text-terminal-up" : "text-terminal-down"}`}
-            >
-              {fmtPct(mom)} MoM {mom >= 0 ? "beat" : "miss"}
-            </span>
+              {mom !== null && (
+                <span
+                  className={`num font-mono ${mom >= 0 ? "text-terminal-up" : "text-terminal-down"}`}
+                >
+                  {fmtPct(mom)} MoM {mom >= 0 ? "beat" : "miss"}
+                </span>
+              )}
+            </div>
           )}
-          {t.stripe_verified ? (
-            <CountdownChip
-              target={nextEarningsDate().toISOString()}
-              prefix="next report in"
-            />
-          ) : (
-            <span className="font-mono">
-              next report ~{nextReportLabel(latestUpdate.month)}
-            </span>
-          )}
-        </div>
-      )}
 
-      {/* chart + trade column */}
-      <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-        <TradingChart
-          symbol={t.symbol}
-          mrr={quote.latestMrr}
-          sentiment={Number(t.sentiment)}
-          series={series}
-          fairPrice={quote.fairPrice}
-          trades={tradePoints}
-          earliest={earliest}
-        />
-        <div className="space-y-3">
+        </div>
+
+        {/* the rail — trading is always in reach */}
+        <div className="space-y-3 lg:sticky lg:top-20">
           <TradePanel
             symbol={t.symbol}
             price={quote.price}
@@ -310,8 +298,56 @@ export default async function TickerPage({ params, searchParams }: Props) {
             myVote={myVote}
             signedIn={user !== null}
           />
+          {latestUpdate && (
+            <div className="panel space-y-1 p-3">
+              <div className="microlabel">Next earnings</div>
+              {t.stripe_verified ? (
+                <>
+                  <CountdownChip
+                    target={nextEarningsDate().toISOString()}
+                    prefix=""
+                  />
+                  <p className="text-[11px] leading-snug text-terminal-muted">
+                    Stripe re-syncs automatically — the anchor moves the moment
+                    it lands.
+                  </p>
+                </>
+              ) : (
+                <p className="font-mono text-sm">
+                  ~{nextReportLabel(latestUpdate.month)}
+                </p>
+              )}
+            </div>
+          )}
+          <section className="panel">
+            <div className="flex items-baseline justify-between border-b border-terminal-line px-3 py-2">
+              <h2 className="microlabel">Recent trades</h2>
+              <Link href="/tape" className="text-[11px] text-terminal-accent">
+                full tape →
+              </Link>
+            </div>
+            <TradesList
+              trades={recentTrades}
+              showSymbol={false}
+              signedIn={user !== null}
+              showNotes={false}
+            />
+          </section>
           <ShareButton url={shareUrl} />
         </div>
+      </div>
+
+      {/* the social floor — full width, and below the rail on mobile so
+          trading is always the first thing you reach */}
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <Discussion
+          posts={posts}
+          tickerId={t.id}
+          symbol={t.symbol}
+          signedIn={user !== null}
+          viewerId={user?.id ?? null}
+        />
+        <ThesisFeed theses={theses} />
       </div>
 
       {/* founder tools */}
@@ -469,33 +505,6 @@ export default async function TickerPage({ params, searchParams }: Props) {
         </section>
       )}
 
-      {/* the floor + theses + recent trades */}
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <Discussion
-          posts={posts}
-          tickerId={t.id}
-          symbol={t.symbol}
-          signedIn={user !== null}
-          viewerId={user?.id ?? null}
-        />
-        <div className="space-y-4">
-          <ThesisFeed theses={theses} />
-          <section className="panel">
-            <div className="flex items-baseline justify-between border-b border-terminal-line px-3 py-2">
-              <h2 className="microlabel">Recent trades</h2>
-              <Link href="/tape" className="text-[11px] text-terminal-accent">
-                full tape →
-              </Link>
-            </div>
-            <TradesList
-              trades={recentTrades}
-              showSymbol={false}
-              signedIn={user !== null}
-              showNotes={false}
-            />
-          </section>
-        </div>
-      </div>
 
       {/* MRR history */}
       {mrrHistory.length > 0 && (

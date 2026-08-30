@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CandlestickChart, LineChart } from "lucide-react";
+import { CandlestickChart, ChevronDown, LineChart } from "lucide-react";
 import type { ChartPoint } from "@/lib/types";
 import { fmtPct, fmtPrice } from "@/lib/format";
 import {
@@ -81,6 +81,7 @@ export default function TradingChart({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [tfKey, setTfKey] = useState(DEFAULT_TIMEFRAME);
+  const [tfOpen, setTfOpen] = useState(false);
   const [mode, setMode] = useState<"candle" | "line">("candle");
   const [now, setNow] = useState<number | null>(null); // null until mounted
   const [scrub, setScrub] = useState<number | null>(null);
@@ -221,7 +222,54 @@ export default function TradingChart({
             )}
           </span>
         )}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="relative ml-auto flex items-center gap-1">
+          {/* the granularity ladder, tucked behind one button */}
+          <button
+            type="button"
+            onClick={() => setTfOpen((v) => !v)}
+            aria-expanded={tfOpen}
+            title="Timeframe"
+            className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[11px] font-semibold transition-colors ${
+              tfOpen
+                ? "bg-terminal-raise text-terminal-text"
+                : "text-terminal-accent hover:bg-terminal-raise"
+            }`}
+          >
+            {tf.label}
+            <ChevronDown
+              size={11}
+              className={`transition-transform ${tfOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {tfOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setTfOpen(false)}
+                aria-hidden="true"
+              />
+              <div className="absolute right-0 top-full z-20 mt-1.5 grid w-[184px] grid-cols-4 gap-0.5 rounded-md border border-terminal-line bg-terminal-panel p-1.5 shadow-xl">
+                {TIMEFRAMES.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => {
+                      setTfKey(t.key);
+                      setScrub(null);
+                      setTfOpen(false);
+                    }}
+                    className={`rounded px-1 py-1 font-mono text-[11px] font-semibold transition-colors ${
+                      t.key === tfKey
+                        ? "bg-terminal-accent/15 text-terminal-accent"
+                        : "text-terminal-muted hover:bg-terminal-raise hover:text-terminal-text"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setMode("candle")}
@@ -247,27 +295,6 @@ export default function TradingChart({
             <LineChart size={14} />
           </button>
         </div>
-      </div>
-
-      {/* the granularity ladder */}
-      <div className="flex gap-0.5 overflow-x-auto border-b border-terminal-line px-2 py-1.5">
-        {TIMEFRAMES.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => {
-              setTfKey(t.key);
-              setScrub(null);
-            }}
-            className={`shrink-0 rounded px-2 py-0.5 font-mono text-[11px] font-semibold transition-colors ${
-              t.key === tfKey
-                ? "bg-terminal-accent/15 text-terminal-accent"
-                : "text-terminal-muted hover:text-terminal-text"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
       </div>
 
       {/* the plot */}
