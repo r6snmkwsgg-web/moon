@@ -531,43 +531,6 @@ export default function PortfolioHeader({
       </div>
     </section>
 
-    {positions.length > 0 && (
-      <div className="panel px-4 py-3">
-        <div className="microlabel mb-2">Allocation</div>
-        <div className="flex h-2.5 w-full gap-px overflow-hidden rounded-full bg-terminal-line/60">
-          {positions.map((p) => (
-            <div
-              key={p.h.symbol}
-              title={`$${p.h.symbol} — ${fmtMoney(p.value)}`}
-              style={{
-                width: `${(p.value / bookValue) * 100}%`,
-                backgroundColor: p.pnl >= 0 ? UP : DOWN,
-                opacity: 0.85,
-              }}
-            />
-          ))}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-terminal-muted">
-          {positions.map((p) => (
-            <span key={p.h.symbol} className="flex items-center gap-1.5">
-              <span
-                className="h-2 w-2 rounded-[2px]"
-                style={{ backgroundColor: p.pnl >= 0 ? UP : DOWN }}
-              />
-              ${p.h.symbol}{" "}
-              <span className="num">
-                {Math.round((p.value / bookValue) * 100)}%
-              </span>
-            </span>
-          ))}
-          <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-[2px] bg-terminal-line" />
-            cash <span className="num">{Math.round((cash / bookValue) * 100)}%</span>
-          </span>
-        </div>
-      </div>
-    )}
-
     <section className="panel overflow-x-auto">
       <table className="w-full min-w-[560px] text-sm">
         <thead>

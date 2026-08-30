@@ -182,6 +182,60 @@ export function sampleEquity(
   return out;
 }
 
+/**
+ * How the book is split, as drawable arcs. Pure so it can be tested without a
+ * DOM: the donut only turns these into strokes.
+ *
+ * Cash is always its own slice and always last — it is the one part of the
+ * book that isn't a bet, so it reads as the remainder rather than a position.
+ */
+export interface AllocationSlice {
+  label: string;
+  name: string;
+  value: number;
+  share: number;
+  offset: number; // fraction of the circle already used, for dasharray
+  isCash: boolean;
+}
+
+export function allocationSlices(
+  positions: { label: string; name: string; value: number }[],
+  cash: number,
+  named: number
+): AllocationSlice[] {
+  const held = positions
+    .filter((x) => x.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  // A wide book would otherwise run the legend down the whole rail and start
+  // reusing shades. Past the top few, the tail is one bucket — the detail
+  // that matters at 2% a name is in the positions table, not here.
+  const shown = held.slice(0, named);
+  const tail = held.slice(named);
+  if (tail.length > 0) {
+    shown.push({
+      label: `+${tail.length} more`,
+      name: tail.map((x) => x.label).join(", "),
+      value: tail.reduce((s, x) => s + x.value, 0),
+    });
+  }
+
+  const all = [
+    ...shown,
+    { label: "Cash", name: "unspent buying power", value: cash },
+  ].filter((x) => x.value > 0);
+  const total = all.reduce((s, x) => s + x.value, 0);
+  if (total <= 0) return [];
+
+  let offset = 0;
+  return all.map((x) => {
+    const share = x.value / total;
+    const slice = { ...x, share, offset, isCash: x.label === "Cash" };
+    offset += share;
+    return slice;
+  });
+}
+
 export const EQUITY_RANGES = [
   { key: "1D", label: "1D", ms: 86_400_000 },
   { key: "1W", label: "1W", ms: 7 * 86_400_000 },

@@ -857,6 +857,8 @@ export async function getVoteGauge(
  * the price inputs for every ticker this account has ever touched, plus the
  * trade log to replay holdings and cash backwards. See lib/equity.ts.
  */
+export const TRADE_HISTORY_LIMIT = 500;
+
 export async function getEquityInputs(userId: string): Promise<{
   cash: number;
   startedAt: number;
@@ -876,7 +878,7 @@ export async function getEquityInputs(userId: string): Promise<{
       .select("ticker_id, side, shares, price, total, note, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: true })
-      .limit(500),
+      .limit(TRADE_HISTORY_LIMIT),
   ]);
 
   const byId = new Map(quotes.map((q) => [q.ticker.id, q]));

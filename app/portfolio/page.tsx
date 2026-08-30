@@ -1,10 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/supabase/server";
-import { getEquityInputs, getPortfolio, getXpMap } from "@/lib/data";
+import {
+  getEquityInputs,
+  getPortfolio,
+  getXpMap,
+  TRADE_HISTORY_LIMIT,
+} from "@/lib/data";
 import { fmtMoney, fmtPrice } from "@/lib/format";
 import { tierFor } from "@/lib/xp";
 import ChangePct from "@/components/ChangePct";
+import AllocationDonut from "@/components/AllocationDonut";
 import PortfolioHeader from "@/components/PortfolioHeader";
 import InviteBox from "@/components/InviteBox";
 import TierBadge from "@/components/TierBadge";
@@ -136,15 +142,20 @@ export default async function PortfolioPage() {
 
         {equity.trades.length > 0 && (
           <section className="panel">
-            <div className="border-b border-terminal-line px-3 py-2">
+            <div className="flex items-baseline gap-2 border-b border-terminal-line px-3 py-2">
               <span className="microlabel font-bold !text-terminal-text">
                 Order history
               </span>
+              <span className="num microlabel">
+                {equity.trades.length}
+                {equity.trades.length === TRADE_HISTORY_LIMIT ? "+" : ""} order
+                {equity.trades.length === 1 ? "" : "s"}
+              </span>
             </div>
-            <ul className="divide-y divide-terminal-line/40">
+            {/* scrolls instead of growing the page without limit */}
+            <ul className="max-h-[320px] divide-y divide-terminal-line/40 overflow-y-auto">
               {[...equity.trades]
                 .reverse()
-                .slice(0, 12)
                 .map((t) => (
                   <li key={`${t.t}-${t.symbol}-${t.shares}`} className="row-hover">
                     <Link
@@ -193,16 +204,17 @@ export default async function PortfolioPage() {
             </ul>
           </section>
         )}
+
+          <AllocationDonut
+            holdings={equity.holdings}
+            cash={Number(valuation.profile.cash)}
+          />
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-xs text-terminal-muted">
-        <span>PnL is vs. your average cost; rank is by total portfolio value.</span>
-        <ChangePct
-          value={valuation.totalPnl / STARTING_CASH}
-          className="text-xs"
-        />
-      </div>
+      <p className="text-xs text-terminal-muted">
+        PnL is vs. your average cost; rank is by total portfolio value.
+      </p>
     </div>
   );
 }

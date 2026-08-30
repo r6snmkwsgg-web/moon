@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  allocationSlices,
   makeEquityAt,
   makeStateAt,
   realizedPnl,
@@ -209,5 +210,63 @@ describe("holdings at a moment", () => {
     expect(stateAt(buyAt - 1).cash).toBe(10_000);
     expect(stateAt(buyAt + 1).shares.get("AAA")).toBe(100);
     expect(stateAt(buyAt + 1).cash).toBe(5_000);
+  });
+});
+
+describe("allocationSlices", () => {
+  const pos = (label: string, value: number) => ({ label, name: label, value });
+
+  it("sorts by value, appends cash last, and sums to one", () => {
+    const s = allocationSlices(
+      [pos("$B", 200), pos("$A", 500), pos("$C", 300)],
+      1000,
+      5
+    );
+    expect(s.map((x) => x.label)).toEqual(["$A", "$C", "$B", "Cash"]);
+    expect(s.at(-1)!.isCash).toBe(true);
+    expect(s.reduce((a, x) => a + x.share, 0)).toBeCloseTo(1, 12);
+  });
+
+  it("lays arcs end to end with no gap or overlap", () => {
+    const s = allocationSlices([pos("$A", 3), pos("$B", 1)], 4, 5);
+    for (let i = 1; i < s.length; i++) {
+      expect(s[i].offset).toBeCloseTo(s[i - 1].offset + s[i - 1].share, 12);
+    }
+    expect(s[0].offset).toBe(0);
+    expect(s.at(-1)!.offset + s.at(-1)!.share).toBeCloseTo(1, 12);
+  });
+
+  it("buckets the tail so a wide book cannot outrun the palette", () => {
+    const many = Array.from({ length: 9 }, (_, i) => pos(`$T${i}`, 100 - i));
+    const s = allocationSlices(many, 50, 5);
+    // 5 named + one bucket + cash — never more, however many positions
+    expect(s).toHaveLength(7);
+    const bucket = s[5];
+    expect(bucket.label).toBe("+4 more");
+    expect(bucket.name).toBe("$T5, $T6, $T7, $T8");
+    expect(bucket.value).toBe(95 + 94 + 93 + 92);
+    expect(s.reduce((a, x) => a + x.share, 0)).toBeCloseTo(1, 12);
+  });
+
+  it("does not bucket when the book fits exactly", () => {
+    const five = Array.from({ length: 5 }, (_, i) => pos(`$T${i}`, 10));
+    expect(allocationSlices(five, 0, 5).map((x) => x.label)).toEqual([
+      "$T0",
+      "$T1",
+      "$T2",
+      "$T3",
+      "$T4",
+    ]);
+  });
+
+  it("drops empty positions and an empty cash balance", () => {
+    const s = allocationSlices([pos("$A", 100), pos("$B", 0)], 0, 5);
+    expect(s.map((x) => x.label)).toEqual(["$A"]);
+    expect(s[0].share).toBe(1);
+  });
+
+  it("returns nothing for an empty book rather than dividing by zero", () => {
+    expect(allocationSlices([], 0, 5)).toEqual([]);
+    expect(allocationSlices([pos("$A", 0)], 0, 5)).toEqual([]);
   });
 });
