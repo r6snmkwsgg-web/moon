@@ -341,7 +341,7 @@ export default function TradePanel({
         </p>
       )}
       <p className="text-[11px] leading-snug text-terminal-muted/70">
-        Play money only. Orders fill along the hype curve (±40% cap, decays
+        Play money only. Orders fill along the hype curve (no cap — hype decays
         daily) — MRR is the anchor, and pumping your own bag round-trips to
         zero.
       </p>

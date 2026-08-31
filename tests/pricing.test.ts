@@ -7,7 +7,10 @@ import {
   MULTIPLE_CEILING,
   MULTIPLE_FLOOR,
   SENTIMENT_CAP,
+  SENTIMENT_CEILING,
+  SENTIMENT_FLOOR,
   SENTIMENT_DAILY_DECAY,
+  SENTIMENT_DAILY_DECAY_DOWN,
   SHARES_OUTSTANDING,
   SHOCK_CAP,
   SHOCK_HALFLIFE_MS,
@@ -67,14 +70,31 @@ describe("livePrice — fair price stretched by sentiment", () => {
     expect(livePrice(10_000, 0)).toBe(A(10_000));
   });
 
-  it("rises and falls with sentiment", () => {
-    expect(livePrice(10_000, 0.2)).toBeCloseTo(A(10_000) * 1.2, 10);
-    expect(livePrice(10_000, -0.2)).toBeCloseTo(A(10_000) * 0.8, 10);
+  it("rises and falls with sentiment, exponentially", () => {
+    expect(livePrice(10_000, 0.2)).toBeCloseTo(A(10_000) * Math.exp(0.2), 10);
+    expect(livePrice(10_000, -0.2)).toBeCloseTo(A(10_000) * Math.exp(-0.2), 10);
   });
 
-  it("never strays past the ±40% cap even if stored sentiment is corrupt", () => {
-    expect(livePrice(10_000, 5)).toBeCloseTo(A(10_000) * (1 + SENTIMENT_CAP), 10);
-    expect(livePrice(10_000, -5)).toBeCloseTo(A(10_000) * (1 - SENTIMENT_CAP), 10);
+  it("is symmetric in log space — a doubling and a halving are one move", () => {
+    const up = livePrice(10_000, Math.LN2);
+    const down = livePrice(10_000, -Math.LN2);
+    expect(up).toBeCloseTo(A(10_000) * 2, 10);
+    expect(down).toBeCloseTo(A(10_000) / 2, 10);
+  });
+
+  it("approaches zero without ever reaching it, however hard it is sold", () => {
+    let prev = livePrice(10_000, 0);
+    for (const s of [-1, -2, -3, -4, -5]) {
+      const px = livePrice(10_000, s);
+      expect(px).toBeLessThan(prev); // always further to fall
+      expect(px).toBeGreaterThan(0); // but never to nothing
+      prev = px;
+    }
+  });
+
+  it("stays finite on corrupt input rather than returning Infinity", () => {
+    expect(Number.isFinite(livePrice(10_000, 500))).toBe(true);
+    expect(livePrice(10_000, -500)).toBeGreaterThan(0);
   });
 
   it("an MRR update reprices immediately — the earnings-report moment", () => {
@@ -88,7 +108,10 @@ describe("livePrice — fair price stretched by sentiment", () => {
 describe("marketCap", () => {
   it("is live price times the full float", () => {
     expect(marketCap(10_000, 0)).toBe(A(10_000) * SHARES_OUTSTANDING);
-    expect(marketCap(10_000, 0.4)).toBeCloseTo(A(10_000) * 1.4 * SHARES_OUTSTANDING, 6);
+    expect(marketCap(10_000, 0.4)).toBeCloseTo(
+      A(10_000) * Math.exp(0.4) * SHARES_OUTSTANDING,
+      6
+    );
   });
 });
 
@@ -98,9 +121,14 @@ describe("clampSentiment", () => {
     expect(clampSentiment(-0.39)).toBe(-0.39);
   });
 
-  it("clamps to ±SENTIMENT_CAP", () => {
-    expect(clampSentiment(0.41)).toBe(SENTIMENT_CAP);
-    expect(clampSentiment(-9)).toBe(-SENTIMENT_CAP);
+  it("leaves ordinary market pressure completely alone", () => {
+    // the old ±0.4 clamp was a wall two sellers could reach; these must pass
+    for (const s of [0.41, 1.2, -0.9, -2.5]) expect(clampSentiment(s)).toBe(s);
+  });
+
+  it("bounds only the absurd, to keep the arithmetic finite", () => {
+    expect(clampSentiment(50)).toBe(SENTIMENT_CEILING);
+    expect(clampSentiment(-50)).toBe(SENTIMENT_FLOOR);
   });
 
   it("treats non-finite input as neutral", () => {
@@ -139,22 +167,52 @@ describe("applyTrade — sentiment after a trade", () => {
     expect(s).toBeCloseTo(-0.1, 10);
   });
 
-  it("caps at +40% no matter how hard the herd buys", () => {
+  it("the tenth seller still moves it — no wall to run into", () => {
+    // the whole point of leaving log space unclamped: a crowd never runs out
+    // of road. Under the old ±0.4 cap, seller three onwards did nothing.
     let s = 0;
-    for (let i = 0; i < 20; i++) s = applyTrade(s, "buy", 2_000);
-    expect(s).toBe(SENTIMENT_CAP);
+    const moves: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const before = livePrice(10_000, s);
+      s = applyTrade(s, "sell", 1_000); // a max-size position each
+      moves.push(before - livePrice(10_000, s));
+    }
+    expect(moves.every((m) => m > 0)).toBe(true); // every seller counts
+    // and each one moves it less in dollars than the last — a thinner market
+    for (let i = 1; i < moves.length; i++) {
+      expect(moves[i]).toBeLessThan(moves[i - 1]);
+    }
   });
 
-  it("caps at -40% on a mass dump", () => {
-    expect(applyTrade(0, "sell", 1_000_000)).toBe(-SENTIMENT_CAP);
+  it("a mass dump can take the price down 90%+, not 40%", () => {
+    let s = 0;
+    for (let i = 0; i < 12; i++) s = applyTrade(s, "sell", 1_000);
+    expect(livePrice(10_000, s)).toBeLessThan(livePrice(10_000, 0) * 0.1);
   });
 });
 
 describe("decaySentiment — hype fades, MRR is gravity", () => {
-  it("shrinks 10% toward zero from either side", () => {
-    expect(decaySentiment(0.4)).toBeCloseTo(0.36, 10);
-    expect(decaySentiment(-0.2)).toBeCloseTo(-0.18, 10);
-    expect(decaySentiment(0.3)).toBeCloseTo(0.3 * (1 - SENTIMENT_DAILY_DECAY), 10);
+  it("hype fades faster than fear — a crash is a scar, not a bruise", () => {
+    expect(decaySentiment(0.4)).toBeCloseTo(0.4 * (1 - SENTIMENT_DAILY_DECAY), 10);
+    expect(decaySentiment(-0.4)).toBeCloseTo(
+      -0.4 * (1 - SENTIMENT_DAILY_DECAY_DOWN),
+      10
+    );
+    // same size shock, one heals in half the time of the other
+    const pump = Math.abs(0.4 - decaySentiment(0.4));
+    const crash = Math.abs(-0.4 - decaySentiment(-0.4));
+    expect(pump).toBeGreaterThan(crash * 2);
+  });
+
+  it("a crash still lingers a fortnight after a pump has gone", () => {
+    let up = 0.5;
+    let down = -0.5;
+    for (let i = 0; i < 14; i++) {
+      up = decaySentiment(up);
+      down = decaySentiment(down);
+    }
+    expect(up).toBeLessThan(0.1); // two weeks on, the pump is spent
+    expect(Math.abs(down)).toBeGreaterThan(0.2); // the crash is not
   });
 
   it("leaves neutral sentiment alone", () => {
@@ -168,15 +226,18 @@ describe("decaySentiment — hype fades, MRR is gravity", () => {
   });
 
   it("converges: price drifts back to the anchor over time", () => {
-    let s = SENTIMENT_CAP;
+    let s = 0.4;
     for (let i = 0; i < 30; i++) s = decaySentiment(s); // a month of decay
-    expect(livePrice(10_000, s)).toBeLessThan(livePrice(10_000, SENTIMENT_CAP) * 0.97);
+    expect(livePrice(10_000, s)).toBeLessThan(livePrice(10_000, 0.4) * 0.97);
     expect(s).toBeGreaterThan(0);
-    expect(s).toBeLessThan(SENTIMENT_CAP * 0.05);
+    expect(s).toBeLessThan(0.4 * 0.05);
   });
 
-  it("clamps corrupt input before decaying", () => {
-    expect(decaySentiment(99)).toBeCloseTo(SENTIMENT_CAP * 0.9, 10);
+  it("bounds corrupt input before decaying", () => {
+    expect(decaySentiment(99)).toBeCloseTo(
+      SENTIMENT_CEILING * (1 - SENTIMENT_DAILY_DECAY),
+      10
+    );
   });
 });
 
@@ -204,11 +265,13 @@ describe("executionFill — slippage along the sentiment curve", () => {
   it("big buys pay MORE than the quoted price, big sells receive LESS", () => {
     const buy = executionFill(MRR, 0, "buy", 1_000); // pushes sentiment 0 → +0.2
     expect(buy.avgPrice).toBeGreaterThan(livePrice(MRR, 0));
-    expect(buy.avgPrice).toBeCloseTo(A(10_000) * (1 + 0.1), 10); // mean of 0 and +0.2
+    // the integral of the curve, (e^δ − 1)/δ — a shade above the old
+    // arithmetic midpoint, because an exponential curve is convex
+    expect(buy.avgPrice).toBeCloseTo(A(10_000) * ((Math.exp(0.2) - 1) / 0.2), 10);
 
     const sell = executionFill(MRR, 0, "sell", 1_000);
     expect(sell.avgPrice).toBeLessThan(livePrice(MRR, 0));
-    expect(sell.avgPrice).toBeCloseTo(A(10_000) * (1 - 0.1), 10);
+    expect(sell.avgPrice).toBeCloseTo(A(10_000) * ((Math.exp(-0.2) - 1) / -0.2), 10);
   });
 
   it("sentiment after the fill matches applyTrade exactly", () => {
@@ -216,19 +279,31 @@ describe("executionFill — slippage along the sentiment curve", () => {
     expect(fill.newSentiment).toBeCloseTo(applyTrade(0.05, "buy", 700), 10);
   });
 
-  it("shares past the cap fill flat at the cap price", () => {
-    // From 0, +0.4 cap is hit after 2,000 shares; the other 2,000 fill at cap.
-    const fill = executionFill(MRR, 0, "buy", 4_000);
-    const movingCost = 2_000 * A(10_000) * (1 + 0.2); // mean sentiment 0 → 0.4 is 0.2
-    const cappedCost = 2_000 * A(10_000) * (1 + SENTIMENT_CAP);
-    expect(fill.total).toBeCloseTo(movingCost + cappedCost, 6);
-    expect(fill.newSentiment).toBe(SENTIMENT_CAP);
+  it("there is no flat stretch any more — every share costs more than the last", () => {
+    // the old model capped sentiment, so half a big order filled at a flat
+    // price and size stopped being punished. Now the curve never flattens.
+    const small = executionFill(MRR, 0, "buy", 1_000);
+    const big = executionFill(MRR, 0, "buy", 4_000);
+    expect(big.avgPrice).toBeGreaterThan(small.avgPrice);
+    // four times the size costs MORE than four times the money
+    expect(big.total).toBeGreaterThan(small.total * 4);
   });
 
-  it("already at the cap, a buy fills entirely flat", () => {
-    const fill = executionFill(MRR, SENTIMENT_CAP, "buy", 500);
-    expect(fill.avgPrice).toBeCloseTo(livePrice(MRR, SENTIMENT_CAP), 10);
-    expect(fill.newSentiment).toBe(SENTIMENT_CAP);
+  it("a buy into an already-hyped ticker still pays up", () => {
+    const cool = executionFill(MRR, 0, "buy", 500);
+    const hot = executionFill(MRR, 0.4, "buy", 500);
+    expect(hot.avgPrice).toBeGreaterThan(cool.avgPrice);
+    expect(hot.newSentiment).toBeGreaterThan(0.4);
+  });
+
+  it("a round trip cancels to the cent, in either direction", () => {
+    // exp makes this exact rather than approximate: the integral up and the
+    // integral back down are the same number
+    for (const n of [10, 500, 4_000]) {
+      const buy = executionFill(MRR, 0, "buy", n);
+      const back = executionFill(MRR, buy.newSentiment, "sell", n);
+      expect(back.total).toBeCloseTo(buy.total, 8);
+    }
   });
 
   it("a round trip is never profitable — pumping your own ticker is a wash", () => {
@@ -261,10 +336,10 @@ describe("the whole mechanic, end to end", () => {
     const opening = livePrice(mrr, sentiment);
     expect(opening).toBeCloseTo(A(8_000), 10); // $8k/mo → $96k ARR at the base multiple
 
-    // A wave of buying: 3,000 shares (30% of float) → sentiment +0.6 → capped +0.4.
+    // A wave of buying: 3,000 shares (30% of float) → pressure +0.6, uncapped.
     sentiment = applyTrade(sentiment, "buy", 3_000);
     const pumped = livePrice(mrr, sentiment);
-    expect(pumped).toBeCloseTo(opening * 1.4, 10);
+    expect(pumped).toBeCloseTo(opening * Math.exp(0.6), 10);
 
     // Two weeks of decay: hype fades toward the anchor.
     for (let i = 0; i < 14; i++) sentiment = decaySentiment(sentiment);

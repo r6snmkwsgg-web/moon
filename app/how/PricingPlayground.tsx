@@ -5,7 +5,6 @@ import {
   fairPrice,
   livePrice,
   marketCap,
-  SENTIMENT_CAP,
   SHARES_OUTSTANDING,
 } from "@/lib/pricing";
 import { fmtCompact, fmtPrice } from "@/lib/format";
@@ -35,12 +34,12 @@ export default function PricingPlayground() {
         <span
           className={`num font-mono ${sentiment >= 0 ? "text-terminal-up" : "text-terminal-down"}`}
         >
-          {(sentiment * 100).toFixed(0)}%
+          {((Math.exp(sentiment) - 1) * 100).toFixed(0)}%
         </span>
         <input
           type="range"
-          min={-SENTIMENT_CAP}
-          max={SENTIMENT_CAP}
+          min={-1.2}
+          max={1.2}
           step={0.01}
           value={sentiment}
           onChange={(e) => setSentiment(Number(e.target.value))}

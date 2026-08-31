@@ -128,10 +128,40 @@ function clampMultiple(m: number): number {
 }
 
 /** Sentiment is clamped to ±40% around fair price. */
+/**
+ * Sentiment is a LOG deviation from fair value: price = fair × e^sentiment.
+ *
+ * It used to be a plain fraction clamped to ±0.4, and the clamp was the
+ * problem. Two accounts dumping their maximum position pinned it at the floor
+ * and every seller after that was silently discarded — a crowd ran out of road
+ * after two people, which is not a market, it is a wall. Real prices go to a
+ * tenth of fair value and fifty times it; a panic has to be able to express
+ * itself.
+ *
+ * In log space it never needs a clamp. Each seller moves the price by the same
+ * PERCENTAGE, so pressure accumulates forever while the price only approaches
+ * zero and never arrives: −18%, −33%, −45%, −63%, −80%, −95%, always further
+ * down and always further to go. It is symmetric too — a doubling and a halving
+ * are the same size move, which is why price charts are drawn on log axes.
+ *
+ * The bound below is arithmetic hygiene, not a market rule. e^−6 is a 99.75%
+ * drawdown and e^4 is a 55-bagger; nothing should ever reach either, and the
+ * only job is to keep an absurd input from producing Infinity.
+ */
+export const SENTIMENT_FLOOR = -6;
+export const SENTIMENT_CEILING = 4;
+
+/** Kept for the explainer page: the move a one-sigma-ish crowd produces. */
 export const SENTIMENT_CAP = 0.4;
 
 /** Fraction of sentiment that decays toward zero each day. */
-export const SENTIMENT_DAILY_DECAY = 0.1;
+/**
+ * Hype fades faster than fear. A pump is forgotten in about a week; a crash
+ * takes a fortnight to shake off, because that is how confidence works and
+ * because a crash that heals as fast as it happened never mattered.
+ */
+export const SENTIMENT_DAILY_DECAY = 0.12; // upward hype
+export const SENTIMENT_DAILY_DECAY_DOWN = 0.05; // a scar, not a bruise
 
 /**
  * How hard one traded share pushes sentiment.
@@ -143,10 +173,10 @@ export const TRADE_IMPACT_FACTOR = 2;
 
 export type TradeSide = "buy" | "sell";
 
-/** Clamp sentiment into [-SENTIMENT_CAP, +SENTIMENT_CAP]. */
+/** Keep sentiment finite. Not a market rule — see SENTIMENT_FLOOR. */
 export function clampSentiment(sentiment: number): number {
   if (!Number.isFinite(sentiment)) return 0;
-  return Math.min(SENTIMENT_CAP, Math.max(-SENTIMENT_CAP, sentiment));
+  return Math.min(SENTIMENT_CEILING, Math.max(SENTIMENT_FLOOR, sentiment));
 }
 
 /** Annual recurring revenue from the latest monthly number. */
@@ -205,7 +235,7 @@ export function livePrice(
   multiple = ARR_MULTIPLE,
   shares = SHARES_OUTSTANDING
 ): number {
-  return fairPrice(mrr, multiple, shares) * (1 + clampSentiment(sentiment));
+  return fairPrice(mrr, multiple, shares) * Math.exp(clampSentiment(sentiment));
 }
 
 /** Play-money market cap: live price × the full float. */
@@ -242,18 +272,22 @@ export function applyTrade(
   shares: number,
   outstanding = SHARES_OUTSTANDING
 ): number {
+  // no market cap to apply — pressure just accumulates, and the price
+  // approaches zero (or the moon) without ever getting there
   return clampSentiment(
     clampSentiment(sentiment) + tradeImpact(side, shares, outstanding)
   );
 }
 
 /**
- * One daily decay step: sentiment shrinks 10% toward zero, so hype fades
- * and price drifts back to the MRR anchor. Values that decay below a hair's
- * width of zero snap to zero so sentiment doesn't linger forever.
+ * One daily decay step toward the revenue anchor — slower on the way back up
+ * from a crash than on the way down from a pump. Values that decay below a
+ * hair's width of zero snap to it so sentiment doesn't linger forever.
  */
 export function decaySentiment(sentiment: number): number {
-  const decayed = clampSentiment(sentiment) * (1 - SENTIMENT_DAILY_DECAY);
+  const s = clampSentiment(sentiment);
+  const rate = s < 0 ? SENTIMENT_DAILY_DECAY_DOWN : SENTIMENT_DAILY_DECAY;
+  const decayed = s * (1 - rate);
   return Math.abs(decayed) < 1e-6 ? 0 : decayed;
 }
 
@@ -472,14 +506,31 @@ export function executionFill(
     };
   }
 
-  const perShare = TRADE_IMPACT_FACTOR / floatOf(outstanding);
+  /*
+   * Every share fills at the price its own arrival creates, so the order is
+   * the integral of the price curve across the pressure it adds:
+   *
+   *     ∫₀ⁿ fair · e^(s₀ + kδ) dk  =  fair · e^s₀ · (e^(nδ) − 1) / δ
+   *
+   * which is exact, needs no sampling, and has no cap branch — there is no
+   * cap any more, so every share of a big order moves the price a little
+   * further and pays a little more for it.
+   *
+   * It also makes a same-instant round trip cancel EXACTLY: buying n shares
+   * costs fair·e^s₀·(A−1)/δ with A = e^(nδ), and selling them straight back
+   * from s₀+nδ returns fair·e^(s₀+nδ)·(1−A⁻¹)/δ, which is the same number.
+   * Pumping your own bag is not merely unprofitable, it is arithmetically a
+   * wash before the flow moves.
+   */
+  const delta = tradeImpact(side, shares, outstanding); // total pressure added
   const sEnd = applyTrade(s0, side, shares, outstanding);
-  const movingShares = Math.min(shares, Math.abs(sEnd - s0) / perShare);
-  const cappedShares = shares - movingShares;
+  const perShare = delta / shares;
 
   const total =
-    fair *
-    (movingShares * (1 + (s0 + sEnd) / 2) + cappedShares * (1 + sEnd));
+    Math.abs(perShare) < 1e-12
+      ? // an impact too small to matter: flat fill at the current price
+        shares * fair * Math.exp(s0)
+      : (fair * Math.exp(s0) * (Math.exp(delta) - 1)) / perShare;
 
   return { avgPrice: total / shares, total, newSentiment: sEnd };
 }

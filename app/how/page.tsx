@@ -4,8 +4,8 @@ import {
   ARR_MULTIPLE,
   MULTIPLE_CEILING,
   MULTIPLE_FLOOR,
-  SENTIMENT_CAP,
   SENTIMENT_DAILY_DECAY,
+  SENTIMENT_DAILY_DECAY_DOWN,
   MAX_POSITION_FRACTION,
   SHOCK_CAP,
   SHOCK_HALFLIFE_MS,
@@ -131,13 +131,19 @@ export default function HowPage() {
             4 · The weather — hype
           </h2>
           <p>
-            Buying pushes sentiment up, selling pushes it down (trading 10% of
-            the float moves it {(0.1 * TRADE_IMPACT_FACTOR * 100).toFixed(0)}{" "}
-            points), and it&apos;s hard-capped at ±
-            {(SENTIMENT_CAP * 100).toFixed(0)}%:
+            Buying pushes sentiment up, selling pushes it down — trading 10%
+            of the float moves the price about{" "}
+            {((Math.exp(0.1 * TRADE_IMPACT_FACTOR) - 1) * 100).toFixed(0)}%:
           </p>
           <p className="num rounded-md border border-terminal-up/20 bg-terminal-bg px-4 py-3.5 text-center font-mono text-sm font-semibold tracking-tight text-terminal-up sm:text-base">
-            live_price = fair_price × (1 + sentiment)
+            live_price = fair_price × e^sentiment
+          </p>
+          <p className="text-terminal-muted">
+            There is no ceiling and no floor. Each trade moves the price by the
+            same percentage rather than the same number of cents, so a crowd
+            never runs out of room: the tenth seller still moves it, and the
+            price can approach zero without ever arriving. A panic is allowed
+            to be a panic.
           </p>
           <p className="text-terminal-muted">
             Orders fill share-by-share along that curve, so big buys pay more
@@ -151,9 +157,12 @@ export default function HowPage() {
             5 · Gravity — decay
           </h2>
           <p>
-            Every night, sentiment shrinks{" "}
-            {(SENTIMENT_DAILY_DECAY * 100).toFixed(0)}% toward zero. Hype
-            fades in about two weeks; only revenue moves the price for good.
+            Every night, sentiment shrinks toward zero — but not evenly. Hype
+            fades {(SENTIMENT_DAILY_DECAY * 100).toFixed(0)}% a night and is
+            gone in about a week; a crash only heals{" "}
+            {(SENTIMENT_DAILY_DECAY_DOWN * 100).toFixed(0)}% a night and takes
+            a fortnight, because confidence is slower to come back than it is
+            to go. Only revenue moves the price for good.
           </p>
         </div>
 
