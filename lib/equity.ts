@@ -249,22 +249,31 @@ export const EQUITY_RANGES = [
 export type EquityRangeKey = (typeof EQUITY_RANGES)[number]["key"];
 
 export interface EquityWindow {
+  /** The x-axis domain — the window the button names. */
+  t0: number;
+  t1: number;
+  /** The slice that actually has data. Never starts before the account did. */
   from: number;
   to: number;
 }
 
 /**
- * The slice of time a portfolio range covers.
+ * The slice of time a portfolio range covers, and the window it is drawn in.
  *
- * A bounded range means what it says. 1W used to trim to just before your
- * first trade, on the reasoning that flat cash "says nothing" — but six flat
- * days ARE the shape of that week, and the trimming meant 1W, 1M and ALL all
- * drew the same picture on a young account. You pressed 1W, got one day, and
- * reasonably wondered what was broken.
+ * Those are two different things, the way they already are on 1D: the axis is
+ * the whole market day and the curve only occupies the hours that have
+ * happened. A bounded range now works the same. Press 1W and you get a week
+ * of axis; if the account is two days old, the line occupies the last two
+ * days and the empty stretch behind it is the answer to "how long have I been
+ * here". Nothing is invented to fill it — before you joined there is no
+ * value to plot, only the absence of one.
  *
- * ALL keeps the trim, because that is where it earns its keep: an account
- * that sat on its cash for months before its first trade would otherwise open
- * on a mile of flat line with the whole story squeezed into the last inch.
+ * (Greying those buttons out instead was worse. A dead control with no
+ * explanation just reads as broken, which is exactly how it was reported.)
+ *
+ * ALL is the exception: its window IS its data, and it trims its lead-in,
+ * because an account that sat on its cash for months before trading would
+ * otherwise open on a mile of flat line with the story in the last inch.
  */
 export function equityWindow({
   spanMs,
@@ -280,28 +289,10 @@ export function equityWindow({
   if (spanMs === Infinity) {
     const firstMove = firstTradeAt ?? startedAt;
     const lead = Math.max(60_000, (now - firstMove) * 0.06);
-    return { from: Math.max(startedAt, firstMove - lead), to: now };
+    const from = Math.max(startedAt, firstMove - lead);
+    return { t0: from, t1: now, from, to: now };
   }
-  // only the account's own start may cut a bounded window short
-  return { from: Math.max(startedAt, now - spanMs), to: now };
+  const t0 = now - spanMs;
+  return { t0, t1: now, from: Math.max(startedAt, t0), to: now };
 }
 
-/**
- * Whether a range can show anything ALL would not. A window longer than the
- * account has existed draws exactly what ALL draws; offering it as a live
- * button is a promise the data cannot keep.
- */
-export function rangeIsMeaningful({
-  key,
-  spanMs,
-  now,
-  startedAt,
-}: {
-  key: EquityRangeKey;
-  spanMs: number;
-  now: number;
-  startedAt: number;
-}): boolean {
-  if (spanMs === Infinity || key === "1D") return true;
-  return now - spanMs > startedAt;
-}

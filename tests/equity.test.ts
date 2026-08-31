@@ -4,7 +4,6 @@ import {
   equityWindow,
   makeEquityAt,
   makeStateAt,
-  rangeIsMeaningful,
   realizedPnl,
   sampleEquity,
   type EquityInputs,
@@ -292,18 +291,21 @@ describe("equityWindow", () => {
       startedAt: T - 30 * DAY_MS,
       firstTradeAt: T - DAY_MS,
     });
+    expect(w.t0).toBe(T - WEEK_MS);
     expect(w.from).toBe(T - WEEK_MS);
     expect(w.to).toBe(T);
   });
 
-  it("only the account's own start may cut a bounded window short", () => {
-    const w = equityWindow({
-      spanMs: WEEK_MS,
-      now: T,
-      startedAt: T - 2 * DAY_MS,
-      firstTradeAt: T - DAY_MS,
-    });
-    expect(w.from).toBe(T - 2 * DAY_MS); // nothing existed before that
+  it("REGRESSION: a young account still gets the whole window as its axis", () => {
+    // Greying the button out instead just read as broken. The axis is the
+    // week you asked for; the curve starts where the account does, and the
+    // gap behind it is how long you have been here.
+    const startedAt = T - 2 * DAY_MS;
+    const w = equityWindow({ spanMs: WEEK_MS, now: T, startedAt, firstTradeAt: T - DAY_MS });
+    expect(w.t0).toBe(T - WEEK_MS); // the button's promise is kept
+    expect(w.from).toBe(startedAt); // but nothing is invented to fill it
+    expect(w.t1).toBe(T);
+    expect(w.to).toBe(T);
   });
 
   it("ALL keeps its lead-in trim, which is where it earns its keep", () => {
@@ -317,6 +319,7 @@ describe("equityWindow", () => {
     });
     expect(w.from).toBeGreaterThan(T - 2 * DAY_MS);
     expect(w.from).toBeLessThan(T - DAY_MS);
+    expect(w.t0).toBe(w.from); // ALL's window IS its data
   });
 
   it("ALL on an account that never traded opens at the account", () => {
@@ -336,24 +339,9 @@ describe("equityWindow", () => {
         });
         expect(w.from).toBeLessThanOrEqual(w.to);
         expect(w.from).toBeGreaterThanOrEqual(T - age);
+        expect(w.t0).toBeLessThanOrEqual(w.from); // data sits inside the axis
+        expect(w.t1).toBe(w.to);
       }
     }
-  });
-});
-
-describe("rangeIsMeaningful", () => {
-  it("greys out a window the account has not lived through", () => {
-    const startedAt = T - DAY_MS; // one day old
-    expect(rangeIsMeaningful({ key: "1W", spanMs: WEEK_MS, now: T, startedAt })).toBe(false);
-    expect(rangeIsMeaningful({ key: "1M", spanMs: 30 * DAY_MS, now: T, startedAt })).toBe(false);
-    // 1D and ALL always mean something
-    expect(rangeIsMeaningful({ key: "1D", spanMs: DAY_MS, now: T, startedAt })).toBe(true);
-    expect(rangeIsMeaningful({ key: "ALL", spanMs: Infinity, now: T, startedAt })).toBe(true);
-  });
-
-  it("lights 1W up the moment the account is older than a week", () => {
-    const args = { key: "1W" as const, spanMs: WEEK_MS, now: T };
-    expect(rangeIsMeaningful({ ...args, startedAt: T - WEEK_MS })).toBe(false);
-    expect(rangeIsMeaningful({ ...args, startedAt: T - WEEK_MS - 1 })).toBe(true);
   });
 });

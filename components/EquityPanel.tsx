@@ -11,7 +11,6 @@ import { fmtPrice } from "@/lib/format";
 import {
   EQUITY_RANGES,
   equityWindow,
-  rangeIsMeaningful,
   makeEquityAt,
   makePricesAt,
   makeStateAt,
@@ -199,13 +198,12 @@ export default function EquityPanel({
         to: now,
       };
     }
-    const { from, to } = equityWindow({
+    return equityWindow({
       spanMs: EQUITY_RANGES.find((r) => r.key === range)!.ms,
       now,
       startedAt,
       firstTradeAt: trades.length ? trades[0].t : null,
     });
-    return { t0: from, t1: to, from, to };
   }, [range, now, startedAt, trades]);
 
   const series = useMemo(
@@ -350,39 +348,23 @@ export default function EquityPanel({
           </div>
         </div>
         <div className="flex gap-0.5">
-          {EQUITY_RANGES.map((r) => {
-            const tooYoung = !rangeIsMeaningful({
-              key: r.key,
-              spanMs: r.ms,
-              now,
-              startedAt,
-            });
-            return (
-              <button
-                key={r.key}
-                type="button"
-                disabled={tooYoung}
-                title={
-                  tooYoung
-                    ? `Your account isn't ${r.label} old yet — ALL shows everything there is.`
-                    : undefined
-                }
-                onClick={() => {
-                  setRange(r.key);
-                  setScrub(null);
-                }}
-                className={`rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors ${
-                  range === r.key
-                    ? "bg-terminal-raise text-terminal-text"
-                    : tooYoung
-                      ? "cursor-not-allowed text-terminal-muted/35"
-                      : "text-terminal-muted hover:text-terminal-text"
-                }`}
-              >
-                {r.label}
-              </button>
-            );
-          })}
+          {EQUITY_RANGES.map((r) => (
+            <button
+              key={r.key}
+              type="button"
+              onClick={() => {
+                setRange(r.key);
+                setScrub(null);
+              }}
+              className={`rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors ${
+                range === r.key
+                  ? "bg-terminal-raise text-terminal-text"
+                  : "text-terminal-muted hover:text-terminal-text"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -407,6 +389,36 @@ export default function EquityPanel({
                 <stop offset="100%" stopColor={color} stopOpacity="0" />
               </linearGradient>
             </defs>
+
+            {/* Where the account opened. On a window longer than the account
+                has existed, the stretch to the left of this is empty on
+                purpose: there is no value to plot before you joined, and
+                drawing a flat line at the stake would be inventing one. */}
+            {view && view.t0 < startedAt - 60_000 && (
+              <g>
+                <line
+                  x1={geo.x(startedAt)}
+                  x2={geo.x(startedAt)}
+                  y1={0}
+                  y2={geo.h - 12}
+                  stroke={MUTED}
+                  strokeWidth="1"
+                  strokeDasharray="2 3"
+                  opacity="0.35"
+                />
+                <text
+                  x={geo.x(startedAt) - 5}
+                  y={12}
+                  textAnchor="end"
+                  fill={MUTED}
+                  fontSize="9"
+                  fontFamily="ui-monospace, monospace"
+                  opacity="0.7"
+                >
+                  {own ? "you joined" : "joined"}
+                </text>
+              </g>
+            )}
 
             {hourMarks.map((m) => (
               <g key={m.label}>
