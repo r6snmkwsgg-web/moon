@@ -21,6 +21,7 @@ export default function LiveMarketCap({
   multiple,
   shares,
   events,
+  drift,
   renderedAt,
 }: {
   symbol: string;
@@ -30,6 +31,8 @@ export default function LiveMarketCap({
   multiple: number;
   shares: number;
   events: RevenueEvent[];
+  /** The recorded weather, handed over because it cannot be derived. */
+  drift: number;
   renderedAt: number;
 }) {
   const [now, setNow] = useState(renderedAt);
@@ -42,8 +45,9 @@ export default function LiveMarketCap({
   }, []);
 
   const priceAt = useMemo(
-    () => makePriceAt(symbol, mrr, sentiment, series, multiple, shares, events),
-    [symbol, mrr, sentiment, series, multiple, shares, events]
+    () =>
+      makePriceAt(symbol, mrr, sentiment, series, multiple, shares, events, drift),
+    [symbol, mrr, sentiment, series, multiple, shares, events, drift]
   );
 
   return <>{fmtCompact(priceAt(now) * shares)}</>;

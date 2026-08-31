@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { pollRevenuePulse, PULSE_INTERVAL_MS } from "@/lib/pulse";
+import { advanceMarketFlow } from "@/lib/flow";
 import { stripeVerificationConfigured } from "@/lib/stripe";
 
 export const dynamic = "force-dynamic";
@@ -8,15 +9,14 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/pulse { symbol } — refresh one ticker's revenue if it is stale.
  *
- * Open on purpose: the poll it triggers is rate-limited per ticker inside
- * pollRevenuePulse (five minutes, checked against live_synced_at in the
- * database), so hammering this does nothing but return early. It exists so a
- * ticker page someone is watching stays live even without a scheduler.
+ * It also advances the drift walk, so a page someone is actually looking at
+ * keeps the tape moving even if the scheduler is down. That is safe to expose
+ * for the same reason the revenue poll is: both are rate-limited per ticker in
+ * the DATABASE (five minutes, against live_synced_at and tickers.drift_at), so
+ * hammering this returns early and cannot spin the market faster than the
+ * clock — the walk advances once per elapsed interval no matter who asks.
  */
 export async function POST(request: Request) {
-  if (!stripeVerificationConfigured()) {
-    return NextResponse.json({ ok: true, skipped: true });
-  }
   let symbol = "";
   try {
     symbol = String(((await request.json()) as { symbol?: string }).symbol ?? "")
@@ -37,11 +37,16 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (!ticker) return NextResponse.json({ error: "Unknown ticker." }, { status: 404 });
 
+  const flow = await advanceMarketFlow(admin);
+  if (!stripeVerificationConfigured()) {
+    return NextResponse.json({ ok: true, advanced: flow.advanced, every: PULSE_INTERVAL_MS });
+  }
   const result = await pollRevenuePulse(admin, { tickerId: ticker.id });
   return NextResponse.json({
     ok: true,
     checked: result.checked,
     changed: result.changed,
+    advanced: flow.advanced,
     every: PULSE_INTERVAL_MS,
   });
 }

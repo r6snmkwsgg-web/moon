@@ -21,6 +21,10 @@ export interface Ticker {
   listed_by?: string | null;
   // 0004_float — the ticker's own share count; falls back to the default
   shares_outstanding?: number | null;
+  // 0007_market_drift — the walk's current state, advanced by the poller
+  drift?: number | null;
+  vol_state?: number | null;
+  drift_at?: string | null;
 }
 
 export interface MrrUpdate {
@@ -136,4 +140,10 @@ export interface TickerQuote {
   dayChange: number; // fraction, e.g. 0.052
   weekChange: number;
   spark: number[]; // recent snapshot prices, oldest → newest
+  /**
+   * The recorded weather at render time — the drift the poller last drew for
+   * this ticker. Clients need it because they can no longer derive it: the
+   * walk is a record, not a function of the clock.
+   */
+  drift: number;
 }

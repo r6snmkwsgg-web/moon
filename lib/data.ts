@@ -7,7 +7,7 @@ import {
   fairPrice,
   floatOf,
   flowPrice,
-  marketFlow,
+  historyTexture,
   valuationMultiple,
   type RevenueEvent,
   type RevenuePoint,
@@ -120,7 +120,9 @@ function buildQuote(
   const liveMrr =
     live.liveMrr !== null && live.liveMrr > 0 ? live.liveMrr : latestMrr;
   const events = live.events;
-  // anchor × hype × the flow × the news — the one price everything fills at
+  // the recorded weather: whatever the poller last drew for this ticker
+  const drift = Number(ticker.drift ?? 0);
+  // anchor × hype × weather × news — the one price the whole app reads
   const price = flowPrice(
     ticker.symbol,
     liveMrr,
@@ -128,7 +130,8 @@ function buildQuote(
     Date.now(),
     multiple,
     shares,
-    events
+    events,
+    drift
   );
   const spark = snaps.map((s) => Number(s.price));
 
@@ -163,6 +166,7 @@ function buildQuote(
     dayChange: dayBase ? changeFraction(Number(dayBase.price), price) : 0,
     weekChange: weekBase ? changeFraction(Number(weekBase.price), price) : 0,
     spark: [...spark, price], // live price as the final point
+    drift, // clients recompute the live price off this, not off a formula
   };
 }
 
@@ -204,15 +208,22 @@ export async function getMarket(): Promise<TickerQuote[]> {
 }
 
 /**
- * The price series a chart deserves. Anchor points are REAL — daily
- * snapshots, every trade print, and the live price. Between anchors the
- * line is modulated by the deterministic flow (endpoint-matched, so every
- * real value stays exactly where it happened): the fabricated volatility
- * between facts, same for every viewer, reconstructible at any time.
+ * The price series a chart deserves. Every anchor is a RECORD — daily
+ * snapshots, every trade print, every five-minute tick of the walk, and the
+ * live price. Between anchors the line carries the shimmer (endpoint-matched,
+ * so every recorded value stays exactly where it happened).
+ *
+ * The five-minute ticks are what changed here. The chart used to redraw
+ * recent history by re-running the flow FORMULA, which is why the same call
+ * worked just as well for tomorrow; now the recent tape is read back out of
+ * public.flow_ticks, and tomorrow simply has no rows.
  */
 /** How far back the minute-level detail is filled in. Older history is its
  *  recorded anchors — enough to draw the shape, at a fraction of the payload. */
 const DETAIL_WINDOW_MS = 45 * 86_400_000;
+
+/** How much of the recorded walk rides along. Two days ≈ 576 ticks. */
+const FLOW_TICK_WINDOW_MS = 2 * 86_400_000;
 
 /** Hard ceiling on what gets shipped to the browser. */
 const MAX_SERIES_POINTS = 2600;
@@ -224,11 +235,12 @@ export async function getPriceSeries(
   sentiment: number,
   multiple?: number,
   shares?: number,
-  events: RevenueEvent[] = []
+  events: RevenueEvent[] = [],
+  drift = 0
 ): Promise<ChartPoint[]> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
-  const [snapsRes, tradesRes] = await Promise.all([
+  const [snapsRes, tradesRes, ticksRes] = await Promise.all([
     supabase
       .from("price_snapshots")
       .select("day, price")
@@ -241,6 +253,13 @@ export async function getPriceSeries(
       .eq("ticker_id", tickerId)
       .order("created_at", { ascending: true })
       .limit(2000),
+    supabase
+      .from("flow_ticks")
+      .select("at, price")
+      .eq("ticker_id", tickerId)
+      .gte("at", new Date(Date.now() - FLOW_TICK_WINDOW_MS).toISOString())
+      .order("at", { ascending: true })
+      .limit(1200),
   ]);
 
   const anchors: ChartPoint[] = [];
@@ -257,6 +276,11 @@ export async function getPriceSeries(
   }[]) {
     anchors.push({ t: Date.parse(t.created_at), price: Number(t.price) });
   }
+  // the recorded walk — absent until 0007 is applied and the poller has run,
+  // in which case the chart falls back to snapshots and prints as before
+  for (const k of (ticksRes.data ?? []) as { at: string; price: number }[]) {
+    anchors.push({ t: Date.parse(k.at), price: Number(k.price) });
+  }
   anchors.sort((a, b) => a.t - b.t);
   anchors.push({
     t: Date.now(),
@@ -267,12 +291,18 @@ export async function getPriceSeries(
       Date.now(),
       multiple,
       shares,
-      events
+      events,
+      drift
     ),
   });
 
-  // flow-modulated interpolation, pinned to the real values at both ends:
-  // p(t) = lerp(real) × (1 + flow(t)) / lerp(1 + flow(endpoints))
+  // Texture-modulated interpolation, pinned to the real values at both ends:
+  // p(t) = lerp(real) × (1 + texture(t)) / lerp(1 + texture(endpoints))
+  //
+  // Only gaps of 30 minutes or more get filled, and the recorded tape is five
+  // minutes apart — so this never touches the recent window. It is strictly
+  // the inside of a day-scale gap in old history, where the ticks have been
+  // pruned and one snapshot a day is all that is left.
   //
   // Interpolation only fills the recent window. It costs ~40 points per daily
   // gap, so filling a whole history and then keeping the tail — which is what
@@ -282,7 +312,7 @@ export async function getPriceSeries(
   // doesn't. Every recorded anchor is kept, and detail is spent where it can
   // actually be seen.
   const detailFrom = Date.now() - DETAIL_WINDOW_MS;
-  const flowAt = (t: number) => 1 + marketFlow(symbol, t, mrr);
+  const flowAt = (t: number) => 1 + historyTexture(symbol, t, mrr);
   const series: ChartPoint[] = [];
   for (let i = 0; i < anchors.length; i++) {
     const a = anchors[i];
@@ -523,7 +553,8 @@ export async function getTickerPage(symbol: string): Promise<{
       Number((ticker as Ticker).sentiment),
       quote.multiple,
       quote.shares,
-      revenueEvents
+      revenueEvents,
+      quote.drift
     ),
   ]);
 
@@ -545,23 +576,16 @@ export async function getTickerPage(symbol: string): Promise<{
     .reverse()
     .find((s) => s.day < todayStart.slice(0, 10));
   const tradedPrices = todayTrades.map((t) => Number(t.price));
-  // sample today's flow so the range reflects the day's actual path
-  const dayPrices = [...tradedPrices, quote.price];
+  // Today's range comes off the recorded tape, not a re-run of a formula.
+  // (It used to re-sample the flow every 15 minutes — which was the only way
+  // to know the day's path when the path was a function. Now the path is
+  // written down every five minutes, so the high and the low are facts.)
   const t0 = Date.parse(todayStart);
-  const sentimentNow = Number((ticker as Ticker).sentiment);
-  for (let t = t0; t < Date.now(); t += 15 * 60_000) {
-    dayPrices.push(
-      flowPrice(
-        (ticker as Ticker).symbol,
-        quote.liveMrr,
-        sentimentNow,
-        t,
-        quote.multiple,
-        quote.shares,
-        revenueEvents
-      )
-    );
-  }
+  const dayPrices = [
+    ...tradedPrices,
+    quote.price,
+    ...series.filter((p) => p.t >= t0).map((p) => p.price),
+  ];
   const dayStats: DayStats = {
     open: prevSnap ? Number(prevSnap.price) : null,
     high: dayPrices.length ? Math.max(...dayPrices) : null,
@@ -954,7 +978,8 @@ export async function getEquityInputs(userId: string): Promise<{
       Number(quote.ticker.sentiment),
       quote.multiple,
       quote.shares,
-      events
+      events,
+      quote.drift
     );
     holdings.push({
       symbol: quote.ticker.symbol,
@@ -965,6 +990,7 @@ export async function getEquityInputs(userId: string): Promise<{
       outstanding: quote.shares,
       series,
       events,
+      drift: quote.drift,
       name: quote.ticker.name,
       logoUrl: quote.ticker.logo_url,
       avgCost: Number(costOf.get(id) ?? 0),

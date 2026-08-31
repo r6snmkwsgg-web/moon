@@ -25,6 +25,8 @@ export interface EquityHolding {
   outstanding: number;
   series: ChartPoint[];
   events: RevenueEvent[];
+  /** The recorded weather — read from the ticker row, not derived. */
+  drift: number;
   // display, so the positions table can price off the same clock as the curve
   name: string;
   logoUrl: string | null;
@@ -49,7 +51,8 @@ export function makePricesAt(
         h.series,
         h.multiple,
         h.outstanding,
-        h.events
+        h.events,
+        h.drift
       )
     );
   }

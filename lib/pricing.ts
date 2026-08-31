@@ -306,19 +306,38 @@ export interface Fill {
   newSentiment: number;
 }
 
-// ── the flow: simulated volatility ──────────────────────────────────────────
+// ── the flow: simulated volatility ────────────────────────────────────
 //
 // Between real events (trades, earnings, decay) nothing moves, and a market
-// where nothing moves is a spreadsheet. The flow is DISCLOSED game physics:
-// a deterministic, per-ticker volatility field around the anchor — multi-day
-// runs, squeezes, crashes, sleepy stretches — computed as a pure function of
-// (symbol, time). No randomness at request time, no database writes: every
-// client and the server agree on the price at any instant, and charts can
-// reconstruct any past moment. Facts stay real: MRR, trades, and events are
-// never fabricated. Only the weather is simulated, and it always blows back
-// toward fair value.
+// where nothing moves is a spreadsheet. So there is weather: a per-ticker
+// deviation around the anchor — multi-day runs, squeezes, crashes, sleepy
+// stretches — that always blows back toward fair value.
+//
+// The weather used to be a pure function of (symbol, time). That was a hole,
+// not a feature. This module ships to the browser — every page with a live
+// price imports it — so the whole future of every ticker was one console line
+// away: evaluate the field at Date.now() + a day, buy every trough, sell every
+// peak. Elaborating the maths would have changed nothing. The attack was never
+// to reverse-engineer the function, only to CALL it.
+//
+// So the weather is no longer computed here. It is drawn from real entropy by
+// the five-minute poller, written down (lib/flow.ts, public.flow_ticks) and
+// passed into these functions as `drift`. The past is a record anyone can
+// replay; the future does not exist yet.
+//
+// What IS still a function of time is tapeJitter — a sub-percent shimmer so
+// the tape between two five-minute ticks reads as a living market rather than
+// a staircase. Being precomputable, it is deliberately tiny AND excluded from
+// every fill, so there is nothing in it to skim.
+//
+// Facts stay real either way: MRR, trades and revenue events are never
+// fabricated. Only the weather is simulated, and /how says so.
 
-/** Hard cap on simulated deviation from the sentiment-adjusted price. */
+/**
+ * Hard cap on simulated deviation from the sentiment-adjusted price. The
+ * weather is bounded and mean-reverting on purpose; the drama that is allowed
+ * to run away lives in sentiment, which has no floor.
+ */
 export const FLOW_CAP = 0.55;
 
 /** Deterministic 32-bit hash → [0, 1). Pure math — identical everywhere. */
@@ -360,25 +379,47 @@ export function volatilityFactor(mrr: number): number {
 }
 
 /**
- * The flow at an instant: signed fraction in (−FLOW_CAP, +FLOW_CAP).
- * Octaves: multi-day swings, intraday runs, hourly moves, minute chop, and
- * tape shimmer — summed, scaled by the ticker's volatility, then squashed
- * through tanh so extremes flatten instead of exploding.
+ * Peak shimmer, before the ticker's volatility factor. Two jobs pull against
+ * each other here: big enough that second-scale candles have wicks, small
+ * enough that the tape never visibly disagrees with the price you fill at.
+ * 0.36% × up to 1.7 ≈ 0.6% worst case, and typically a fifth of that.
  */
-export function marketFlow(symbol: string, t: number, mrr = 0): number {
+export const TAPE_JITTER_PEAK = 0.0036;
+
+/**
+ * The shimmer: tape texture between two recorded drift ticks. Weighted toward
+ * the fast octaves, because that is exactly the part a five-minute walk cannot
+ * supply and a 1s chart needs. Excluded from every fill (see executionFillAt),
+ * so predicting it is worth precisely nothing.
+ */
+export function tapeJitter(symbol: string, t: number, mrr = 0): number {
+  const raw =
+    0.0012 * valueNoise(`${symbol}/d`, t, (2 / 3) * 3600_000) + // 40-min chop
+    0.0011 * valueNoise(`${symbol}/e`, t, 3600_000 / 20) + // 3-min shimmer
+    0.0008 * valueNoise(`${symbol}/f`, t, 25_000) + // ~25s
+    0.0005 * valueNoise(`${symbol}/g`, t, 2_500); // ~2.5s ticks
+  return raw * volatilityFactor(mrr);
+}
+
+/**
+ * Texture for the day-scale GAPS in old history, where the five-minute tape
+ * has been pruned and all that survives is one snapshot per day.
+ *
+ * It is a formula, and a much bigger one than the shimmer — which is fine,
+ * because it only ever fills the inside of a gap between two recorded prices,
+ * endpoint-matched so both ends land exactly where they happened. Every
+ * instant it touches is in the past. You cannot trade at a past price, so
+ * there is nothing here to predict and nothing to skim; it exists so a
+ * three-month chart reads as a market instead of a run of straight lines.
+ */
+export function historyTexture(symbol: string, t: number, mrr = 0): number {
   const H = 3600_000;
   const raw =
-    0.2 * valueNoise(`${symbol}/a`, t, 72 * H) + // the regime: runs & slumps
-    0.13 * valueNoise(`${symbol}/b`, t, 18 * H) + // intraday trends
-    0.055 * valueNoise(`${symbol}/c`, t, 4 * H) + // hourly waves
-    0.022 * valueNoise(`${symbol}/d`, t, (2 / 3) * H) + // 40-min chop
-    0.009 * valueNoise(`${symbol}/e`, t, H / 20) + // 3-min shimmer
-    // tick-scale octaves: invisible on a 30-day line, but they're what makes
-    // 1s/15s/30s candles a living tape instead of flat bars
-    0.0045 * valueNoise(`${symbol}/f`, t, 25_000) + // ~25s
-    0.0016 * valueNoise(`${symbol}/g`, t, 2_500); // ~2.5s ticks
-  const scaled = raw * volatilityFactor(mrr);
-  return FLOW_CAP * Math.tanh(scaled / 0.32);
+    0.075 * valueNoise(`${symbol}/a`, t, 72 * H) + // multi-day regimes
+    0.05 * valueNoise(`${symbol}/b`, t, 18 * H) + // intraday trends
+    0.025 * valueNoise(`${symbol}/c`, t, 4 * H) + // hourly waves
+    0.012 * valueNoise(`${symbol}/d`, t, (2 / 3) * H); // 40-min chop
+  return raw * volatilityFactor(mrr);
 }
 
 /* ── the revenue pulse: real Stripe changes between monthly reports ──────── */
@@ -441,23 +482,12 @@ export function revenueShock(events: RevenueEvent[], t: number): number {
 }
 
 /**
- * The fast octaves alone — texture for the gaps BETWEEN recorded prices.
- * The slow ones are deliberately absent: recorded history already carries
- * the regime (that ramp really happened), this only stops the minutes in
- * between from being drawn as straight lines.
- */
-export function microFlow(symbol: string, t: number, mrr = 0): number {
-  const raw =
-    0.011 * valueNoise(`${symbol}/d`, t, (2 / 3) * 3600_000) + // 40-min chop
-    0.009 * valueNoise(`${symbol}/e`, t, 3600_000 / 20) + // 3-min shimmer
-    0.0045 * valueNoise(`${symbol}/f`, t, 25_000) +
-    0.0016 * valueNoise(`${symbol}/g`, t, 2_500);
-  return raw * volatilityFactor(mrr);
-}
-
-/**
- * What the ticker trades at, flow included — the ONLY price the app should
- * show or fill at. Anchor × hype × weather.
+ * What the ticker trades at — the ONLY price the app should show.
+ * Anchor × hype × weather × news × shimmer.
+ *
+ * `drift` is the recorded weather at instant `t`, read from the walk
+ * (tickers.drift for now, public.flow_ticks for the past). It is a parameter
+ * rather than a computation on purpose: see the section note above.
  */
 export function flowPrice(
   symbol: string,
@@ -466,16 +496,37 @@ export function flowPrice(
   t = Date.now(),
   multiple = ARR_MULTIPLE,
   shares = SHARES_OUTSTANDING,
-  events: RevenueEvent[] = []
+  events: RevenueEvent[] = [],
+  drift = 0
+): number {
+  return settledPrice(mrr, sentiment, t, multiple, shares, events, drift) *
+    (1 + tapeJitter(symbol, t, mrr));
+}
+
+/**
+ * The price without the shimmer: what an order actually fills at, and what
+ * gets written into the permanent record when a snapshot is taken.
+ *
+ * The shimmer is a function of time, so a client could predict it; keeping it
+ * out of fills is what makes predicting it worthless. The gap it opens
+ * between the tape and your fill is under a percent, and it is the same gap
+ * every real exchange has between last-trade and your actual print.
+ */
+export function settledPrice(
+  mrr: number,
+  sentiment: number,
+  t = Date.now(),
+  multiple = ARR_MULTIPLE,
+  shares = SHARES_OUTSTANDING,
+  events: RevenueEvent[] = [],
+  drift = 0
 ): number {
   // with events, `mrr` is the LIVE number and the past is reconstructed from
   // the changes — so a chart drawn now shows the step where it happened
   const known = events.length ? mrrAt(events, mrr, t) : mrr;
   const shock = events.length ? revenueShock(events, t) : 0;
   return (
-    livePrice(known, sentiment, multiple, shares) *
-    (1 + marketFlow(symbol, t, mrr)) *
-    (1 + shock)
+    livePrice(known, sentiment, multiple, shares) * (1 + drift) * (1 + shock)
   );
 }
 
@@ -485,8 +536,8 @@ export function flowPrice(
  * Sentiment moves linearly with shares (tradeImpact), so the average price
  * over the moving stretch is fair × (1 + mean sentiment); any shares filled
  * after sentiment pins at the ±40% cap fill flat at the cap price.
- * NOTE: callers fill at the flow-adjusted price — scale avgPrice/total by
- * (1 + marketFlow(...)) at execution time (see executionFillAt).
+ * NOTE: callers fill at the weather-adjusted price — scale avgPrice/total by
+ * (1 + drift) at execution time (see executionFillAt).
  */
 export function executionFill(
   mrr: number,
@@ -537,12 +588,17 @@ export function executionFill(
 
 /**
  * executionFill at a moment in time: the sentiment-curve fill scaled by the
- * flow, so orders execute at the same price the tape is showing. Round trips
- * at the same instant stay a wash; profiting off the flow means actually
- * timing it.
+ * recorded weather and any live news, so orders execute at the settled price.
+ * Round trips at the same instant stay a wash; profiting off the weather
+ * means actually being right about where it goes next — and since the next
+ * tick is drawn from entropy the poller has not drawn yet, nobody can be
+ * right about it in advance.
+ *
+ * `symbol` is kept in the signature (unused) so every call site reads the
+ * same way as flowPrice; the shimmer is deliberately NOT applied here.
  */
 export function executionFillAt(
-  symbol: string,
+  _symbol: string,
   mrr: number,
   sentiment: number,
   side: TradeSide,
@@ -550,7 +606,8 @@ export function executionFillAt(
   t = Date.now(),
   multiple = ARR_MULTIPLE,
   outstanding = SHARES_OUTSTANDING,
-  events: RevenueEvent[] = []
+  events: RevenueEvent[] = [],
+  drift = 0
 ): Fill {
   const base = executionFill(
     events.length ? mrrAt(events, mrr, t) : mrr,
@@ -560,13 +617,12 @@ export function executionFillAt(
     multiple,
     outstanding
   );
-  // fills price off the same tape everyone is watching, news included
-  const drift =
-    (1 + marketFlow(symbol, t, mrr)) *
-    (1 + (events.length ? revenueShock(events, t) : 0));
+  // fills price off the same weather everyone is watching, news included
+  const scale =
+    (1 + drift) * (1 + (events.length ? revenueShock(events, t) : 0));
   return {
-    avgPrice: base.avgPrice * drift,
-    total: base.total * drift,
+    avgPrice: base.avgPrice * scale,
+    total: base.total * scale,
     newSentiment: base.newSentiment,
   };
 }

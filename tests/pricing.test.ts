@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   ARR_MULTIPLE,
-  FLOW_CAP,
   MAX_POSITION_FRACTION,
   MONTHS_PER_YEAR,
   MULTIPLE_CEILING,
@@ -27,7 +26,9 @@ import {
   flowPrice,
   livePrice,
   marketCap,
-  marketFlow,
+  settledPrice,
+  tapeJitter,
+  TAPE_JITTER_PEAK,
   mrrAt,
   positionLimit,
   revenueShock,
@@ -353,65 +354,80 @@ describe("the whole mechanic, end to end", () => {
   });
 });
 
-describe("the flow (simulated volatility)", () => {
-  const DAY = 86_400_000;
-
-  it("is deterministic: same symbol + instant → same value, everywhere", () => {
+describe("the weather (drift + shimmer)", () => {
+  it("the shimmer is deterministic and tiny — that is the whole point", () => {
     const t = Date.parse("2026-08-30T12:00:00Z");
-    expect(marketFlow("INBX", t, 8000)).toBe(marketFlow("INBX", t, 8000));
+    expect(tapeJitter("INBX", t, 8000)).toBe(tapeJitter("INBX", t, 8000));
+    expect(tapeJitter("INBX", t)).not.toBe(tapeJitter("PRL", t));
   });
 
-  it("differs across tickers and moves over time", () => {
-    const t = Date.parse("2026-08-30T12:00:00Z");
-    expect(marketFlow("INBX", t)).not.toBe(marketFlow("PRL", t));
-    expect(marketFlow("INBX", t)).not.toBe(marketFlow("INBX", t + 6 * 3_600_000));
-  });
-
-  it("stays inside the ±FLOW_CAP squash at every sampled minute", () => {
+  it("the shimmer never exceeds its stated peak, at any sampled instant", () => {
     const t0 = Date.parse("2026-01-01T00:00:00Z");
-    for (let i = 0; i < 5_000; i++) {
-      const d = marketFlow("VOLT", t0 + i * 8.64 * 60_000, 300);
-      expect(Math.abs(d)).toBeLessThan(FLOW_CAP);
+    const ceiling = TAPE_JITTER_PEAK * volatilityFactor(300);
+    let worst = 0;
+    for (let i = 0; i < 20_000; i++) {
+      worst = Math.max(worst, Math.abs(tapeJitter("VOLT", t0 + i * 2_137, 300)));
     }
-  });
-
-  it("actually swings: daily ranges are trading-worthy, not shimmer", () => {
-    const t0 = Date.parse("2026-03-01T00:00:00Z");
-    let maxRange = 0;
-    for (let day = 0; day < 30; day++) {
-      let lo = Infinity;
-      let hi = -Infinity;
-      for (let m = 0; m < 96; m++) {
-        const d = marketFlow("SCRP", t0 + day * DAY + m * 15 * 60_000, 2_000);
-        lo = Math.min(lo, d);
-        hi = Math.max(hi, d);
-      }
-      maxRange = Math.max(maxRange, hi - lo);
-    }
-    expect(maxRange).toBeGreaterThan(0.08); // at least one ±4%+ day a month
+    expect(worst).toBeLessThanOrEqual(ceiling);
+    // and it really is sub-percent, so the tape never visibly disagrees with
+    // the price an order fills at
+    expect(ceiling).toBeLessThan(0.007);
   });
 
   it("small caps are wilder than big caps", () => {
     expect(volatilityFactor(300)).toBeGreaterThan(volatilityFactor(50_000));
   });
 
-  it("fills execute at the flow price and round trips stay a wash", () => {
+  it("THE FIX: no price function can see the future", () => {
+    // The old marketFlow() was a pure function of (symbol, time), and it
+    // shipped to the browser, so tomorrow's price was one console call away.
+    // Now the weather is a parameter. Every price a client can compute for a
+    // future instant is the CURRENT weather held flat — the next draw does not
+    // exist yet — so the only thing left to predict is the shimmer, which is
+    // sub-percent and excluded from fills.
+    const t = Date.parse("2026-08-30T12:00:00Z");
+    const tomorrow = t + 86_400_000;
+    const known = 0.12;
+    const now = settledPrice(8_000, 0.2, t, 2.5, 10_000, [], known);
+    const ahead = settledPrice(8_000, 0.2, tomorrow, 2.5, 10_000, [], known);
+    expect(ahead).toBe(now);
+  });
+
+  it("fills price off the drift, never off the shimmer", () => {
     const t = Date.parse("2026-08-30T15:30:00Z");
-    const buy = executionFillAt("INBX", 8_000, 0, "buy", 500, t);
-    const drift = 1 + marketFlow("INBX", t, 8_000);
+    const drift = 0.18;
+    const buy = executionFillAt(
+      "INBX", 8_000, 0, "buy", 500, t, 2.5, 10_000, [], drift
+    );
     expect(buy.avgPrice).toBeCloseTo(
-      executionFill(8_000, 0, "buy", 500).avgPrice * drift,
+      executionFill(8_000, 0, "buy", 500).avgPrice * (1 + drift),
       10
     );
-    const sell = executionFillAt("INBX", 8_000, buy.newSentiment, "sell", 500, t);
+    // the shimmer is a function of the clock; if it leaked into fills, timing
+    // it would be free money. Two instants with different shimmer, same fill:
+    const later = executionFillAt(
+      "INBX", 8_000, 0, "buy", 500, t + 91_000, 2.5, 10_000, [], drift
+    );
+    expect(tapeJitter("INBX", t, 8_000)).not.toBe(
+      tapeJitter("INBX", t + 91_000, 8_000)
+    );
+    expect(later.avgPrice).toBe(buy.avgPrice);
+  });
+
+  it("round trips at one instant are still exactly a wash", () => {
+    const t = Date.parse("2026-08-30T15:30:00Z");
+    const buy = executionFillAt("INBX", 8_000, 0, "buy", 500, t, 2.5, 10_000, [], 0.2);
+    const sell = executionFillAt(
+      "INBX", 8_000, buy.newSentiment, "sell", 500, t, 2.5, 10_000, [], 0.2
+    );
     expect(sell.total).toBeCloseTo(buy.total, 6);
   });
 
-  it("flowPrice is anchor × hype × weather, and never negative", () => {
+  it("flowPrice is settled × shimmer, and never negative", () => {
     const t = Date.parse("2026-08-30T12:00:00Z");
-    const p = flowPrice("INBX", 8_000, 0.2, t);
+    const p = flowPrice("INBX", 8_000, 0.2, t, 2.5, 10_000, [], 0.1);
     expect(p).toBeCloseTo(
-      livePrice(8_000, 0.2) * (1 + marketFlow("INBX", t, 8_000)),
+      livePrice(8_000, 0.2) * 1.1 * (1 + tapeJitter("INBX", t, 8_000)),
       10
     );
     expect(p).toBeGreaterThan(0);

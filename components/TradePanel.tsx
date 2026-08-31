@@ -27,6 +27,7 @@ export default function TradePanel({
   outstanding = SHARES_OUTSTANDING,
   floatHeld = 0,
   events = [],
+  drift = 0,
   quotedAt,
   signedIn,
   cash,
@@ -43,6 +44,8 @@ export default function TradePanel({
   floatHeld?: number;
   /** Live Stripe revenue changes — quotes and fills price off these too. */
   events?: RevenueEvent[];
+  /** The recorded weather the fill prices off. */
+  drift?: number;
   /** Server's clock at render — first paint matches, then we go live. */
   quotedAt: number;
   signedIn: boolean;
@@ -110,7 +113,8 @@ export default function TradePanel({
       quoteT,
       multiple,
       outstanding,
-      events
+      events,
+      drift
     );
   const buyEst = shares >= 1 ? est("buy", shares) : null;
   const sellEst = shares >= 1 ? est("sell", shares) : null;

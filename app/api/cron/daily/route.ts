@@ -5,7 +5,7 @@ import {
   decaySentiment,
   fairPrice,
   floatOf,
-  flowPrice,
+  settledPrice,
   valuationMultiple,
 } from "@/lib/pricing";
 import {
@@ -14,6 +14,7 @@ import {
   stripeVerificationConfigured,
 } from "@/lib/stripe";
 import { audienceForTicker, notifyUsers } from "@/lib/notify";
+import { pruneFlowTicks } from "@/lib/flow";
 import { getAllValuations } from "@/lib/data";
 import { fmtCompact, fmtPct, currentMonthISO } from "@/lib/format";
 import type { MrrUpdate, Ticker } from "@/lib/types";
@@ -40,6 +41,8 @@ export async function GET(request: Request) {
   }
 
   const admin = createSupabaseAdminClient();
+  // the five-minute tape is kept for a fortnight; charts read two days of it
+  await pruneFlowTicks(admin);
   const [tickersRes, mrrRes] = await Promise.all([
     admin.from("tickers").select("*"),
     admin.from("mrr_updates").select("*").order("month", { ascending: true }),
@@ -137,13 +140,14 @@ export async function GET(request: Request) {
 
     const multiple = valuationMultiple(revenueHistory.get(ticker.id) ?? []);
     const shares = floatOf(ticker.shares_outstanding);
-    const price = flowPrice(
-      ticker.symbol,
+    const price = settledPrice(
       mrr,
       sentiment,
       Date.now(),
       multiple,
-      shares
+      shares,
+      [],
+      Number(ticker.drift ?? 0)
     );
     const { error: snapErr } = await admin.from("price_snapshots").upsert(
       {

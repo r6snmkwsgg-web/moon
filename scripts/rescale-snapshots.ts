@@ -16,7 +16,7 @@ import { config } from "dotenv";
 import {
   fairPrice,
   floatOf,
-  flowPrice,
+  settledPrice,
   valuationMultiple,
 } from "../lib/pricing";
 
@@ -102,7 +102,9 @@ export async function rescaleSnapshots() {
         ...s,
         fair_price: Number(fairPrice(mrr, multiple, shares).toFixed(6)),
         price: Number(
-          flowPrice(symbol, mrr, sentiment, at, multiple, shares).toFixed(6)
+          // a rewritten historical snapshot carries no weather: the drift
+          // that day was not recorded, and inventing one would be fiction
+          settledPrice(mrr, sentiment, at, multiple, shares).toFixed(6)
         ),
       };
     });

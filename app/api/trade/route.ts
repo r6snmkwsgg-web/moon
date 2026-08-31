@@ -149,7 +149,10 @@ export async function POST(request: Request) {
     }
   }
 
-  // fill at the flow price — the same number the tape is showing right now
+  // Fill at the SETTLED price: the anchor, the recorded weather and any live
+  // news, but not the sub-percent shimmer the tape draws on top. The shimmer
+  // is a function of the clock, so a client could time it; leaving it out of
+  // the fill is what makes timing it worth nothing.
   const fill = executionFillAt(
     symbol,
     mrr,
@@ -159,7 +162,8 @@ export async function POST(request: Request) {
     Date.now(),
     multiple,
     outstanding,
-    events
+    events,
+    Number(ticker.drift ?? 0)
   );
   if (fill.avgPrice <= 0) {
     return NextResponse.json(

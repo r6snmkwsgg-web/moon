@@ -90,6 +90,7 @@ export default function TradingChart({
   multiple,
   shares,
   events = [],
+  drift = 0,
   trades = [],
   earliest,
   heightClass = "h-[300px] sm:h-[380px]",
@@ -103,6 +104,9 @@ export default function TradingChart({
   shares: number;
   /** Real Stripe revenue changes — the steps and spikes on the tape. */
   events?: RevenueEvent[];
+  /** The recorded weather at render time — a draw, not a formula, so the
+   *  server has to hand it over. */
+  drift?: number;
   trades?: { t: number; shares: number }[];
   earliest?: number;
   heightClass?: string;
@@ -244,8 +248,9 @@ export default function TradingChart({
   }, [tf]);
 
   const priceAt = useMemo(
-    () => makePriceAt(symbol, mrr, sentiment, series, multiple, shares, events),
-    [symbol, mrr, sentiment, series, multiple, shares, events]
+    () =>
+      makePriceAt(symbol, mrr, sentiment, series, multiple, shares, events, drift),
+    [symbol, mrr, sentiment, series, multiple, shares, events, drift]
   );
 
   const candles = useMemo<Candle[]>(() => {

@@ -26,6 +26,7 @@ export default function LiveQuote({
   multiple,
   shares,
   events,
+  drift,
   dayBasePrice,
   renderedAt,
 }: {
@@ -36,6 +37,9 @@ export default function LiveQuote({
   multiple: number;
   shares: number;
   events: RevenueEvent[];
+  /** The recorded weather. The client cannot derive it — it is a draw, not a
+   *  function of the clock — so the server hands it over. */
+  drift: number;
   dayBasePrice: number;
   /** The server's instant, so the first client render matches it exactly. */
   renderedAt: number;
@@ -50,8 +54,9 @@ export default function LiveQuote({
   }, []);
 
   const priceAt = useMemo(
-    () => makePriceAt(symbol, mrr, sentiment, series, multiple, shares, events),
-    [symbol, mrr, sentiment, series, multiple, shares, events]
+    () =>
+      makePriceAt(symbol, mrr, sentiment, series, multiple, shares, events, drift),
+    [symbol, mrr, sentiment, series, multiple, shares, events, drift]
   );
 
   const price = priceAt(now);

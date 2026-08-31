@@ -1,5 +1,5 @@
 import type { ChartPoint } from "@/lib/types";
-import { flowPrice, microFlow, type RevenueEvent } from "@/lib/pricing";
+import { flowPrice, tapeJitter, type RevenueEvent } from "@/lib/pricing";
 import {
   fmtMarketClock,
   fmtMarketDate,
@@ -30,9 +30,9 @@ const H = 60 * M;
 const D = 24 * H;
 
 /**
- * The full ladder, tick to weekly. Sub-minute frames exist because the flow
- * is defined continuously — there is a real price at every instant, so the
- * tape can be zoomed to any granularity without inventing data.
+ * The full ladder, tick to weekly. Sub-minute frames exist because the price
+ * function is continuous — recorded ticks joined by the shimmer — so the tape
+ * can be zoomed to any granularity without inventing data.
  */
 export const TIMEFRAMES: Timeframe[] = [
   { key: "1s", label: "1s", ms: S, bars: 90 },
@@ -65,9 +65,14 @@ export function refreshIntervalFor(tf: Timeframe): number {
 }
 
 /**
- * A continuous price function for one ticker: the live flow for anything at
- * or after the newest recorded anchor, and the real recorded history (server
- * series: snapshots + prints, flow-modulated) before it. One curve, no seam.
+ * A continuous price function for one ticker: the recorded history behind the
+ * newest anchor, and the current weather in front of it. One curve, no seam.
+ *
+ * This used to run the live FORMULA for anything in the last twelve hours,
+ * which is precisely what made the market predictable — the same call worked
+ * just as well with a timestamp in the future. There is no formula to run any
+ * more. Everything up to the newest recorded tick is history; everything at or
+ * after it holds the last drawn drift, because the next draw has not happened.
  */
 export function makePriceAt(
   symbol: string,
@@ -77,20 +82,15 @@ export function makePriceAt(
   multiple?: number,
   shares?: number,
   events: RevenueEvent[] = [],
-  liveWindowMs = 12 * 60 * 60 * 1000
+  drift = 0
 ): (t: number) => number {
   const sorted = series.length > 1 ? series : [];
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
-  // The recorded series is 10-minute resolution — too coarse to be the source
-  // for intraday candles. Anything inside the live window comes straight from
-  // the flow (which is what produced those recordings anyway); older history
-  // interpolates the real record.
-  const liveFrom = Date.now() - liveWindowMs;
 
   return (t: number): number => {
-    if (!first || !last || t >= liveFrom || t >= last.t) {
-      return flowPrice(symbol, mrr, sentiment, t, multiple, shares, events);
+    if (!first || !last || t >= last.t) {
+      return flowPrice(symbol, mrr, sentiment, t, multiple, shares, events, drift);
     }
     if (t <= first.t) return first.price;
     // binary search the bracketing recorded points
@@ -109,7 +109,7 @@ export function makePriceAt(
     // texture between two real prices, faded to nothing AT them — every
     // recorded value still lands exactly where it happened, but the ten
     // minutes in between get wicks instead of a ruler line.
-    return lerp * (1 + Math.sin(Math.PI * w) * microFlow(symbol, t, mrr));
+    return lerp * (1 + Math.sin(Math.PI * w) * tapeJitter(symbol, t, mrr));
   };
 }
 

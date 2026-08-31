@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   fairPrice,
   floatOf,
-  flowPrice,
+  settledPrice,
   valuationMultiple,
 } from "@/lib/pricing";
 
@@ -50,13 +50,15 @@ export async function recordTickerSnapshot(
       {
         ticker_id: tickerId,
         day: new Date().toISOString().slice(0, 10),
-        price: flowPrice(
-          ticker.symbol,
+        // the record gets the settled price — no shimmer baked into history
+        price: settledPrice(
           mrr,
           sentiment,
           Date.now(),
           multiple,
-          shares
+          shares,
+          [],
+          Number(ticker.drift ?? 0)
         ),
         fair_price: fairPrice(mrr, multiple, shares),
         sentiment,

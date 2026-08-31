@@ -27,6 +27,7 @@ function holding(symbol: string, shares: number) {
       { t: NOW - 13 * HOUR, price: 10 },
     ],
     events: [],
+    drift: 0,
     name: symbol,
     logoUrl: null,
     avgCost: 10,

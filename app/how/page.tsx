@@ -168,21 +168,31 @@ export default function HowPage() {
 
         <div className="panel space-y-2 p-4">
           <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-terminal-muted">
-            6 · The flow — simulated volatility
+            6 · The drift — simulated volatility
           </h2>
           <p>
-            Between real events, prices ride <b>the flow</b>: a per-ticker
-            volatility field that runs, dips, squeezes and chops around the
-            anchor — small caps swing harder, hyped tickers chop more, and
-            everything eventually blows back toward fair value.
+            Between real events, prices ride <b>the drift</b>: a per-ticker
+            random walk that runs, dips, squeezes and crashes around the
+            anchor. It is drawn fresh every five minutes, it pulls back toward
+            fair value with about a three-day half-life, and its own
+            volatility drifts too — so a ticker can go quiet for a fortnight
+            and then come apart in a day. Small caps swing hardest. It is
+            capped at ±55% either way.
           </p>
           <p className="text-terminal-muted">
-            Full disclosure: the flow is pure game physics — deterministic,
-            identical for every player, capped at about ±55%, and it never
-            touches the facts. MRR is real, every trade on the tape is real,
-            and the anchor only moves on real revenue. The flow is what makes
-            it a market you can day trade instead of a spreadsheet you check
-            monthly. Orders fill at the flow price you see quoted.
+            Full disclosure, and the important part: the drift is{" "}
+            <b>not a formula</b>. Nobody can compute it ahead of time — not
+            you, not us — because each tick is a fresh random draw, written
+            down when it happens and never recomputed. It used to be a
+            function of the clock, which meant anyone reading this page&rsquo;s
+            source could have read tomorrow&rsquo;s prices off it today. That
+            is fixed. What you see on the chart between ticks is a sub-percent
+            shimmer so the tape isn&rsquo;t a staircase; orders fill at the
+            settled price underneath it, never at the shimmer.
+          </p>
+          <p className="text-terminal-muted">
+            The drift never touches the facts. MRR is real, every trade on the
+            tape is real, and the anchor only moves on real revenue.
           </p>
         </div>
       </section>

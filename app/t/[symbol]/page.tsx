@@ -201,6 +201,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             multiple={quote.multiple}
             shares={quote.shares}
             events={revenueEvents}
+            drift={quote.drift}
             dayBasePrice={quote.dayBasePrice}
             renderedAt={renderedAt}
           />
@@ -221,7 +222,9 @@ export default async function TickerPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      {t.stripe_verified && <PulseKeeper symbol={t.symbol} />}
+      {/* every ticker, not just the Stripe-verified ones: the walk has to be
+          advanced for fixtures too, or their tape stops when the cron does */}
+      <PulseKeeper symbol={t.symbol} />
 
       {/* split rail: chart + market data left, a permanent trade rail right */}
       <div className="grid items-start gap-4 lg:grid-cols-[1fr_330px]">
@@ -235,6 +238,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             multiple={quote.multiple}
             shares={quote.shares}
             events={revenueEvents}
+            drift={quote.drift}
             trades={tradePoints}
             earliest={earliest}
           />
@@ -252,6 +256,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
                   multiple={quote.multiple}
                   shares={quote.shares}
                   events={revenueEvents}
+                  drift={quote.drift}
                   renderedAt={renderedAt}
                 />,
               ],
@@ -344,6 +349,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             multiple={quote.multiple}
             outstanding={quote.shares}
             events={revenueEvents}
+            drift={quote.drift}
             floatHeld={floatHeld}
             quotedAt={Date.now()}
             signedIn={user !== null}
