@@ -161,6 +161,8 @@ export default function TradingChart({
     Math.min(Math.round(view?.offset ?? 0), Math.max(0, totalBars - viewBars))
   );
   const zoomed = viewBars !== tf.bars || offset !== 0;
+  /** Is there anything off the left edge to drag into view? */
+  const canPan = totalBars > viewBars;
 
   const clampView = useCallback(
     (bars: number, off: number) => {
@@ -646,7 +648,12 @@ export default function TradingChart({
       <div
         ref={wrapRef}
         className={`relative w-full ${heightClass} ${
-          zoomed ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair"
+          // The grab hand appears whenever there IS history off-screen, not
+          // only once you have already zoomed or panned. It used to be the
+          // latter, so the default view showed a crosshair — a cursor that
+          // says "you cannot drag this" on a chart that has always been
+          // draggable. You had to discover panning to be told it was allowed.
+          canPan ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair"
         }`}
         onPointerDown={onDown}
         onPointerMove={onMove}
