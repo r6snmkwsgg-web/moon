@@ -32,6 +32,20 @@ export function fmtPct(fraction: number): string {
   return `${sign}${pct.toFixed(1)}%`;
 }
 
+/**
+ * One chart bar's own move. fmtPct's single decimal is right for a day change
+ * and wrong here: a 15-second bucket moves a few hundredths of a percent, and
+ * rounding every one of them to "+0.0%" makes the readout look broken.
+ */
+export function fmtBarPct(fraction: number): string {
+  if (!Number.isFinite(fraction)) return "0.00%";
+  const pct = fraction * 100;
+  const shown = pct.toFixed(Math.abs(pct) < 1 ? 2 : 1);
+  // "-0.00%" reads as a bug rather than as "flat"
+  if (Number(shown) === 0) return "0.00%";
+  return `${Number(shown) > 0 ? "+" : ""}${shown}%`;
+}
+
 /** "2026-08-01" → "Aug 2026" */
 export function fmtMonth(isoDate: string): string {
   const d = new Date(isoDate + (isoDate.length === 7 ? "-01" : ""));

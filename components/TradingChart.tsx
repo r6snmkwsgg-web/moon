@@ -12,7 +12,7 @@ import {
 import type { ChartPoint } from "@/lib/types";
 import type { Timeframe } from "@/lib/candles";
 import type { RevenueEvent } from "@/lib/pricing";
-import { fmtPct, fmtPrice } from "@/lib/format";
+import { fmtBarPct, fmtPct, fmtPrice } from "@/lib/format";
 import {
   axisTimeLabel,
   buildCandles,
@@ -333,6 +333,15 @@ export default function TradingChart({
   const up = change >= 0;
   const color = up ? UP : DOWN;
 
+  // The bar you are pointing at, on its own terms. The big number beside it is
+  // the change across the whole window, which is a different question and a
+  // different sign as often as not — a green day inside a red month.
+  const barChange =
+    active && active.o > 0 ? (active.c - active.o) / active.o : 0;
+  // same test the candle body uses, so the chip can never disagree with the
+  // colour of the thing under the cursor
+  const barUp = active ? active.c >= active.o : true;
+
   function scrubAt(e: React.PointerEvent) {
     if (!geo) return;
     const rect = wrapRef.current?.getBoundingClientRect();
@@ -456,6 +465,17 @@ export default function TradingChart({
           <Tri dir={up ? "up" : "down"} size={7} />
           {fmtPct(change)}
         </span>
+        {scrub !== null && active && (
+          <span
+            className="num flex items-center gap-1 rounded bg-terminal-raise px-1.5 py-0.5 font-mono text-[10px] font-semibold"
+            style={{ color: barUp ? UP : DOWN }}
+            title={`This ${tf.label} bar: open ${pf(active.o)} → close ${pf(active.c)}`}
+          >
+            <Tri dir={barUp ? "up" : "down"} size={6} />
+            {fmtBarPct(barChange)}
+            <span className="text-terminal-muted">bar</span>
+          </span>
+        )}
         {active && (
           <span className="hidden gap-2.5 font-mono text-[10px] text-terminal-muted sm:flex">
             <span>
