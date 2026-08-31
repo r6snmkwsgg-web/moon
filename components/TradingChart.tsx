@@ -40,11 +40,13 @@ const GRID = "#182236";
 // MIN_BARS / MAX_BARS live in lib/candles beside planZoom, which is the code
 // that actually reasons about them.
 /**
- * Below this many pixels per bucket a candle is a smear; draw a line instead.
- * 2px rather than 3 because on a retina panel that is still 4–6 device pixels
- * of body and it buys 50% more candles before the handover.
+ * Below this many pixels per bucket there is no room for a BODY — so the bar
+ * is drawn as its high–low wick alone, coloured by direction. That is what a
+ * dense chart is supposed to look like: a forest of thin red and green bars,
+ * not a smooth line. Falling back to a line here was a cop-out, and it made
+ * the chart look nothing like a real one.
  */
-const CANDLE_MIN_STEP = 2;
+const CANDLE_BODY_MIN_STEP = 3;
 /** Width of the price axis gutter — subtracted from the wrapper to get plot width. */
 const PAD_R = 52;
 
@@ -146,10 +148,10 @@ export default function TradingChart({
   // what you wanted was to look at seconds. The frame is the selector's job.)
   //
   // The limit is MAX_BARS, or the ticker's whole life on this frame if that
-  // comes first. Candles are drawn while they still fit at CANDLE_MIN_STEP and
-  // the line takes over past that (labelled "zoomed out" in the legend), so
-  // running out of candle room is not a reason to stop zooming — it never
-  // changes the frame, which is the part that matters.
+  // comes first. Every bar is drawn as a candle at every zoom level — thin
+  // ones lose their body and become a coloured high–low stroke — so running
+  // out of body room is not a reason to stop zooming, and never a reason to
+  // change the frame.
   const maxBars = Math.max(tf.bars, Math.min(MAX_BARS, totalBars));
   const viewBars = Math.round(
     Math.min(maxBars, Math.max(MIN_BARS, view?.bars ?? tf.bars))
@@ -298,8 +300,50 @@ export default function TradingChart({
 
   // The toggle is a preference, not an instruction to draw something illegible:
   // zoomed far out we draw the line and put the mode back when you zoom in.
-  const tooDenseForCandles = geo !== null && geo.step < CANDLE_MIN_STEP;
-  const drawLine = mode === "line" || tooDenseForCandles;
+  // Candles are drawn at every zoom level now. The only line is the one you
+  // asked for with the toggle.
+  const wickOnly = geo !== null && geo.step < CANDLE_BODY_MIN_STEP;
+  const drawLine = mode === "line";
+
+  /**
+   * The scrub readout and the right-edge label share the axis strip with the
+   * time ticks, and all three sit on the same baseline — so a tick underneath
+   * either printed straight through it ("00:5◆1:00"). Those two own their
+   * patch; a tick that would collide drops its label and keeps its gridline.
+   */
+  const AXIS_CHAR_PX = 6; // 10px ui-monospace
+  const scrubLabel =
+    scrub !== null && candles[scrub] ? labelFor(candles[scrub].t, tf) : null;
+  const edgeLabel = candles.length
+    ? offset === 0
+      ? "now"
+      : labelFor(candles[candles.length - 1].t, tf)
+    : "";
+  const axisLabelClear = (x: number, label: string): boolean => {
+    if (!geo) return true;
+    const half = (label.length * AXIS_CHAR_PX) / 2;
+    const hits = (cx: number, other: string) =>
+      Math.abs(x - cx) < half + (other.length * AXIS_CHAR_PX) / 2 + 6;
+    if (
+      scrubLabel !== null &&
+      scrub !== null &&
+      hits(Math.min(Math.max(geo.x(scrub), 34), geo.plotW - 34), scrubLabel)
+    ) {
+      return false;
+    }
+    return !hits(geo.plotW - 2 - (edgeLabel.length * AXIS_CHAR_PX) / 2, edgeLabel);
+  };
+  // ...and when the scrub readout reaches the right edge it collides with the
+  // edge label itself. The readout wins: it is the thing being pointed at.
+  const showEdgeLabel =
+    !geo ||
+    scrubLabel === null ||
+    scrub === null ||
+    Math.abs(
+      Math.min(Math.max(geo.x(scrub), 34), geo.plotW - 34) -
+        (geo.plotW - 2 - (edgeLabel.length * AXIS_CHAR_PX) / 2)
+    ) >=
+      ((scrubLabel.length + edgeLabel.length) * AXIS_CHAR_PX) / 2 + 6;
 
   const active =
     scrub !== null && scrub >= 0 && scrub < candles.length
@@ -690,9 +734,29 @@ export default function TradingChart({
               candles.map((c, i) => {
                 const bull = c.c >= c.o;
                 const col = bull ? UP : DOWN;
-                const bw = Math.max(1.5, Math.min(14, geo.step * 0.66));
                 const yO = geo.y(c.o);
                 const yC = geo.y(c.c);
+                if (wickOnly) {
+                  // No room for a body, so the bar IS the range: one stroke
+                  // from high to low, as wide as its slot so neighbours nearly
+                  // touch, coloured by the direction the bucket closed.
+                  const yH = geo.y(c.h);
+                  const yL = geo.y(c.l);
+                  return (
+                    <line
+                      key={c.t}
+                      x1={geo.x(i)}
+                      x2={geo.x(i)}
+                      y1={yH}
+                      // a doji still has to be visible
+                      y2={Math.max(yL, yH + 1)}
+                      stroke={col}
+                      strokeWidth={Math.max(0.75, Math.min(2, geo.step * 0.9))}
+                      shapeRendering="crispEdges"
+                    />
+                  );
+                }
+                const bw = Math.max(1.5, Math.min(14, geo.step * 0.66));
                 const top = Math.min(yO, yC);
                 const bodyH = Math.max(1, Math.abs(yC - yO));
                 return (
@@ -831,31 +895,33 @@ export default function TradingChart({
                   strokeDasharray="2 6"
                   opacity={t.major ? 1 : 0.6}
                 />
-                <text
-                  x={t.x}
-                  y={geo.h - 6}
-                  textAnchor="middle"
-                  fill={MUTED}
-                  fontSize="10"
-                  fontFamily="ui-monospace, monospace"
-                  opacity={t.major ? 1 : 0.85}
-                >
-                  {t.label}
-                </text>
+                {axisLabelClear(t.x, t.label) && (
+                  <text
+                    x={t.x}
+                    y={geo.h - 6}
+                    textAnchor="middle"
+                    fill={MUTED}
+                    fontSize="10"
+                    fontFamily="ui-monospace, monospace"
+                    opacity={t.major ? 1 : 0.85}
+                  >
+                    {t.label}
+                  </text>
+                )}
               </g>
             ))}
-            <text
-              x={geo.plotW - 2}
-              y={geo.h - 6}
-              textAnchor="end"
-              fill={MUTED}
-              fontSize="10"
-              fontFamily="ui-monospace, monospace"
-            >
-              {offset === 0
-                ? "now"
-                : labelFor(candles[candles.length - 1].t, tf)}
-            </text>
+            {showEdgeLabel && (
+              <text
+                x={geo.plotW - 2}
+                y={geo.h - 6}
+                textAnchor="end"
+                fill={MUTED}
+                fontSize="10"
+                fontFamily="ui-monospace, monospace"
+              >
+                {edgeLabel}
+              </text>
+            )}
           </svg>
         ) : (
           <div className="flex h-full items-center justify-center text-xs text-terminal-muted">
@@ -871,7 +937,7 @@ export default function TradingChart({
             style={{ background: color }}
           />
           {tf.label} {drawLine ? "line" : "candles"}
-          {tooDenseForCandles && mode === "candle" ? " (zoomed out)" : ""} · play
+          {wickOnly && mode === "candle" ? " (dense)" : ""} · play
           money
         </span>
         <span className="flex items-center gap-1.5 text-terminal-amber">
