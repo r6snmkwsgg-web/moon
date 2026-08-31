@@ -17,6 +17,9 @@ import {
   axisTimeLabel,
   buildCandles,
   DEFAULT_TIMEFRAME,
+  MAX_BARS,
+  MIN_BARS,
+  planZoom,
   labelFor,
   niceTimeStep,
   tzOffsetMs,
@@ -34,15 +37,24 @@ const AMBER = "#fbbf24";
 const MUTED = "#8494ab";
 const GRID = "#182236";
 
-const MIN_BARS = 12; // zoomed all the way in
-// Buckets on screen at full zoom-out. This is no longer the limit on how far
-// BACK you can see — zoomAt steps up to a coarser granularity when you hit it,
-// so 15m becomes 30m becomes 1h and the reach keeps going. It only decides how
-// much detail is drawn before that handover, which keeps the browser from ever
-// being handed twenty thousand points. 600 was the old hard ceiling on reach.
-const MAX_BARS = 1000;
+// MIN_BARS / MAX_BARS live in lib/candles beside planZoom, which is the code
+// that actually reasons about them.
 /** Below this many pixels per bucket a candle is a smear; draw a line instead. */
 const CANDLE_MIN_STEP = 3;
+/**
+ * Pixels per bucket at which zooming out should hand over to a coarser
+ * granularity instead of packing more buckets in.
+ *
+ * This used to be MAX_BARS — a thousand buckets — and that was the bug. A
+ * 720px plot draws a thousand buckets at 0.7px each, so scrolling out on the
+ * 15m frame spent six whole steps below CANDLE_MIN_STEP: the candles vanished,
+ * the chart became a bare line, and only once it finally reached a thousand
+ * buckets did it step to 30m and start again. Handing over at a legible width
+ * keeps candles on screen the whole way out.
+ */
+const CANDLE_STEP_COMFORT = 5;
+/** Width of the price axis gutter — subtracted from the wrapper to get plot width. */
+const PAD_R = 52;
 
 function niceTicks(min: number, max: number, count = 4): number[] {
   if (!(max > min)) return [min];
@@ -135,6 +147,11 @@ export default function TradingChart({
   // should draw two bars at their natural size, not two bars stretched over
   // the whole plot.
   const maxBars = Math.max(tf.bars, Math.min(MAX_BARS, totalBars));
+  // How many buckets fit at a legible width. Derived from dims rather than
+  // geo, because geo is computed FROM the bar count and this decides it.
+  const legibleBars = dims
+    ? Math.max(MIN_BARS, Math.floor((dims.w - PAD_R) / CANDLE_STEP_COMFORT))
+    : MAX_BARS;
   const viewBars = Math.round(
     Math.min(maxBars, Math.max(MIN_BARS, view?.bars ?? tf.bars))
   );
@@ -160,58 +177,36 @@ export default function TradingChart({
    * Zoom by `factor`, keeping whatever sits at `fx` (0 = left, 1 = right).
    *
    * Past the ends of a granularity's useful range it changes granularity
-   * rather than stopping: keep scrolling out on 15m and it becomes 1h, then
-   * 4h, then 1d, so you can go from one second to the whole history in one
-   * gesture. This is what stops the chart hitting a wall — a cap on buckets
-   * alone would either stop early or ask the browser to draw twenty thousand
-   * of them. The visible SPAN is what carries across the switch, so the
-   * picture doesn't jump; only the bucket size changes under it.
+   * rather than stopping: keep zooming out on 15m and it becomes 30m, 1h, 4h,
+   * so you can go from one second to the whole history in one gesture. The
+   * visible SPAN carries across the switch, so the picture doesn't jump; only
+   * the bucket size changes under it.
+   *
+   * It WALKS the ladder rather than taking one step, because one step is only
+   * enough for a small gesture. A pinch can ask for three times the span at
+   * once, and 30m→1h only halves the bucket count — so a single step left the
+   * buckets sub-pixel and the chart fell back to a bare line. Now it keeps
+   * climbing until the buckets are legible or the ladder runs out.
    */
   const zoomAt = useCallback(
     (factor: number, fx: number) => {
-      const bars = view?.bars ?? tf.bars;
-      const off = view?.offset ?? 0;
-      const want = bars * factor;
-      const fromNow = off + (bars - 1) * (1 - fx);
-
-      const idx = TIMEFRAMES.findIndex((t) => t.key === tf.key);
-      const finer = idx > 0 ? TIMEFRAMES[idx - 1] : null;
-      // Only step up while the ticker has enough life to fill the bigger
-      // buckets. A two-day-old company on a weekly frame is one bucket and an
-      // empty axis — the granularity has outrun the history, so stop here.
-      const room = (t: Timeframe) =>
-        earliest === undefined ||
-        now === null ||
-        (now - earliest) / t.ms >= MIN_BARS;
-      const nextUp =
-        idx >= 0 && idx < TIMEFRAMES.length - 1 ? TIMEFRAMES[idx + 1] : null;
-      const coarser = nextUp && room(nextUp) ? nextUp : null;
-      const step =
-        want > maxBars && coarser ? coarser : want < MIN_BARS && finer ? finer : null;
-
-      if (step) {
-        // same window of time, bigger or smaller buckets
-        const spanMs = want * tf.ms;
-        const nowMs = fromNow * tf.ms;
-        const b = Math.round(Math.min(MAX_BARS, Math.max(MIN_BARS, spanMs / step.ms)));
-        const o = Math.max(0, Math.round(nowMs / step.ms - (b - 1) * (1 - fx)));
-        setTfKey(step.key);
+      const plan = planZoom({
+        tf,
+        bars: view?.bars ?? tf.bars,
+        offset: view?.offset ?? 0,
+        factor,
+        fx,
+        legibleBars,
+        historyMs:
+          earliest === undefined || now === null ? null : now - earliest,
+      });
+      if (plan.tf.key !== tf.key) {
+        setTfKey(plan.tf.key);
         setScrub(null);
-        setView({ bars: b, offset: o });
-        return;
       }
-
-      const b = Math.round(Math.min(maxBars, Math.max(MIN_BARS, want)));
-      const o = Math.max(
-        0,
-        Math.min(
-          Math.round(fromNow - (b - 1) * (1 - fx)),
-          Math.max(0, totalBars - b)
-        )
-      );
-      setView({ bars: b, offset: o });
+      setView({ bars: plan.bars, offset: plan.offset });
     },
-    [tf.key, tf.ms, tf.bars, view, maxBars, totalBars, earliest, now]
+    [tf, view, legibleBars, earliest, now]
   );
 
   useEffect(() => {
@@ -271,7 +266,7 @@ export default function TradingChart({
   const geo = useMemo(() => {
     if (!dims || candles.length < 2) return null;
     const { w, h } = dims;
-    const padR = 52; // price axis
+    const padR = PAD_R; // price axis
     const padT = 10;
     const padB = 20;
     const volH = hasVolume ? Math.min(46, h * 0.16) : 0;
@@ -381,13 +376,16 @@ export default function TradingChart({
     null
   );
   const touches = useRef(new Map<number, number>());
-  const pinch = useRef<{ dist: number; bars: number } | null>(null);
+  const pinch = useRef<{ dist: number; span: number } | null>(null);
 
   function onDown(e: React.PointerEvent) {
     touches.current.set(e.pointerId, e.clientX);
     if (touches.current.size === 2) {
       const [a, b] = [...touches.current.values()];
-      pinch.current = { dist: Math.abs(a - b) || 1, bars: viewBars };
+      // Anchored on the visible SPAN, not the bucket count: zoomAt can change
+      // granularity mid-gesture, and a bar count captured in the old bucket
+      // size would make the very next move jump.
+      pinch.current = { dist: Math.abs(a - b) || 1, span: viewBars * tf.ms };
       drag.current = null;
       setScrub(null);
       return;
@@ -403,7 +401,16 @@ export default function TradingChart({
     if (touches.current.size === 2 && pinch.current) {
       const [a, b] = [...touches.current.values()];
       const dist = Math.abs(a - b) || 1;
-      setView(clampView((pinch.current.bars * pinch.current.dist) / dist, offset));
+      // Pinch used to call setView directly, which is why a phone could never
+      // zoom out past one granularity: setView clamps to the frame's own bar
+      // ceiling and has no idea the ladder exists. Every other zoom path goes
+      // through zoomAt; this one now does too, so pinching out on 15m walks up
+      // to 30m, 1h, 4h and the whole history the same way the wheel does.
+      const wantBars = ((pinch.current.span * pinch.current.dist) / dist) / tf.ms;
+      const cur = view?.bars ?? tf.bars;
+      if (cur > 0 && Math.abs(wantBars / cur - 1) > 0.01) {
+        zoomAt(wantBars / cur, 0.5);
+      }
       return;
     }
     const d = drag.current;
