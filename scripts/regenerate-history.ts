@@ -210,7 +210,14 @@ async function main() {
       .order("at", { ascending: true })
       .limit(1);
     const firstReal = existing?.length ? Date.parse(existing[0].at) : now;
-    const tapeFrom = Math.max(now - TAPE_DAYS * DAY, Date.parse(rows[0].day));
+    // never before the ticker existed: a tape that starts ahead of the listing
+    // is the same lie as a snapshot dated in the future
+    const listedAt = Date.parse(String(t.listed_at ?? rows[0].day));
+    const tapeFrom = Math.max(
+      now - TAPE_DAYS * DAY,
+      Date.parse(rows[0].day),
+      listedAt
+    );
     const tapeSteps = Math.max(0, Math.floor((firstReal - tapeFrom) / FLOW_TICK_MS));
 
     const tape: { ticker_id: string; at: string; drift: number; price: number }[] = [];

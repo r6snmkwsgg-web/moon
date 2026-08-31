@@ -133,6 +133,8 @@ export interface AnchorSources {
   now: number;
   /** The live price at that instant. */
   live: number;
+  /** When the ticker was listed. Nothing may be drawn before it existed. */
+  notBefore?: number;
 }
 
 /**
@@ -153,6 +155,9 @@ export interface AnchorSources {
  *     nothing but that spike.
  *   · NOTHING OUTLIVES THE LIVE POINT. Whatever a clock or a row claims, the
  *     live price is the last word.
+ *   · NOTHING PREDATES THE LISTING. A backfill once laid seven hours of tape
+ *     ahead of a ticker's own listing timestamp, which is the same lie as a
+ *     snapshot dated in the future, just pointed the other way.
  */
 export function mergeAnchors({
   snapshots,
@@ -160,11 +165,18 @@ export function mergeAnchors({
   ticks,
   now,
   live,
+  notBefore = -Infinity,
 }: AnchorSources): ChartPoint[] {
   const todayUTC = new Date(now).toISOString().slice(0, 10);
   const out: ChartPoint[] = [];
   const keep = (t: number, price: number) => {
-    if (t < now && Number.isFinite(t) && Number.isFinite(price) && price > 0) {
+    if (
+      t < now &&
+      t >= notBefore &&
+      Number.isFinite(t) &&
+      Number.isFinite(price) &&
+      price > 0
+    ) {
       out.push({ t, price });
     }
   };

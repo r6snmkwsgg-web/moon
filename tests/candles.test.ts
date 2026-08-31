@@ -273,6 +273,36 @@ describe("mergeAnchors", () => {
     expect(out.map((a) => a.price)).toEqual([26, 27.8]);
   });
 
+  it("REGRESSION: nothing is drawn from before the ticker existed", () => {
+    // A backfill once laid seven hours of tape ahead of a ticker's own
+    // listing timestamp. That is the same lie as a snapshot dated in the
+    // future, pointed the other way, and it made a two-day-old listing look
+    // like it had been trading before anyone could buy it.
+    const listed = NOW - 2 * 86_400_000;
+    const out = mergeAnchors({
+      ...base,
+      notBefore: listed,
+      snapshots: [
+        { day: "2026-08-25", price: 40 }, // before the listing
+        { day: "2026-08-30", price: 29.55 },
+      ],
+      ticks: [
+        { at: listed - 3_600_000, price: 99 }, // an hour too early
+        { at: listed, price: 18.1 }, // the listing instant itself counts
+        { at: listed + 3_600_000, price: 17.9 },
+      ],
+    });
+    expect(out.map((a) => a.price)).toEqual([18.1, 17.9, 29.55, 27.8]);
+  });
+
+  it("without a listing time nothing is filtered out", () => {
+    const out = mergeAnchors({
+      ...base,
+      ticks: [{ at: NOW - 10 * 86_400_000, price: 5 }],
+    });
+    expect(out).toHaveLength(2);
+  });
+
   it("an empty board is still a one-point series, not a crash", () => {
     expect(mergeAnchors(base)).toEqual([{ t: NOW, price: 27.8 }]);
   });

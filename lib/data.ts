@@ -238,7 +238,8 @@ export async function getPriceSeries(
   multiple?: number,
   shares?: number,
   events: RevenueEvent[] = [],
-  drift = 0
+  drift = 0,
+  listedAt?: number
 ): Promise<ChartPoint[]> {
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
@@ -280,6 +281,7 @@ export async function getPriceSeries(
     })),
     now,
     live: flowPrice(symbol, mrr, sentiment, now, multiple, shares, events, drift),
+    notBefore: listedAt,
   });
 
   // A BROWNIAN BRIDGE between each pair of real prices, in log space.
@@ -546,7 +548,8 @@ export async function getTickerPage(symbol: string): Promise<{
       quote.multiple,
       quote.shares,
       revenueEvents,
-      quote.drift
+      quote.drift,
+      Date.parse((ticker as Ticker).listed_at)
     ),
   ]);
 
@@ -976,7 +979,8 @@ export async function getEquityInputs(userId: string): Promise<{
       quote.multiple,
       quote.shares,
       events,
-      quote.drift
+      quote.drift,
+      Date.parse(quote.ticker.listed_at)
     );
     holdings.push({
       symbol: quote.ticker.symbol,
