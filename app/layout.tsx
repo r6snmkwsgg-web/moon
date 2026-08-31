@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { APP_NAME, APP_TAGLINE, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import { getUser } from "@/lib/supabase/server";
 import { getUnreadCount } from "@/lib/data";
@@ -51,6 +52,7 @@ export default async function RootLayout({
         </main>
         <Footer />
         <BottomNav unread={unread} />
+        <Analytics />
       </body>
     </html>
   );
