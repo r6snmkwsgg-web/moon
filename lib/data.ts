@@ -157,6 +157,9 @@ function buildQuote(
     price,
     fairPrice: fairPrice(liveMrr, multiple, shares),
     marketCap: price * shares,
+    // the price a day ago, exposed so the client can recompute the change
+    // against a live price instead of freezing it at server-render time
+    dayBasePrice: dayBase ? Number(dayBase.price) : price,
     dayChange: dayBase ? changeFraction(Number(dayBase.price), price) : 0,
     weekChange: weekBase ? changeFraction(Number(weekBase.price), price) : 0,
     spark: [...spark, price], // live price as the final point

@@ -131,6 +131,8 @@ export interface TickerQuote {
   price: number;
   fairPrice: number;
   marketCap: number;
+  /** The price a day ago — the baseline a live day change is measured from. */
+  dayBasePrice: number;
   dayChange: number; // fraction, e.g. 0.052
   weekChange: number;
   spark: number[]; // recent snapshot prices, oldest → newest

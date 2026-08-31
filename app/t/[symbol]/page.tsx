@@ -8,7 +8,7 @@ import {
   getVoteGauge,
 } from "@/lib/data";
 import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
-import { fmtCompact, fmtMonth, fmtPct, fmtPrice, currentMonthISO } from "@/lib/format";
+import { fmtCompact, fmtMonth, fmtPct, currentMonthISO } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import { changeFraction } from "@/lib/pricing";
 import { nextEarningsDate } from "@/lib/xp";
@@ -18,7 +18,8 @@ import PulseKeeper from "@/components/PulseKeeper";
 import Discussion from "@/components/Discussion";
 import TradingChart from "@/components/TradingChart";
 import ThesisFeed from "@/components/ThesisFeed";
-import LivePrice from "@/components/LivePrice";
+import LiveQuote from "@/components/LiveQuote";
+import LiveMarketCap from "@/components/LiveMarketCap";
 import TradePanel from "@/components/TradePanel";
 import ShareButton from "@/components/ShareButton";
 import ChangePct from "@/components/ChangePct";
@@ -62,6 +63,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const [{ symbol }, { ipo }] = await Promise.all([params, searchParams]);
   const data = await getTickerPage(symbol);
   if (!data) notFound();
+  // one instant for every time-dependent number this render produces
+  const renderedAt = Date.now();
 
   const {
     quote,
@@ -184,10 +187,17 @@ export default async function TickerPage({ params, searchParams }: Props) {
           )}
         </div>
         <div className="flex flex-col items-end gap-1.5">
-          <div className="font-mono text-2xl font-bold">
-            <LivePrice value={quote.price} formatted={fmtPrice(quote.price)} />
-          </div>
-          <ChangePct value={quote.dayChange} chip className="text-sm" />
+          <LiveQuote
+            symbol={t.symbol}
+            mrr={quote.liveMrr}
+            sentiment={Number(t.sentiment)}
+            series={series}
+            multiple={quote.multiple}
+            shares={quote.shares}
+            events={revenueEvents}
+            dayBasePrice={quote.dayBasePrice}
+            renderedAt={renderedAt}
+          />
           <span className="flex items-center gap-1.5">
             <WatchStar
               tickerId={t.id}
@@ -225,8 +235,20 @@ export default async function TickerPage({ params, searchParams }: Props) {
 
           {/* the microstructure block — all of it real, none of it decorative */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            {[
-              ["Mkt cap", fmtCompact(quote.marketCap)],
+            {([
+              [
+                "Mkt cap",
+                <LiveMarketCap
+                  symbol={t.symbol}
+                  mrr={quote.liveMrr}
+                  sentiment={Number(t.sentiment)}
+                  series={series}
+                  multiple={quote.multiple}
+                  shares={quote.shares}
+                  events={revenueEvents}
+                  renderedAt={renderedAt}
+                />,
+              ],
               [
                 "MRR (live)",
                 quote.liveMrr > 0 ? fmtCompact(quote.liveMrr) : "—",
@@ -244,7 +266,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 "Float held",
                 `${Math.min(100, Math.round((floatHeld / quote.shares) * 100))}%`,
               ],
-            ].map(([label, value]) => (
+            ] as [string, React.ReactNode][]).map(([label, value]) => (
               <div key={label} className="panel px-3 py-2">
                 <div className="microlabel">{label}</div>
                 <div className="num mt-0.5 font-mono text-sm font-semibold">

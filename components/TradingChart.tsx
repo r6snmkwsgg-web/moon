@@ -800,7 +800,12 @@ export default function TradingChart({
         </span>
         <span className="flex items-center gap-1.5 text-terminal-amber">
           <span className="inline-block h-0 w-4 border-t border-dashed border-terminal-amber" />
-          fair value · {multiple.toFixed(1)}× ARR ÷ 10k
+          {/* the float is per-ticker since 0004 — a hardcoded 10k here was
+              printing the wrong formula on every company that isn't 10,000 */}
+          fair value · {multiple.toFixed(1)}× ARR ÷{" "}
+          {shares >= 1000
+            ? `${(shares / 1000).toFixed(shares % 1000 === 0 ? 0 : 1)}k`
+            : shares}
         </span>
         <span className="ml-auto hidden text-terminal-muted/70 md:block">
           scroll to zoom · drag to pan
