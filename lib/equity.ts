@@ -247,3 +247,61 @@ export const EQUITY_RANGES = [
 ] as const;
 
 export type EquityRangeKey = (typeof EQUITY_RANGES)[number]["key"];
+
+export interface EquityWindow {
+  from: number;
+  to: number;
+}
+
+/**
+ * The slice of time a portfolio range covers.
+ *
+ * A bounded range means what it says. 1W used to trim to just before your
+ * first trade, on the reasoning that flat cash "says nothing" — but six flat
+ * days ARE the shape of that week, and the trimming meant 1W, 1M and ALL all
+ * drew the same picture on a young account. You pressed 1W, got one day, and
+ * reasonably wondered what was broken.
+ *
+ * ALL keeps the trim, because that is where it earns its keep: an account
+ * that sat on its cash for months before its first trade would otherwise open
+ * on a mile of flat line with the whole story squeezed into the last inch.
+ */
+export function equityWindow({
+  spanMs,
+  now,
+  startedAt,
+  firstTradeAt,
+}: {
+  spanMs: number;
+  now: number;
+  startedAt: number;
+  firstTradeAt: number | null;
+}): EquityWindow {
+  if (spanMs === Infinity) {
+    const firstMove = firstTradeAt ?? startedAt;
+    const lead = Math.max(60_000, (now - firstMove) * 0.06);
+    return { from: Math.max(startedAt, firstMove - lead), to: now };
+  }
+  // only the account's own start may cut a bounded window short
+  return { from: Math.max(startedAt, now - spanMs), to: now };
+}
+
+/**
+ * Whether a range can show anything ALL would not. A window longer than the
+ * account has existed draws exactly what ALL draws; offering it as a live
+ * button is a promise the data cannot keep.
+ */
+export function rangeIsMeaningful({
+  key,
+  spanMs,
+  now,
+  startedAt,
+}: {
+  key: EquityRangeKey;
+  spanMs: number;
+  now: number;
+  startedAt: number;
+}): boolean {
+  if (spanMs === Infinity || key === "1D") return true;
+  return now - spanMs > startedAt;
+}

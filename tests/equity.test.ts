@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   allocationSlices,
+  equityWindow,
   makeEquityAt,
   makeStateAt,
+  rangeIsMeaningful,
   realizedPnl,
   sampleEquity,
   type EquityInputs,
@@ -269,5 +271,89 @@ describe("allocationSlices", () => {
   it("returns nothing for an empty book rather than dividing by zero", () => {
     expect(allocationSlices([], 0, 5)).toEqual([]);
     expect(allocationSlices([pos("$A", 0)], 0, 5)).toEqual([]);
+  });
+});
+
+/* ── portfolio ranges: a week should look like a week ────────────────────── */
+
+const DAY_MS = 86_400_000;
+const WEEK_MS = 7 * DAY_MS;
+const T = Date.parse("2026-08-31T12:00:00Z");
+
+describe("equityWindow", () => {
+  it("REGRESSION: 1W shows a week, flat days included", () => {
+    // It used to trim to just before the first trade, so an account that
+    // opened a month ago and bought yesterday saw ONE DAY under a button
+    // marked 1W. Six flat days are the shape of that week: you held cash and
+    // nothing happened.
+    const w = equityWindow({
+      spanMs: WEEK_MS,
+      now: T,
+      startedAt: T - 30 * DAY_MS,
+      firstTradeAt: T - DAY_MS,
+    });
+    expect(w.from).toBe(T - WEEK_MS);
+    expect(w.to).toBe(T);
+  });
+
+  it("only the account's own start may cut a bounded window short", () => {
+    const w = equityWindow({
+      spanMs: WEEK_MS,
+      now: T,
+      startedAt: T - 2 * DAY_MS,
+      firstTradeAt: T - DAY_MS,
+    });
+    expect(w.from).toBe(T - 2 * DAY_MS); // nothing existed before that
+  });
+
+  it("ALL keeps its lead-in trim, which is where it earns its keep", () => {
+    // months of idle cash before the first trade would squeeze the whole
+    // story into the last inch of the chart
+    const w = equityWindow({
+      spanMs: Infinity,
+      now: T,
+      startedAt: T - 200 * DAY_MS,
+      firstTradeAt: T - DAY_MS,
+    });
+    expect(w.from).toBeGreaterThan(T - 2 * DAY_MS);
+    expect(w.from).toBeLessThan(T - DAY_MS);
+  });
+
+  it("ALL on an account that never traded opens at the account", () => {
+    const startedAt = T - 3 * DAY_MS;
+    const w = equityWindow({ spanMs: Infinity, now: T, startedAt, firstTradeAt: null });
+    expect(w.from).toBe(startedAt);
+  });
+
+  it("never opens after it closes, whatever the inputs", () => {
+    for (const spanMs of [DAY_MS, WEEK_MS, 30 * DAY_MS, Infinity]) {
+      for (const age of [0, 60_000, DAY_MS, 400 * DAY_MS]) {
+        const w = equityWindow({
+          spanMs,
+          now: T,
+          startedAt: T - age,
+          firstTradeAt: age > 0 ? T - age / 2 : null,
+        });
+        expect(w.from).toBeLessThanOrEqual(w.to);
+        expect(w.from).toBeGreaterThanOrEqual(T - age);
+      }
+    }
+  });
+});
+
+describe("rangeIsMeaningful", () => {
+  it("greys out a window the account has not lived through", () => {
+    const startedAt = T - DAY_MS; // one day old
+    expect(rangeIsMeaningful({ key: "1W", spanMs: WEEK_MS, now: T, startedAt })).toBe(false);
+    expect(rangeIsMeaningful({ key: "1M", spanMs: 30 * DAY_MS, now: T, startedAt })).toBe(false);
+    // 1D and ALL always mean something
+    expect(rangeIsMeaningful({ key: "1D", spanMs: DAY_MS, now: T, startedAt })).toBe(true);
+    expect(rangeIsMeaningful({ key: "ALL", spanMs: Infinity, now: T, startedAt })).toBe(true);
+  });
+
+  it("lights 1W up the moment the account is older than a week", () => {
+    const args = { key: "1W" as const, spanMs: WEEK_MS, now: T };
+    expect(rangeIsMeaningful({ ...args, startedAt: T - WEEK_MS })).toBe(false);
+    expect(rangeIsMeaningful({ ...args, startedAt: T - WEEK_MS - 1 })).toBe(true);
   });
 });

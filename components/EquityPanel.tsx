@@ -10,6 +10,8 @@ import Sparkline from "@/components/Sparkline";
 import { fmtPrice } from "@/lib/format";
 import {
   EQUITY_RANGES,
+  equityWindow,
+  rangeIsMeaningful,
   makeEquityAt,
   makePricesAt,
   makeStateAt,
@@ -197,14 +199,13 @@ export default function EquityPanel({
         to: now,
       };
     }
-    const span = EQUITY_RANGES.find((r) => r.key === range)!.ms;
-    // Hours of flat cash before the first trade say nothing and eat the whole
-    // chart, so the curve opens just before the account did something.
-    const firstMove = trades.length ? trades[0].t : startedAt;
-    const lead = Math.max(60_000, (now - firstMove) * 0.06);
-    const earliest = Math.max(startedAt, firstMove - lead);
-    const from = span === Infinity ? earliest : Math.max(earliest, now - span);
-    return { t0: from, t1: now, from, to: now };
+    const { from, to } = equityWindow({
+      spanMs: EQUITY_RANGES.find((r) => r.key === range)!.ms,
+      now,
+      startedAt,
+      firstTradeAt: trades.length ? trades[0].t : null,
+    });
+    return { t0: from, t1: to, from, to };
   }, [range, now, startedAt, trades]);
 
   const series = useMemo(
@@ -349,23 +350,39 @@ export default function EquityPanel({
           </div>
         </div>
         <div className="flex gap-0.5">
-          {EQUITY_RANGES.map((r) => (
-            <button
-              key={r.key}
-              type="button"
-              onClick={() => {
-                setRange(r.key);
-                setScrub(null);
-              }}
-              className={`rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors ${
-                range === r.key
-                  ? "bg-terminal-raise text-terminal-text"
-                  : "text-terminal-muted hover:text-terminal-text"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+          {EQUITY_RANGES.map((r) => {
+            const tooYoung = !rangeIsMeaningful({
+              key: r.key,
+              spanMs: r.ms,
+              now,
+              startedAt,
+            });
+            return (
+              <button
+                key={r.key}
+                type="button"
+                disabled={tooYoung}
+                title={
+                  tooYoung
+                    ? `Your account isn't ${r.label} old yet — ALL shows everything there is.`
+                    : undefined
+                }
+                onClick={() => {
+                  setRange(r.key);
+                  setScrub(null);
+                }}
+                className={`rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors ${
+                  range === r.key
+                    ? "bg-terminal-raise text-terminal-text"
+                    : tooYoung
+                      ? "cursor-not-allowed text-terminal-muted/35"
+                      : "text-terminal-muted hover:text-terminal-text"
+                }`}
+              >
+                {r.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
