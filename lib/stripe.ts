@@ -274,17 +274,96 @@ export interface StripeRevenue {
   mrr: number;
   /** Active subscriptions — how a churn is told apart from a downgrade. */
   subscriptions: number;
+  /** Every currency seen. More than one and the total is not a real sum. */
+  currencies?: string[];
+}
+
+/**
+ * One subscription's contribution to MRR, in minor units (cents).
+ *
+ * Pure, and separated out because the inline version was quietly overstating.
+ * Compared against Stripe's own MRR widget for a live account it read $668
+ * where Stripe said $583.86 — 14% high — and the reasons were all here:
+ *
+ *   · DISCOUNTS WERE IGNORED. price.unit_amount is the list price. A coupon
+ *     is a field on the subscription, and Stripe's MRR nets it out.
+ *   · A SUBSCRIPTION CANCELLING AT PERIOD END IS STILL status:"active".
+ *     It is already churned in every sense that matters — the customer has
+ *     left, the last invoice is just still running — and Stripe's MRR
+ *     excludes it. Counting it full price is how MRR stays flat through a
+ *     wave of cancellations.
+ *
+ * Metered and tiered items have no unit_amount and are still skipped; that
+ * makes the number LOW, not high, and needs usage records to do properly.
+ */
+export function subscriptionMrrMinor(sub: Record<string, unknown>): number {
+  // already gone, just not expired yet
+  if (sub.cancel_at_period_end === true) return 0;
+
+  const items = ((sub.items as Record<string, unknown>)?.data ?? []) as Array<
+    Record<string, unknown>
+  >;
+  let total = 0;
+  for (const item of items) {
+    const price = (item.price ?? {}) as Record<string, unknown>;
+    const recurring = (price.recurring ?? {}) as Record<string, unknown>;
+    const unitAmount = Number(price.unit_amount);
+    if (!Number.isFinite(unitAmount) || unitAmount <= 0) continue;
+    const qty = Number(item.quantity ?? 1) || 1;
+    const intervalCount = Number(recurring.interval_count ?? 1) || 1;
+    const interval = String(recurring.interval ?? "month");
+    const perMonth =
+      interval === "year"
+        ? unitAmount / (12 * intervalCount)
+        : interval === "week"
+          ? (unitAmount * 52) / 12 / intervalCount
+          : interval === "day"
+            ? (unitAmount * 365) / 12 / intervalCount
+            : unitAmount / intervalCount; // month
+    total += perMonth * qty;
+  }
+  return applyDiscounts(sub, total);
+}
+
+/** Coupons on the subscription, percent first then fixed, never below zero. */
+function applyDiscounts(sub: Record<string, unknown>, minor: number): number {
+  // Stripe has moved from a single `discount` to a `discounts` array; older
+  // API versions still send the singular, so read both.
+  const raw = [
+    ...((sub.discounts ?? []) as unknown[]),
+    ...(sub.discount ? [sub.discount] : []),
+  ];
+  let out = minor;
+  for (const d of raw) {
+    const coupon = ((d as Record<string, unknown>)?.coupon ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const percentOff = Number(coupon.percent_off);
+    if (Number.isFinite(percentOff) && percentOff > 0) {
+      out *= 1 - Math.min(100, percentOff) / 100;
+    }
+    const amountOff = Number(coupon.amount_off);
+    if (Number.isFinite(amountOff) && amountOff > 0) out -= amountOff;
+  }
+  return Math.max(0, out);
 }
 
 /**
  * MRR plus the active subscription count, in one pass. The count is what
  * lets the pulse label a change: fewer subscriptions and less money is a
  * churn, the same subscriptions and less money is a downgrade.
+ *
+ * `currencies` comes back so a caller can tell that the total is meaningless:
+ * amounts are summed at face value in minor units, so an account billing in
+ * both USD and EUR is adding centimes to cents. Converting needs live FX,
+ * which this deliberately does not reach for.
  */
 export async function readStripeRevenue(auth: StripeAuth): Promise<StripeRevenue> {
-  let total = 0; // in cents/minor units, face value across currencies
+  let total = 0; // minor units
   let subscriptions = 0;
   let startingAfter: string | null = null;
+  const currencies = new Set<string>();
 
   for (let page = 0; page < 10; page++) {
     const params = new URLSearchParams({ status: "active", limit: "100" });
@@ -297,35 +376,25 @@ export async function readStripeRevenue(auth: StripeAuth): Promise<StripeRevenue
       throw new Error(`Stripe subscriptions read failed (${status})`);
     }
     const subs = (json.data ?? []) as Array<Record<string, unknown>>;
-    subscriptions += subs.length;
     for (const sub of subs) {
-      const items = ((sub.items as Record<string, unknown>)?.data ??
-        []) as Array<Record<string, unknown>>;
-      for (const item of items) {
-        const price = (item.price ?? {}) as Record<string, unknown>;
-        const recurring = (price.recurring ?? {}) as Record<string, unknown>;
-        const unitAmount = Number(price.unit_amount);
-        if (!Number.isFinite(unitAmount) || unitAmount <= 0) continue;
-        const qty = Number(item.quantity ?? 1) || 1;
-        const intervalCount = Number(recurring.interval_count ?? 1) || 1;
-        const interval = String(recurring.interval ?? "month");
-        const perMonth =
-          interval === "year"
-            ? unitAmount / (12 * intervalCount)
-            : interval === "week"
-              ? (unitAmount * 52) / 12 / intervalCount
-              : interval === "day"
-                ? (unitAmount * 365) / 12 / intervalCount
-                : unitAmount / intervalCount; // month
-        total += perMonth * qty;
-      }
+      const mrr = subscriptionMrrMinor(sub);
+      // a subscription already cancelling contributes nothing and is not
+      // counted, so the churn lands when they cancel rather than weeks later
+      if (sub.cancel_at_period_end === true) continue;
+      subscriptions += 1;
+      total += mrr;
+      if (typeof sub.currency === "string") currencies.add(sub.currency);
     }
     if (!json.has_more || subs.length === 0) break;
     startingAfter = String(subs[subs.length - 1].id ?? "");
     if (!startingAfter) break;
   }
 
-  return { mrr: Math.round(total) / 100, subscriptions }; // minor units → dollars
+  return {
+    mrr: Math.round(total) / 100, // minor units → dollars
+    subscriptions,
+    currencies: [...currencies],
+  };
 }
 
 /** MRR alone — the number the monthly report and the IPO price are set from. */
