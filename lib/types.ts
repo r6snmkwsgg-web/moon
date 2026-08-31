@@ -127,7 +127,7 @@ export interface ChartEvent {
 export interface TickerQuote {
   ticker: Ticker;
   latestMrr: number;
-  arr: number; // latestMrr × 12
+  arr: number; // liveMrr × 12 — what Stripe says now, not the last report
   multiple: number; // quality-adjusted ARR multiple this ticker earns
   shares: number; // this ticker's float — set at IPO, not global
   liveMrr: number; // what Stripe says right now (falls back to reported)

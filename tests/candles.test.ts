@@ -6,7 +6,9 @@ import {
   mergeAnchors,
   MIN_BARS,
   niceTimeStep,
+  openingTimeframe,
   planZoom,
+  TIMEFRAMES,
   timeframeFor,
 } from "@/lib/candles";
 
@@ -305,5 +307,38 @@ describe("mergeAnchors", () => {
 
   it("an empty board is still a one-point series, not a crash", () => {
     expect(mergeAnchors(base)).toEqual([{ t: NOW, price: 27.8 }]);
+  });
+});
+
+/* ── which frame a ticker opens on ───────────────────────────────────────── */
+
+describe("openingTimeframe", () => {
+  const DAY = 86_400_000;
+
+  it("REGRESSION: a young ticker opens wide enough to show its own life", () => {
+    // $PRL opened on the 15m default — a sixteen-hour window — having
+    // recorded a churn and five signups across twenty-eight hours. It drew
+    // exactly one of them and read as a broken Stripe sync. The other five
+    // were off the left edge.
+    const frame = timeframeFor(openingTimeframe(2.7 * DAY));
+    expect(frame.ms * frame.bars).toBeGreaterThan(28 * 3600_000);
+    expect(frame.key).toBe("1h");
+  });
+
+  it("leaves a mature ticker on the standard frame", () => {
+    expect(openingTimeframe(124 * DAY)).toBe("15m");
+    expect(openingTimeframe(8 * DAY)).toBe("15m");
+  });
+
+  it("scales with how young the listing is", () => {
+    expect(openingTimeframe(2 * 3600_000)).toBe("5m"); // two hours old
+    expect(openingTimeframe(12 * 3600_000)).toBe("15m");
+    expect(openingTimeframe(6 * DAY)).toBe("4h");
+  });
+
+  it("falls back cleanly on nonsense", () => {
+    for (const v of [null, NaN, 0, -1, Infinity]) {
+      expect(TIMEFRAMES.some((t) => t.key === openingTimeframe(v))).toBe(true);
+    }
   });
 });

@@ -154,7 +154,12 @@ function buildQuote(
   return {
     ticker,
     latestMrr,
-    arr: annualRevenue(latestMrr),
+    // ARR off the LIVE number, not the last monthly report. The two tiles sit
+    // side by side — "MRR (live) $668" next to "ARR $7.6K" was $635.50 x 12,
+    // and adjacent tiles that disagree read as an arithmetic error even when
+    // both are defensible. The price already trades on live MRR; the headline
+    // valuation should say the same thing.
+    arr: annualRevenue(liveMrr),
     multiple,
     shares,
     liveMrr,

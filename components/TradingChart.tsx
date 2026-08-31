@@ -99,6 +99,7 @@ export default function TradingChart({
   drift = 0,
   trades = [],
   earliest,
+  initialTimeframe,
   heightClass = "h-[300px] sm:h-[380px]",
 }: {
   symbol: string;
@@ -115,11 +116,13 @@ export default function TradingChart({
   drift?: number;
   trades?: { t: number; shares: number }[];
   earliest?: number;
+  /** Frame to open on — the server knows how old the ticker is. */
+  initialTimeframe?: string;
   heightClass?: string;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
-  const [tfKey, setTfKey] = useState(DEFAULT_TIMEFRAME);
+  const [tfKey, setTfKey] = useState(initialTimeframe ?? DEFAULT_TIMEFRAME);
   const [tfOpen, setTfOpen] = useState(false);
   const [mode, setMode] = useState<"candle" | "line">("candle");
   const [now, setNow] = useState<number | null>(null); // null until mounted

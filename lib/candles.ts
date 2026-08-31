@@ -52,6 +52,30 @@ export const TIMEFRAMES: Timeframe[] = [
 
 export const DEFAULT_TIMEFRAME = "15m";
 
+/**
+ * The frame a ticker should OPEN on, given how long it has existed.
+ *
+ * The default is 15m over 64 bars — sixteen hours — which is a reasonable
+ * window for a ticker with months of tape and a bad one for a listing three
+ * days old. $PRL opened on it having recorded a churn and five signups in
+ * twenty-eight hours, showed exactly one of them, and read as though the
+ * Stripe sync had stopped working. It had not; the other five were off the
+ * left edge.
+ *
+ * So a young ticker opens wide enough to show its own life. Anything older
+ * than a week keeps the standard frame — by then sixteen hours of detail is
+ * the more useful view, and zooming out is right there.
+ */
+export function openingTimeframe(historyMs: number | null): string {
+  if (historyMs === null || !Number.isFinite(historyMs) || historyMs <= 0) {
+    return DEFAULT_TIMEFRAME;
+  }
+  if (historyMs > 7 * 24 * 3600_000) return DEFAULT_TIMEFRAME;
+  // the finest frame whose own window covers most of what there is
+  const fit = TIMEFRAMES.find((t) => t.ms * t.bars >= historyMs * 0.8);
+  return (fit ?? TIMEFRAMES[TIMEFRAMES.length - 1]).key;
+}
+
 export function timeframeFor(key: string): Timeframe {
   return TIMEFRAMES.find((t) => t.key === key) ?? TIMEFRAMES[5];
 }

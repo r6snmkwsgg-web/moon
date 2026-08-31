@@ -12,6 +12,7 @@ import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { fmtCompact, fmtMonth, fmtPct, currentMonthISO } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import { changeFraction } from "@/lib/pricing";
+import { openingTimeframe } from "@/lib/candles";
 import { nextEarningsDate } from "@/lib/xp";
 import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import CountdownChip from "@/components/CountdownChip";
@@ -241,6 +242,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             drift={quote.drift}
             trades={tradePoints}
             earliest={earliest}
+            initialTimeframe={openingTimeframe(renderedAt - earliest)}
           />
 
           {/* the microstructure block — all of it real, none of it decorative */}
