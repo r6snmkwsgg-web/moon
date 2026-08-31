@@ -41,18 +41,6 @@ const GRID = "#182236";
 // that actually reasons about them.
 /** Below this many pixels per bucket a candle is a smear; draw a line instead. */
 const CANDLE_MIN_STEP = 3;
-/**
- * Pixels per bucket at which zooming out should hand over to a coarser
- * granularity instead of packing more buckets in.
- *
- * This used to be MAX_BARS — a thousand buckets — and that was the bug. A
- * 720px plot draws a thousand buckets at 0.7px each, so scrolling out on the
- * 15m frame spent six whole steps below CANDLE_MIN_STEP: the candles vanished,
- * the chart became a bare line, and only once it finally reached a thousand
- * buckets did it step to 30m and start again. Handing over at a legible width
- * keeps candles on screen the whole way out.
- */
-const CANDLE_STEP_COMFORT = 5;
 /** Width of the price axis gutter — subtracted from the wrapper to get plot width. */
 const PAD_R = 52;
 
@@ -146,12 +134,21 @@ export default function TradingChart({
   // never below the frame's own width: a two-day-old ticker on the 1D frame
   // should draw two bars at their natural size, not two bars stretched over
   // the whole plot.
-  const maxBars = Math.max(tf.bars, Math.min(MAX_BARS, totalBars));
-  // How many buckets fit at a legible width. Derived from dims rather than
-  // geo, because geo is computed FROM the bar count and this decides it.
-  const legibleBars = dims
-    ? Math.max(MIN_BARS, Math.floor((dims.w - PAD_R) / CANDLE_STEP_COMFORT))
+  //
+  // Zoom does NOT change the granularity. Picking 1s means 1s: scrolling out
+  // shows more one-second buckets until it runs out of room, and then it
+  // stops. (It used to climb the ladder — 1s became 15s became 30s — which
+  // reaches the whole history in one gesture and is completely useless when
+  // what you wanted was to look at seconds. The frame is the selector's job.)
+  //
+  // The limit is what this plot can actually draw. Past CANDLE_MIN_STEP a
+  // candle is a smear, so that is where zoom-out ends; in explicit line mode
+  // there is no smear to worry about, so it runs to MAX_BARS.
+  const drawableBars = dims
+    ? Math.max(MIN_BARS, Math.floor((dims.w - PAD_R) / CANDLE_MIN_STEP))
     : MAX_BARS;
+  const barCeiling = mode === "line" ? MAX_BARS : drawableBars;
+  const maxBars = Math.max(tf.bars, Math.min(barCeiling, totalBars));
   const viewBars = Math.round(
     Math.min(maxBars, Math.max(MIN_BARS, view?.bars ?? tf.bars))
   );
@@ -175,38 +172,22 @@ export default function TradingChart({
 
   /**
    * Zoom by `factor`, keeping whatever sits at `fx` (0 = left, 1 = right).
-   *
-   * Past the ends of a granularity's useful range it changes granularity
-   * rather than stopping: keep zooming out on 15m and it becomes 30m, 1h, 4h,
-   * so you can go from one second to the whole history in one gesture. The
-   * visible SPAN carries across the switch, so the picture doesn't jump; only
-   * the bucket size changes under it.
-   *
-   * It WALKS the ladder rather than taking one step, because one step is only
-   * enough for a small gesture. A pinch can ask for three times the span at
-   * once, and 30m→1h only halves the bucket count — so a single step left the
-   * buckets sub-pixel and the chart fell back to a bare line. Now it keeps
-   * climbing until the buckets are legible or the ladder runs out.
+   * Only ever changes how many buckets of the CURRENT frame are on screen —
+   * never the frame itself. To see further back, pick a coarser one.
    */
   const zoomAt = useCallback(
     (factor: number, fx: number) => {
       const plan = planZoom({
-        tf,
         bars: view?.bars ?? tf.bars,
         offset: view?.offset ?? 0,
         factor,
         fx,
-        legibleBars,
-        historyMs:
-          earliest === undefined || now === null ? null : now - earliest,
+        maxBars,
+        totalBars,
       });
-      if (plan.tf.key !== tf.key) {
-        setTfKey(plan.tf.key);
-        setScrub(null);
-      }
-      setView({ bars: plan.bars, offset: plan.offset });
+      setView(plan);
     },
-    [tf, view, legibleBars, earliest, now]
+    [tf.bars, view, maxBars, totalBars]
   );
 
   useEffect(() => {

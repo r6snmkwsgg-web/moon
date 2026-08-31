@@ -69,14 +69,11 @@ export const MIN_BARS = 12;
 export const MAX_BARS = 1000;
 
 export interface ZoomPlan {
-  tf: Timeframe;
   bars: number;
   offset: number;
 }
 
 export interface ZoomInput {
-  /** The frame in view now. */
-  tf: Timeframe;
   /** Buckets in view now. */
   bars: number;
   /** Buckets between the right edge and the live edge. */
@@ -85,83 +82,36 @@ export interface ZoomInput {
   factor: number;
   /** Anchor: 0 pins the left edge, 1 the right. */
   fx: number;
-  /** Buckets this plot can draw at a legible width. */
-  legibleBars: number;
-  /** now − earliest, or null when the reach is unknown. */
-  historyMs: number | null;
+  /** The most buckets this frame may show — the plot's drawable width. */
+  maxBars: number;
+  /** How many buckets of this frame the ticker's history covers. */
+  totalBars: number;
 }
 
 /**
- * Where a zoom gesture lands, including any change of granularity.
+ * Where a zoom gesture lands, in buckets of the CURRENT frame.
  *
- * Pure, because the version that lived inside the component was wrong for
- * weeks and nothing could catch it. Two things were broken:
- *
- *   · it handed over to a coarser frame at MAX_BARS — a thousand buckets in a
- *     720px plot, 0.7px each — so zooming out on 15m spent six steps as a
- *     bare line before the frame finally changed;
- *   · it took at most ONE rung per call, which is fine for a 1.35× wheel notch
- *     and not for a pinch that asks for triple the span at once.
- *
- * So: hand over as soon as the buckets stop being legible, and keep climbing
- * until they are legible again or the ladder ends. The visible SPAN is what
- * carries across a switch, so the picture never jumps; only the bucket size
- * changes under it.
+ * It does not change the frame, and that is the point. It used to: zooming
+ * out on 1s climbed to 15s, then 30s, then 1m, so you could cross the whole
+ * history in one gesture — and could not simply look at more seconds, which
+ * is the thing anyone zooming out on a 1s chart is trying to do. Granularity
+ * is the timeframe selector's job; zoom just moves the window, and stops when
+ * the frame runs out of room.
  */
 export function planZoom(input: ZoomInput): ZoomPlan {
-  const { tf, bars, offset, factor, fx, legibleBars, historyMs } = input;
-  const want = bars * factor;
+  const { bars, offset, factor, fx, maxBars, totalBars } = input;
   const fromNow = offset + (bars - 1) * (1 - fx);
-  const spanMs = want * tf.ms;
-  const nowMs = fromNow * tf.ms;
-
-  // Only climb while the ticker has enough life to fill the bigger buckets. A
-  // two-day-old company on a weekly frame is one bucket and an empty axis —
-  // the granularity has outrun the history, so stop there.
-  const room = (t: Timeframe) => historyMs === null || historyMs / t.ms >= MIN_BARS;
-  const reach = (t: Timeframe) =>
-    historyMs === null
-      ? MAX_BARS
-      : Math.max(MIN_BARS, Math.ceil(historyMs / t.ms) + 1);
-  // A frame's own limit, then whatever the plot can actually draw legibly.
-  const ceilingFor = (t: Timeframe) =>
-    Math.min(Math.max(t.bars, Math.min(MAX_BARS, reach(t))), legibleBars);
-
-  let idx = TIMEFRAMES.findIndex((t) => t.key === tf.key);
-  const start = idx;
-  if (want > ceilingFor(tf)) {
-    while (idx < TIMEFRAMES.length - 1 && room(TIMEFRAMES[idx + 1])) {
-      idx++;
-      if (spanMs / TIMEFRAMES[idx].ms <= ceilingFor(TIMEFRAMES[idx])) break;
-    }
-  } else if (want < MIN_BARS) {
-    while (idx > 0) {
-      idx--;
-      if (spanMs / TIMEFRAMES[idx].ms >= MIN_BARS) break;
-    }
-  }
-
-  if (idx !== start && idx >= 0) {
-    const target = TIMEFRAMES[idx];
-    const b = Math.round(
-      Math.min(MAX_BARS, Math.max(MIN_BARS, spanMs / target.ms))
-    );
-    return {
-      tf: target,
-      bars: b,
-      offset: Math.max(0, Math.round(nowMs / target.ms - (b - 1) * (1 - fx))),
-    };
-  }
-
-  // no handover: stay on this frame, clamped to what it can show
-  const cap = Math.min(Math.max(tf.bars, Math.min(MAX_BARS, reach(tf))), MAX_BARS);
-  const b = Math.round(Math.min(cap, Math.max(MIN_BARS, want)));
+  const b = Math.round(
+    Math.min(Math.max(maxBars, MIN_BARS), Math.max(MIN_BARS, bars * factor))
+  );
   return {
-    tf,
     bars: b,
     offset: Math.max(
       0,
-      Math.min(Math.round(fromNow - (b - 1) * (1 - fx)), Math.max(0, reach(tf) - b))
+      Math.min(
+        Math.round(fromNow - (b - 1) * (1 - fx)),
+        Math.max(0, totalBars - b)
+      )
     ),
   };
 }

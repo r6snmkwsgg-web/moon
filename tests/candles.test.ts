@@ -3,13 +3,10 @@ import {
   axisTimeLabel,
   buildCandles,
   makePriceAt,
-  MAX_BARS,
   MIN_BARS,
   niceTimeStep,
   planZoom,
-  TIMEFRAMES,
   timeframeFor,
-  type Timeframe,
 } from "@/lib/candles";
 
 const MIN = 60_000;
@@ -91,143 +88,93 @@ describe("time axis", () => {
   });
 });
 
-/* ── zoom: the ladder walk ────────────────────────────────────────────────── */
+/* ── zoom: a window on the frame you chose ───────────────────────────────── */
 
-/** A 720px plot at the comfort step — what a desktop chart can draw. */
-const DESKTOP_LEGIBLE = 144;
+/** A 720px plot at CANDLE_MIN_STEP — what a desktop chart can draw. */
+const DESKTOP_MAX = 240;
 /** A 338px phone plot. */
-const PHONE_LEGIBLE = 67;
-
-function frame(key: string): Timeframe {
-  return timeframeFor(key);
-}
+const PHONE_MAX = 112;
 
 describe("planZoom", () => {
-  const base = {
-    offset: 0,
-    fx: 1,
-    legibleBars: DESKTOP_LEGIBLE,
-    historyMs: 123 * DAY,
-  };
+  const base = { offset: 0, fx: 1, maxBars: DESKTOP_MAX, totalBars: 100_000 };
 
-  it("REGRESSION: never leaves the buckets illegible while a coarser frame has room", () => {
-    // The bug: handover happened at MAX_BARS (1000 buckets in a 720px plot),
-    // so zooming out on 15m spent six steps drawing a bare line. Walk the
-    // whole ladder out and assert every landing is drawable.
-    let tf = frame("15m");
-    let bars = tf.bars;
+  it("REGRESSION: zooming out never changes the frame you picked", () => {
+    // It used to climb the ladder — 1s became 15s became 30s — so you could
+    // not simply look at more seconds. planZoom has no timeframe to return
+    // any more; this test is the contract, and the type is the enforcement.
+    const plan = planZoom({ ...base, bars: 90, factor: 1.35 });
+    expect(Object.keys(plan).sort()).toEqual(["bars", "offset"]);
+    expect(plan.bars).toBeGreaterThan(90);
+  });
+
+  it("keeps zooming out until the frame runs out of room, then stops", () => {
+    let bars = timeframeFor("1s").bars;
     let offset = 0;
-    const seen: string[] = [];
-    for (let i = 0; i < 40; i++) {
-      const plan = planZoom({ ...base, tf, bars, offset, factor: 1.35 });
-      tf = plan.tf;
+    const steps: number[] = [];
+    for (let i = 0; i < 30; i++) {
+      const plan = planZoom({ ...base, bars, offset, factor: 1.35 });
       bars = plan.bars;
       offset = plan.offset;
-      seen.push(tf.key);
-      const roomToClimb =
-        TIMEFRAMES.indexOf(tf) < TIMEFRAMES.length - 1 &&
-        base.historyMs / TIMEFRAMES[TIMEFRAMES.indexOf(tf) + 1].ms >= MIN_BARS;
-      if (roomToClimb) {
-        expect(
-          bars,
-          `step ${i} on ${tf.key} left ${bars} buckets — illegible with room to climb`
-        ).toBeLessThanOrEqual(DESKTOP_LEGIBLE);
-      }
+      steps.push(bars);
     }
-    // and it climbed rather than sat still
-    expect(seen).toContain("1h");
-    expect(seen[seen.length - 1]).toBe("1w");
+    expect(Math.max(...steps)).toBe(DESKTOP_MAX);
+    expect(bars).toBe(DESKTOP_MAX); // parks at the limit rather than oscillating
   });
 
-  it("REGRESSION: one big gesture climbs more than one rung", () => {
-    // A pinch can ask for triple the span; 30m→1h only halves the bucket
-    // count, so a single-rung step used to land back in line mode.
-    const plan = planZoom({ ...base, tf: frame("15m"), bars: 140, factor: 4 });
-    expect(plan.tf.key).not.toBe("15m");
-    expect(plan.tf.key).not.toBe("30m"); // one rung would not have been enough
-    expect(plan.bars).toBeLessThanOrEqual(DESKTOP_LEGIBLE);
+  it("the limit follows the plot: a phone stops sooner", () => {
+    let bars = 90;
+    for (let i = 0; i < 30; i++) {
+      bars = planZoom({ ...base, maxBars: PHONE_MAX, bars, factor: 1.35 }).bars;
+    }
+    expect(bars).toBe(PHONE_MAX);
   });
 
-  it("carries the visible span across a handover, so the picture doesn't jump", () => {
-    const tf = frame("15m");
-    const bars = 200;
-    const plan = planZoom({ ...base, tf, bars, factor: 1.35 });
-    const before = bars * 1.35 * tf.ms;
-    const after = plan.bars * plan.tf.ms;
-    expect(after / before).toBeGreaterThan(0.9);
-    expect(after / before).toBeLessThan(1.1);
-  });
-
-  it("a phone hands over sooner, because less fits", () => {
-    const onPhone = planZoom({
-      ...base,
-      legibleBars: PHONE_LEGIBLE,
-      tf: frame("15m"),
-      bars: 60,
-      factor: 1.35,
-    });
-    const onDesktop = planZoom({ ...base, tf: frame("15m"), bars: 60, factor: 1.35 });
-    expect(onPhone.tf.key).toBe("30m");
-    expect(onDesktop.tf.key).toBe("15m"); // still room on a wide plot
-    expect(onPhone.bars).toBeLessThanOrEqual(PHONE_LEGIBLE);
-  });
-
-  it("zooming in walks back down and keeps the buckets above the floor", () => {
-    let tf = frame("1w");
+  it("history caps it too — a young ticker cannot zoom past its own life", () => {
     let bars = 20;
-    for (let i = 0; i < 40; i++) {
-      const plan = planZoom({ ...base, tf, bars, offset: 0, factor: 1 / 1.35 });
-      tf = plan.tf;
-      bars = plan.bars;
-      expect(bars).toBeGreaterThanOrEqual(MIN_BARS);
+    for (let i = 0; i < 30; i++) {
+      bars = planZoom({ ...base, maxBars: 40, totalBars: 40, bars, factor: 1.35 }).bars;
     }
-    expect(tf.key).toBe("1s"); // all the way to the tape
+    expect(bars).toBe(40);
   });
 
-  it("stops climbing when the granularity outruns the history", () => {
-    // two days old: a weekly bucket is one bar and an empty axis
-    let tf = frame("15m");
-    let bars = tf.bars;
+  it("zooms back in to the floor and no further", () => {
+    let bars = DESKTOP_MAX;
     for (let i = 0; i < 40; i++) {
-      const plan = planZoom({
-        ...base,
-        historyMs: 2 * DAY,
-        tf,
-        bars,
-        offset: 0,
-        factor: 1.35,
-      });
-      tf = plan.tf;
-      bars = plan.bars;
+      bars = planZoom({ ...base, bars, factor: 1 / 1.35 }).bars;
     }
-    expect(2 * DAY / tf.ms).toBeGreaterThanOrEqual(MIN_BARS);
-    expect(["1h", "4h"]).toContain(tf.key);
+    expect(bars).toBe(MIN_BARS);
   });
 
-  it("is stable: zooming out then back in returns to the same frame", () => {
-    const start = { ...base, tf: frame("1h"), bars: 60, offset: 0 };
-    const out = planZoom({ ...start, factor: 1.35 });
-    const back = planZoom({ ...base, tf: out.tf, bars: out.bars, offset: out.offset, factor: 1 / 1.35 });
-    expect(back.tf.key).toBe(start.tf.key);
-    expect(back.bars).toBeGreaterThan(start.bars * 0.9);
-    expect(back.bars).toBeLessThan(start.bars * 1.1);
+  it("is reversible: out then in returns to where it started", () => {
+    const out = planZoom({ ...base, bars: 64, factor: 1.35 });
+    const back = planZoom({ ...base, bars: out.bars, offset: out.offset, factor: 1 / 1.35 });
+    expect(back.bars).toBe(64);
   });
 
-  it("never returns a negative offset or a bar count below the floor", () => {
-    for (const key of TIMEFRAMES.map((t) => t.key)) {
-      for (const factor of [0.1, 0.5, 1, 2, 10, 100]) {
-        const plan = planZoom({ ...base, tf: frame(key), bars: 40, offset: 5, factor });
+  it("pins the anchor: fx=1 holds the live edge, fx=0 holds the left", () => {
+    const right = planZoom({ ...base, bars: 60, offset: 0, factor: 2, fx: 1 });
+    expect(right.offset).toBe(0); // still against the live edge
+
+    const left = planZoom({ ...base, bars: 60, offset: 100, factor: 2, fx: 0 });
+    // the left edge sat 159 buckets back; doubling the window keeps it there
+    expect(left.offset).toBe(100 - 60);
+  });
+
+  it("never returns a negative offset or a bar count outside the bounds", () => {
+    for (const factor of [0.01, 0.5, 1, 2, 10, 1000]) {
+      for (const offset of [0, 5, 900]) {
+        const plan = planZoom({ ...base, bars: 40, offset, factor });
         expect(plan.bars).toBeGreaterThanOrEqual(MIN_BARS);
-        expect(plan.bars).toBeLessThanOrEqual(MAX_BARS);
+        expect(plan.bars).toBeLessThanOrEqual(DESKTOP_MAX);
         expect(plan.offset).toBeGreaterThanOrEqual(0);
         expect(Number.isFinite(plan.offset)).toBe(true);
       }
     }
   });
 
-  it("copes with an unknown reach", () => {
-    const plan = planZoom({ ...base, historyMs: null, tf: frame("15m"), bars: 300, factor: 1.35 });
-    expect(plan.bars).toBeGreaterThanOrEqual(MIN_BARS);
-    expect(Number.isFinite(plan.bars)).toBe(true);
+  it("survives a frame narrower than the floor", () => {
+    const plan = planZoom({ ...base, maxBars: 4, totalBars: 4, bars: 12, factor: 2 });
+    expect(plan.bars).toBe(MIN_BARS);
+    expect(plan.offset).toBe(0);
   });
 });
