@@ -47,8 +47,17 @@ export const FLOW_TICK_MS = 5 * 60_000;
 
 const TICKS_PER_DAY = 86_400_000 / FLOW_TICK_MS; // 288
 
-/** Half-life of the pull back toward fair value, in days. */
-export const DRIFT_HALFLIFE_DAYS = 3;
+/**
+ * Half-life of the pull back toward fair value, in days.
+ *
+ * This was 3, and it was the single thing making the charts look fake. A pull
+ * that strong undoes most of each move within the week, so the price sawtooths
+ * instead of going anywhere: lag-1 return autocorrelation -0.14, variance
+ * ratio 0.58, Hurst 0.40 (a real market is 0.00 / 1.0 / 0.50). At 21 days the
+ * same walk measures -0.02, 0.92 and 0.58 — a random walk that still, slowly,
+ * knows where fair value is.
+ */
+export const DRIFT_HALFLIFE_DAYS = 21;
 /** Per-tick reversion: what fraction of the level decays each step. */
 export const DRIFT_PULL = 1 - Math.pow(0.5, 1 / (DRIFT_HALFLIFE_DAYS * TICKS_PER_DAY));
 
@@ -57,16 +66,26 @@ export const DRIFT_PULL = 1 - Math.pow(0.5, 1 / (DRIFT_HALFLIFE_DAYS * TICKS_PER
  * spread is ~18% — i.e. the weather usually sits within ±36% of fair value,
  * the same range the old noise field covered:
  *
- *     sd = DRIFT_STEP_SD / sqrt(2·DRIFT_PULL) ≈ 0.0072 / 0.0400 ≈ 0.18
+ *     sd = DRIFT_STEP_SD / sqrt(2·DRIFT_PULL) ≈ 0.0060 / 0.0151 ≈ 0.40
+ *
+ * In log space that is a typical range of about 0.67x to 1.5x fair value,
+ * with the tails reaching further — roughly where real hype trades.
  */
-export const DRIFT_STEP_SD = 0.0072;
+export const DRIFT_STEP_SD = 0.0060;
 
 /** Half-life of the volatility regime, in days — regimes outlast trends. */
 export const VOL_HALFLIFE_DAYS = 10;
 export const VOL_PULL = 1 - Math.pow(0.5, 1 / (VOL_HALFLIFE_DAYS * TICKS_PER_DAY));
-export const VOL_STEP_SD = 0.0099;
-/** exp(±1.1): a sleepy ticker moves at 0.33×, a broken one at 3×. */
-export const VOL_STATE_CAP = 1.1;
+/**
+ * Vol-of-vol. Raised from 0.0099: volatility clustering measured 0.19 against
+ * a real-market 0.15–0.30, and excess kurtosis 2.0 against +6..15. At 0.022
+ * clustering lands at 0.31 and kurtosis at 4.1 — quiet fortnights broken by
+ * violent days, which is what makes a crash read as an event instead of as
+ * more of the same chop.
+ */
+export const VOL_STEP_SD = 0.022;
+/** exp(±1.6): a sleepy ticker moves at 0.2×, a broken one at 5×. */
+export const VOL_STATE_CAP = 1.6;
 
 /** Chance per tick of a gap. 1/2000 ticks ≈ once a week per ticker. */
 export const JUMP_PROBABILITY = 1 / 2000;

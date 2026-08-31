@@ -6,8 +6,9 @@ import {
   changeFraction,
   fairPrice,
   floatOf,
+  bridgeAmplitude,
+  bridgeNoise,
   flowPrice,
-  historyTexture,
   valuationMultiple,
   type RevenueEvent,
   type RevenuePoint,
@@ -281,23 +282,25 @@ export async function getPriceSeries(
     live: flowPrice(symbol, mrr, sentiment, now, multiple, shares, events, drift),
   });
 
-  // Texture-modulated interpolation, pinned to the real values at both ends:
-  // p(t) = lerp(real) × (1 + texture(t)) / lerp(1 + texture(endpoints))
+  // A BROWNIAN BRIDGE between each pair of real prices, in log space.
   //
-  // Only gaps of 30 minutes or more get filled, and the recorded tape is five
-  // minutes apart — so this never touches the recent window. It is strictly
+  // This used to be a straight line with smooth noise multiplied over it, and
+  // that is precisely what the charts looked like: long clean diagonals with a
+  // gentle wobble, joining one daily snapshot to the next. No amount of
+  // texture rescues a straight line, because the line is the problem — a real
+  // price does not travel from Monday to Tuesday in a ruled diagonal.
+  //
+  // A bridge is not decoration. It is the actual distribution a random walk
+  // takes given both of its endpoints, so it is jagged at every zoom, has no
+  // preferred scale, and still lands exactly on both recorded prices. Log
+  // space because a bridge in price space can go negative on a big gap, and
+  // because a halving and a doubling should be the same size of move.
+  //
+  // Only gaps of 30 minutes or more are filled, and the recorded tape is five
+  // minutes apart, so this never touches the recent window — it is strictly
   // the inside of a day-scale gap in old history, where the ticks have been
   // pruned and one snapshot a day is all that is left.
-  //
-  // Interpolation only fills the recent window. It costs ~40 points per daily
-  // gap, so filling a whole history and then keeping the tail — which is what
-  // this did — threw the OLD anchors away and left the chart drawing a flat
-  // line at the oldest surviving price for everything before it. Nobody saw
-  // that while zoom stopped at six days; it is months of fiction now that it
-  // doesn't. Every recorded anchor is kept, and detail is spent where it can
-  // actually be seen.
   const detailFrom = now - DETAIL_WINDOW_MS;
-  const flowAt = (t: number) => 1 + historyTexture(symbol, t, mrr);
   const series: ChartPoint[] = [];
   for (let i = 0; i < anchors.length; i++) {
     const a = anchors[i];
@@ -307,15 +310,19 @@ export async function getPriceSeries(
     const gap = b.t - a.t;
     if (gap < 30 * 60_000 || a.price <= 0 || b.price <= 0) continue;
     if (b.t < detailFrom) continue; // older than the window: the anchor alone
-    const steps = Math.min(40, Math.floor(gap / (10 * 60_000)));
-    const fa = flowAt(a.t);
-    const fb = flowAt(b.t);
+    const steps = Math.min(48, Math.floor(gap / (10 * 60_000)));
+    if (steps < 2) continue;
+    const logA = Math.log(a.price);
+    const logB = Math.log(b.price);
+    // one seed per gap, so a bridge is stable as long as its endpoints are
+    const seed = `${symbol}@${a.t}`;
+    const amp = bridgeAmplitude(gap, mrr, logB - logA);
     for (let k = 1; k < steps; k++) {
       const u = k / steps;
-      const t = a.t + gap * u;
-      const base = a.price + (b.price - a.price) * u;
-      const norm = fa + (fb - fa) * u;
-      series.push({ t, price: (base * flowAt(t)) / norm });
+      series.push({
+        t: a.t + gap * u,
+        price: Math.exp(logA + (logB - logA) * u + amp * bridgeNoise(seed, u)),
+      });
     }
   }
   return series.slice(-MAX_SERIES_POINTS);

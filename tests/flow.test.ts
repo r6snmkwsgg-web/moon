@@ -115,16 +115,51 @@ describe("the drift walk", () => {
     }
   });
 
-  it("holds the spread it was calibrated for (~18%)", () => {
+  it("holds the spread it was calibrated for (~40% in log space)", () => {
     // sd = DRIFT_STEP_SD / sqrt(2·DRIFT_PULL) for the neutral-volatility OU;
-    // stochastic vol widens it a little, jumps a little more.
+    // stochastic vol widens it, jumps widen it further. In log space 0.40 is
+    // a typical band of about 0.67x to 1.5x fair value, with tails past that
+    // — roughly where real hype trades. The old 0.18 with a three-day pull
+    // was a leash, and it showed: the price sawtoothed instead of going
+    // anywhere.
     const analytic = DRIFT_STEP_SD / Math.sqrt(2 * DRIFT_PULL);
-    expect(analytic).toBeGreaterThan(0.15);
-    expect(analytic).toBeLessThan(0.21);
+    expect(analytic).toBeGreaterThan(0.3);
+    expect(analytic).toBeLessThan(0.55);
 
     const observed = sd(walk(60_000, 8_000, 4242).slice(2_000));
-    expect(observed).toBeGreaterThan(0.08);
-    expect(observed).toBeLessThan(0.45);
+    expect(observed).toBeGreaterThan(0.1);
+    expect(observed).toBeLessThan(1.0);
+  });
+
+  it("REGRESSION: it wanders instead of sawtoothing", () => {
+    // The measurable difference between a market and a noise generator. A
+    // three-day half-life undid most of each move within the week: lag-1
+    // autocorrelation of daily returns -0.14 and a variance ratio of 0.58,
+    // where a real market sits at 0.00 and 1.0. Both are checked here because
+    // shortening the half-life again would silently bring the sawtooth back.
+    const series = walk(120 * 288, 5_000, 777);
+    const daily: number[] = [];
+    for (let d = 1; d * 288 < series.length; d++) {
+      daily.push(series[d * 288] - series[(d - 1) * 288]); // already log space
+    }
+    const m = daily.reduce((a, b) => a + b, 0) / daily.length;
+    let num = 0;
+    let den = 0;
+    for (let i = 0; i < daily.length; i++) {
+      den += (daily[i] - m) ** 2;
+      if (i >= 1) num += (daily[i] - m) * (daily[i - 1] - m);
+    }
+    expect(Math.abs(num / den)).toBeLessThan(0.12); // was -0.14
+
+    const agg: number[] = [];
+    for (let i = 0; i + 5 <= daily.length; i += 5) {
+      agg.push(daily.slice(i, i + 5).reduce((a, b) => a + b, 0));
+    }
+    const va = (xs: number[]) => {
+      const mm = xs.reduce((a, b) => a + b, 0) / xs.length;
+      return xs.reduce((a, b) => a + (b - mm) ** 2, 0) / xs.length;
+    };
+    expect(va(agg) / 5 / va(daily)).toBeGreaterThan(0.7); // was 0.58
   });
 
   it("moves enough per day to be worth trading", () => {

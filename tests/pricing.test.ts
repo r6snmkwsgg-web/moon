@@ -423,15 +423,32 @@ describe("the weather (drift + shimmer)", () => {
     expect(sell.total).toBeCloseTo(buy.total, 6);
   });
 
-  it("flowPrice is settled × shimmer, and never negative", () => {
+  it("flowPrice is settled × shimmer, with the weather in LOG space", () => {
     const t = Date.parse("2026-08-30T12:00:00Z");
     const p = flowPrice("INBX", 8_000, 0.2, t, 2.5, 10_000, [], 0.1);
     expect(p).toBeCloseTo(
-      livePrice(8_000, 0.2) * 1.1 * (1 + tapeJitter("INBX", t, 8_000)),
+      livePrice(8_000, 0.2) * Math.exp(0.1) * (1 + tapeJitter("INBX", t, 8_000)),
       10
     );
     expect(p).toBeGreaterThan(0);
     expect(flowPrice("INBX", 0, 0, t)).toBe(0);
+  });
+
+  it("REGRESSION: the weather can never take a price to or below zero", () => {
+    // (1 + drift) died at drift <= -1, which is the only reason the band had
+    // to be clamped tight — and a tight band with a short pull is an
+    // oscillator. exp() has no such floor, so the band could be opened up.
+    for (const drift of [-6, -1.4, -1, -0.999, 0, 1.4, 6]) {
+      const p = settledPrice(8_000, 0, Date.now(), 2.5, 10_000, [], drift);
+      expect(p).toBeGreaterThan(0);
+      expect(Number.isFinite(p)).toBe(true);
+    }
+    // and it is symmetric: a halving and a doubling are the same size move
+    const base = settledPrice(8_000, 0, Date.now(), 2.5, 10_000, [], 0);
+    const up = settledPrice(8_000, 0, Date.now(), 2.5, 10_000, [], Math.LN2);
+    const down = settledPrice(8_000, 0, Date.now(), 2.5, 10_000, [], -Math.LN2);
+    expect(up / base).toBeCloseTo(2, 10);
+    expect(base / down).toBeCloseTo(2, 10);
   });
 });
 
