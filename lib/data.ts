@@ -1395,6 +1395,10 @@ export async function getRecapStats(): Promise<RecapStats> {
       .order("month", { ascending: true });
     const history = historyByTicker((all ?? []) as MrrUpdate[]);
     const since = new Date(Date.now() - 7 * 86400_000).toISOString();
+    // One entry per COMPANY, not per update. A ticker that posted twice in a
+    // week was listed twice — duplicate React keys, and worse, it ate two of
+    // the three slots below and pushed another company off the recap.
+    const biggest = new Map<string, RecapStats["mrrMoves"][number]>();
     for (const u of (all ?? []) as MrrUpdate[]) {
       if (u.created_at < since) continue;
       const quote = byId.get(u.ticker_id);
@@ -1402,8 +1406,13 @@ export async function getRecapStats(): Promise<RecapStats> {
       const months = history.get(u.ticker_id) ?? [];
       const i = months.findIndex((m) => m.month === u.month);
       if (i < 1) continue;
-      mrrMoves.push({ quote, from: months[i - 1].mrr, to: Number(u.mrr) });
+      const move = { quote, from: months[i - 1].mrr, to: Number(u.mrr) };
+      const swing = (m: RecapStats["mrrMoves"][number]) =>
+        m.from > 0 ? Math.abs(m.to - m.from) / m.from : 0;
+      const held = biggest.get(u.ticker_id);
+      if (!held || swing(move) > swing(held)) biggest.set(u.ticker_id, move);
     }
+    mrrMoves.push(...biggest.values());
     mrrMoves.sort(
       (a, b) =>
         Math.abs(changeFraction(b.from, b.to)) -
@@ -1443,4 +1452,29 @@ export async function getRecapStats(): Promise<RecapStats> {
     mostTraded: mostTraded.slice(0, 3),
     weekStart,
   };
+}
+
+/**
+ * Cheap existence checks for the two [param] routes.
+ *
+ * They run inside generateMetadata, which resolves before the body streams —
+ * the last moment a 404 status can still be set. head:true means Postgres
+ * counts rather than returning the row.
+ */
+export async function tickerExists(symbol: string): Promise<boolean> {
+  const admin = createSupabaseAdminClient();
+  const { count } = await admin
+    .from("tickers")
+    .select("*", { count: "exact", head: true })
+    .ilike("symbol", symbol);
+  return (count ?? 0) > 0;
+}
+
+export async function profileExists(username: string): Promise<boolean> {
+  const admin = createSupabaseAdminClient();
+  const { count } = await admin
+    .from("profiles")
+    .select("*", { count: "exact", head: true })
+    .ilike("username", username);
+  return (count ?? 0) > 0;
 }

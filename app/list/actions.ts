@@ -182,19 +182,39 @@ export async function listStartup(
     mrr,
     source: "stripe",
   });
-  await admin.from("stripe_connections").insert({
+  const legacyConnection = {
     ticker_id: ticker.id,
-    method: grant ? "oauth" : "key",
-    // an OAuth connection stores no credential at all — just which account
-    stripe_account_id: grant?.accountId ?? null,
-    connect_scope: grant?.scope ?? null,
     encrypted_key: grant ? null : encryptStripeKey(stripeKey),
     key_last4: grant ? null : stripeKey.slice(-4),
     livemode,
     connected_by: user.id,
     last_synced_at: new Date().toISOString(),
     last_mrr: mrr,
+  };
+  const { error: connErr } = await admin.from("stripe_connections").insert({
+    ...legacyConnection,
+    method: grant ? "oauth" : "key",
+    // an OAuth connection stores no credential at all — just which account
+    stripe_account_id: grant?.accountId ?? null,
+    connect_scope: grant?.scope ?? null,
   });
+  if (connErr && /method|stripe_account_id|connect_scope/.test(connErr.message)) {
+    // 0006 hasn't been applied. A pasted key predates those columns and still
+    // stores fine, so the founder's IPO goes through unchanged; an OAuth
+    // connection has nowhere to record WHICH account it is, and a row that
+    // cannot be read from later is worse than a clear refusal.
+    if (grant) {
+      await admin.from("tickers").delete().eq("id", ticker.id);
+      return {
+        error:
+          "Stripe Connect isn't finished setting up on this deployment yet — paste a read-only key instead, or try again later.",
+      };
+    }
+    await admin.from("stripe_connections").insert(legacyConnection);
+  } else if (connErr) {
+    await admin.from("tickers").delete().eq("id", ticker.id);
+    return { error: "Couldn't save the Stripe connection — nothing was listed." };
+  }
   if (grant) await clearConnectGrant();
   await admin.from("price_snapshots").upsert(
     {

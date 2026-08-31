@@ -9,6 +9,7 @@ import {
   getXpMap,
 } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
+import { profileExists } from "@/lib/data";
 import { fmtMoney } from "@/lib/format";
 import { STARTING_CASH, APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import { MARKET_TZ_LABEL } from "@/lib/market-time";
@@ -25,6 +26,8 @@ type Props = { params: Promise<{ username: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username } = await params;
+  // as on the ticker page: the last point at which a 404 status can be set
+  if (!(await profileExists(username))) notFound();
   return {
     title: `@${username}`,
     description: `@${username}'s play-money portfolio on ${APP_NAME}. ${GUARDRAIL_TEXT}`,

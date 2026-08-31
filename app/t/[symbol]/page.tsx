@@ -6,6 +6,7 @@ import {
   getTickerPage,
   getTickerPosts,
   getVoteGauge,
+  tickerExists,
 } from "@/lib/data";
 import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { fmtCompact, fmtMonth, fmtPct, currentMonthISO } from "@/lib/format";
@@ -47,6 +48,11 @@ type Props = {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { symbol } = await params;
   const sym = symbol.toUpperCase();
+  // Metadata resolves BEFORE the body streams, so this is the last place a
+  // 404 status can still be set. Without the check here the page rendered
+  // the not-found screen under a 200 and a real-looking "$NOPE" title, and
+  // crawlers would happily index every mistyped ticker as a live company.
+  if (!(await tickerExists(sym))) notFound();
   return {
     title: `$${sym}`,
     description: `$${sym} on ${APP_NAME} — a fantasy stock market for indie SaaS. ${GUARDRAIL_TEXT}`,

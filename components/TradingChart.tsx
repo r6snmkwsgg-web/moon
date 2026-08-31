@@ -179,6 +179,18 @@ export default function TradingChart({
     return () => ro.disconnect();
   }, []);
 
+  // Escape closes the timeframe menu. Click-away already worked, but a menu
+  // that only closes by mouse strands anyone on a keyboard behind its
+  // full-screen backdrop.
+  useEffect(() => {
+    if (!tfOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setTfOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [tfOpen]);
+
   // live tape: re-tick at a cadence matched to the granularity
   useEffect(() => {
     setNow(Date.now());

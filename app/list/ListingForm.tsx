@@ -78,6 +78,42 @@ export default function ListingForm({
     if (state.error) setStep(2);
   }, [state]);
 
+  /*
+   * Coming back from Stripe. The callback bounces here with ?stripe=<outcome>,
+   * so this picks the parked draft back up, reports what happened, and drops
+   * the query so a refresh doesn't replay the banner.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("stripe");
+    if (!outcome) return;
+
+    try {
+      const raw = sessionStorage.getItem(DRAFT);
+      if (raw) {
+        const d = JSON.parse(raw) as Record<string, string>;
+        if (d.symbol) setSymbol(d.symbol);
+        if (d.name) setName(d.name);
+        if (d.pitch) setPitch(d.pitch);
+        if (d.handle) setHandle(d.handle);
+        if (d.logoUrl) setLogoUrl(d.logoUrl);
+        sessionStorage.removeItem(DRAFT);
+      }
+    } catch {
+      // private mode, or nothing parked — the fields just stay empty
+    }
+
+    if (outcome === "connected") {
+      setConnected(params.get("acct") ?? "connected");
+    } else {
+      setConnectError(
+        CONNECT_ERRORS[outcome] ?? "Stripe connection failed — try again."
+      );
+    }
+    setStep(1);
+    window.history.replaceState({}, "", "/list");
+  }, []);
+
   // debounced symbol availability
   useEffect(() => {
     if (checkTimer.current) clearTimeout(checkTimer.current);
