@@ -278,6 +278,78 @@ export interface StripeRevenue {
   currencies?: string[];
 }
 
+/** One market day's takings, in minor units. */
+export interface DayTakings {
+  day: string; // market-day key, "YYYY-MM-DD"
+  grossMinor: number;
+  netMinor: number;
+  payments: number;
+}
+
+/** What one Stripe charge contributes, net of anything refunded on it. */
+export interface ChargeLike {
+  created?: number; // unix seconds
+  amount?: number;
+  amount_captured?: number;
+  amount_refunded?: number;
+  currency?: string;
+  status?: string;
+  paid?: boolean;
+  captured?: boolean;
+}
+
+/**
+ * Roll a page of Stripe charges into per-market-day takings.
+ *
+ * Pure, so the rules are testable without reaching for the network — and the
+ * rules are the whole point:
+ *
+ *   · only SUCCEEDED charges count. This account had $805.97 of failed
+ *     payments against $815.40 succeeded; counting attempts would have
+ *     doubled its revenue.
+ *   · gross is what was captured, net takes off whatever was refunded on that
+ *     charge. A refund is money that left again.
+ *   · uncaptured authorisations are not revenue. They may never be taken.
+ *   · the day is the MARKET day, the same boundary the charts use, so an 8pm
+ *     ET payment does not land on tomorrow for one and today for the other.
+ */
+export function summarisePayments(
+  charges: ChargeLike[],
+  dayKey: (t: number) => string
+): { days: DayTakings[]; currencies: string[] } {
+  const byDay = new Map<string, DayTakings>();
+  const currencies = new Set<string>();
+
+  for (const c of charges ?? []) {
+    if (c.status !== "succeeded" || c.paid === false) continue;
+    if (c.captured === false) continue; // an authorisation, not a payment
+    const created = Number(c.created);
+    if (!Number.isFinite(created) || created <= 0) continue;
+
+    const captured = Number(c.amount_captured ?? c.amount ?? 0);
+    if (!Number.isFinite(captured) || captured <= 0) continue;
+    const refunded = Math.max(0, Number(c.amount_refunded ?? 0) || 0);
+
+    const day = dayKey(created * 1000);
+    const row = byDay.get(day) ?? {
+      day,
+      grossMinor: 0,
+      netMinor: 0,
+      payments: 0,
+    };
+    row.grossMinor += captured;
+    row.netMinor += captured - Math.min(refunded, captured);
+    row.payments += 1;
+    byDay.set(day, row);
+    if (typeof c.currency === "string") currencies.add(c.currency);
+  }
+
+  return {
+    days: [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)),
+    currencies: [...currencies],
+  };
+}
+
 /**
  * One subscription's contribution to MRR, in minor units (cents).
  *
@@ -347,6 +419,46 @@ function applyDiscounts(sub: Record<string, unknown>, minor: number): number {
     if (Number.isFinite(amountOff) && amountOff > 0) out -= amountOff;
   }
   return Math.max(0, out);
+}
+
+/**
+ * Every succeeded charge since `sinceMs`, rolled into per-market-day takings.
+ *
+ * This is the reader the market runs on now. The subscriptions endpoint only
+ * ever saw recurring revenue, which is why a business selling one-time
+ * licences could not be listed and a subscription business's busiest day
+ * registered as nothing at all.
+ */
+export async function readStripePayments(
+  auth: StripeAuth,
+  sinceMs: number,
+  dayKey: (t: number) => string,
+  maxPages = 20
+): Promise<{ days: DayTakings[]; currencies: string[] }> {
+  const all: ChargeLike[] = [];
+  let startingAfter: string | null = null;
+
+  for (let page = 0; page < maxPages; page++) {
+    const params = new URLSearchParams({
+      limit: "100",
+      "created[gte]": String(Math.floor(sinceMs / 1000)),
+    });
+    if (startingAfter) params.set("starting_after", startingAfter);
+    const { status, json } = await stripeFetch(
+      auth,
+      `/charges?${params.toString()}`
+    );
+    if (status !== 200) {
+      throw new Error(`Stripe charges read failed (${status})`);
+    }
+    const rows = (json.data ?? []) as Array<Record<string, unknown>>;
+    all.push(...(rows as ChargeLike[]));
+    if (!json.has_more || rows.length === 0) break;
+    startingAfter = String(rows[rows.length - 1].id ?? "");
+    if (!startingAfter) break;
+  }
+
+  return summarisePayments(all, dayKey);
 }
 
 /**

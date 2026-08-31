@@ -46,21 +46,36 @@ export default function HowPage() {
             it issued at IPO:
           </p>
           <p className="num rounded-md border border-terminal-amber/20 bg-terminal-bg px-4 py-3.5 text-center font-mono text-sm font-semibold tracking-tight text-terminal-amber sm:text-base">
-            fair_price = (MRR × 12 × multiple) ÷ shares
+            fair_price = (monthly revenue × 12 × multiple) ÷ shares
+          </p>
+          <p className="text-terminal-muted">
+            <b>Every payment counts</b> — a renewal, a first charge, a
+            one-time licence. The monthly figure is the run rate implied by
+            money actually received, net of refunds, averaged so a single big
+            sale lifts it and then fades rather than dropping off a cliff a
+            month later. Failed and blocked attempts are not revenue.
+          </p>
+          <p className="text-terminal-muted">
+            It used to anchor on MRR alone, and that was wrong twice over: it
+            shut out every business that doesn&apos;t bill on a subscription,
+            and even for the ones that do it missed most of what happened —
+            a renewal changes no run rate, so a founder could collect all day
+            and watch their ticker sit still. A subscription business lands in
+            the same place either way, because a month of renewals averages
+            out to its MRR.
           </p>
           <p className="text-terminal-muted">
             A listing picks its share count so the first print lands near{" "}
             {fmtPrice(TARGET_OPENING_PRICE)} — the same reason real companies
             choose one. It changes nothing about what the company is worth:
-            market cap is MRR × 12 × multiple however many slices it is cut
-            into. One account may hold at most{" "}
+            market cap is revenue × 12 × multiple however many slices it is
+            cut into. One account may hold at most{" "}
             {Math.round(MAX_POSITION_FRACTION * 100)}% of a float, so nobody
             corners a listing and ends its market.
           </p>
           <p className="text-terminal-muted">
-            When a founder&apos;s MRR updates — auto-synced from Stripe
-            monthly, or posted manually — the anchor reprices instantly.
-            That&apos;s the earnings report.
+            Stripe is re-read every five minutes, so the anchor moves as the
+            money lands. That&apos;s the earnings report, and it never stops.
           </p>
         </div>
 

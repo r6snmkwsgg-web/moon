@@ -263,11 +263,24 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 />,
               ],
               [
-                "MRR (live)",
+                // "MRR" was only ever true for subscription businesses, and
+                // the anchor is every payment now — a renewal, a first
+                // charge, a one-time licence all count the same
+                quote.revenueSource === "payments"
+                  ? "Revenue / mo"
+                  : quote.revenueSource === "subscriptions"
+                    ? "MRR (live)"
+                    : "MRR (reported)",
                 quote.liveMrr > 0 ? fmtCompact(quote.liveMrr) : "—",
               ],
-              ["ARR", fmtCompact(quote.arr)],
-              ["Multiple", `${quote.multiple.toFixed(1)}× ARR`],
+              [
+                quote.revenueSource === "payments" ? "Revenue / yr" : "ARR",
+                fmtCompact(quote.arr),
+              ],
+              [
+                "Multiple",
+                `${quote.multiple.toFixed(1)}× ${quote.revenueSource === "payments" ? "rev" : "ARR"}`,
+              ],
               ["Float", `${quote.shares.toLocaleString("en-US")} shs`],
               [
                 "Volume today",

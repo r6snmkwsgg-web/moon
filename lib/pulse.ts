@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { authForConnection, readStripeRevenue } from "@/lib/stripe";
+import {
+  authForConnection,
+  readStripePayments,
+  readStripeRevenue,
+} from "@/lib/stripe";
+import { marketDayKey } from "@/lib/market-time";
 import { recordTickerSnapshot } from "@/lib/snapshot";
 import { audienceForTicker, notifyUsers } from "@/lib/notify";
 import { fmtCompact, fmtPct } from "@/lib/format";
@@ -24,6 +29,7 @@ interface Connection {
   status: string;
   last_mrr: number | null;
   live_mrr: number | null;
+  revenue_backfilled?: boolean | null;
   live_subscriptions: number | null;
   live_synced_at: string | null;
 }
@@ -59,6 +65,67 @@ export function classify(
  *
  * Never throws — a failed poll leaves the last known revenue in place.
  */
+/** How far the first sync reaches back for a newly connected account. */
+export const REVENUE_BACKFILL_DAYS = 120;
+/** How far every later poll re-reads, so late refunds and captures land. */
+export const REVENUE_WINDOW_DAYS = 3;
+
+/**
+ * Record what a connected account actually collected, per market day.
+ *
+ * Every succeeded charge counts — a renewal, a first payment, a one-time
+ * licence — because that is the whole point: MRR only ever saw recurring
+ * revenue, so a founder could take payments all day and watch their ticker
+ * sit still.
+ *
+ * Re-reading a short trailing window on every poll rather than only today is
+ * deliberate: refunds and disputes land days after the charge, and a day is
+ * not final the moment it ends.
+ */
+export async function recordDailyRevenue(
+  admin: SupabaseClient,
+  conn: Connection,
+  now = Date.now()
+): Promise<number> {
+  const backfilled = conn.revenue_backfilled === true;
+  const days = backfilled ? REVENUE_WINDOW_DAYS : REVENUE_BACKFILL_DAYS;
+  const since = now - days * 86_400_000;
+
+  const { days: takings, currencies } = await readStripePayments(
+    authForConnection(conn),
+    since,
+    marketDayKey
+  );
+
+  if (takings.length > 0) {
+    const rows = takings.map((d) => ({
+      ticker_id: conn.ticker_id,
+      day: d.day,
+      gross_minor: d.grossMinor,
+      net_minor: d.netMinor,
+      payments: d.payments,
+      currency: currencies.length === 1 ? currencies[0] : null,
+      synced_at: new Date(now).toISOString(),
+    }));
+    for (let i = 0; i < rows.length; i += 200) {
+      const { error } = await admin
+        .from("daily_revenue")
+        .upsert(rows.slice(i, i + 200), { onConflict: "ticker_id,day" });
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  await admin
+    .from("stripe_connections")
+    .update({
+      revenue_synced_at: new Date(now).toISOString(),
+      revenue_backfilled: true,
+    })
+    .eq("ticker_id", conn.ticker_id);
+
+  return takings.length;
+}
+
 export async function pollRevenuePulse(
   admin: SupabaseClient,
   opts: { tickerId?: string; force?: boolean } = {}
@@ -98,6 +165,18 @@ export async function pollRevenuePulse(
     if (!opts.force && age < PULSE_INTERVAL_MS) continue;
 
     out.checked++;
+
+    // money received, which is what the price anchors on. Kept separate from
+    // the subscription read so a failure in one does not lose the other, and
+    // tolerated entirely: 0008 may not be applied yet, and a missing revenue
+    // row must never stop a ticker trading.
+    try {
+      await recordDailyRevenue(admin, conn, now);
+    } catch {
+      // pre-migration, or Stripe refused the charges scope — the anchor falls
+      // back to subscriptions on its own
+    }
+
     let reading;
     try {
       reading = await readStripeRevenue(authForConnection(conn));

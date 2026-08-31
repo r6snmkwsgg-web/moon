@@ -14,6 +14,8 @@ import {
   type RevenuePoint,
 } from "@/lib/pricing";
 import { mergeAnchors } from "@/lib/candles";
+import { anchorRevenue } from "@/lib/revenue";
+import type { DailyRevenue } from "@/lib/surprise";
 import { STARTING_CASH } from "@/lib/config";
 import { getRevenueEvents } from "@/lib/pulse";
 import type { EquityHolding, EquityTrade } from "@/lib/equity";
@@ -36,9 +38,11 @@ const SPARK_DAYS = 30;
 export interface LiveRevenue {
   liveMrr: number | null;
   events: RevenueEvent[];
+  /** Money actually received, per market day, newest last. */
+  daily: DailyRevenue[];
 }
 
-const NO_LIVE: LiveRevenue = { liveMrr: null, events: [] };
+const NO_LIVE: LiveRevenue = { liveMrr: null, events: [], daily: [] };
 
 /**
  * Live revenue for every connected ticker: the current Stripe number and the
@@ -50,7 +54,7 @@ export async function getLiveRevenue(
 ): Promise<Map<string, LiveRevenue>> {
   const admin = createSupabaseAdminClient();
   const out = new Map<string, LiveRevenue>();
-  const [connsRes, eventsRes] = await Promise.all([
+  const [connsRes, eventsRes, dailyRes] = await Promise.all([
     admin.from("stripe_connections").select("*").eq("status", "active"),
     admin
       .from("revenue_events")
@@ -58,6 +62,17 @@ export async function getLiveRevenue(
       .gte("at", new Date(Date.now() - sinceMs).toISOString())
       .order("at", { ascending: true })
       .limit(1000),
+    // the takings the price anchors on. A long window regardless of sinceMs:
+    // the run rate is an average over weeks, not a recent-events feed.
+    admin
+      .from("daily_revenue")
+      .select("ticker_id, day, net_minor")
+      .gte(
+        "day",
+        new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10)
+      )
+      .order("day", { ascending: true })
+      .limit(5000),
   ]);
 
   for (const c of (connsRes.data ?? []) as {
@@ -68,6 +83,7 @@ export async function getLiveRevenue(
     out.set(c.ticker_id, {
       liveMrr: live === null ? null : Number(live),
       events: [],
+      daily: [],
     });
   }
   for (const e of (eventsRes.data ?? []) as {
@@ -77,7 +93,7 @@ export async function getLiveRevenue(
     mrr: number;
     prev_subscriptions: number | null;
   }[]) {
-    const entry = out.get(e.ticker_id) ?? { liveMrr: null, events: [] };
+    const entry = out.get(e.ticker_id) ?? { liveMrr: null, events: [], daily: [] };
     entry.events.push({
       at: Date.parse(e.at),
       mrr: Number(e.mrr),
@@ -85,6 +101,17 @@ export async function getLiveRevenue(
       catchUp: e.prev_subscriptions === null,
     });
     out.set(e.ticker_id, entry);
+  }
+  // absent until 0008 is applied and the poller has run once, in which case
+  // the anchor falls back to subscriptions exactly as before
+  for (const r of (dailyRes.data ?? []) as {
+    ticker_id: string;
+    day: string;
+    net_minor: number;
+  }[]) {
+    const entry = out.get(r.ticker_id) ?? { liveMrr: null, events: [], daily: [] };
+    entry.daily.push({ day: r.day, amount: Number(r.net_minor) / 100 });
+    out.set(r.ticker_id, entry);
   }
   return out;
 }
@@ -118,9 +145,18 @@ function buildQuote(
   const multiple = valuationMultiple(history);
   // each listing sized its own float at IPO; older rows use the default
   const shares = floatOf(ticker.shares_outstanding);
-  // the price trades on what Stripe says NOW; latestMrr is the last report
-  const liveMrr =
-    live.liveMrr !== null && live.liveMrr > 0 ? live.liveMrr : latestMrr;
+  // EVERY PAYMENT, not just the recurring ones. The anchor is the monthly run
+  // rate implied by money actually received; it falls back to the
+  // subscriptions number until there is enough of it, and to the last report
+  // if the account is not connected at all. A subscription business lands in
+  // the same place either way — a month of renewals averages to its MRR — and
+  // a shop selling one-time licences becomes tradeable, which it never was.
+  const anchor = anchorRevenue({
+    daily: live.daily,
+    stripeMrr: live.liveMrr,
+    reportedMrr: latestMrr,
+  });
+  const liveMrr = anchor.monthly;
   const events = live.events;
   // the recorded weather: whatever the poller last drew for this ticker
   const drift = Number(ticker.drift ?? 0);
@@ -174,6 +210,7 @@ function buildQuote(
     weekChange: weekBase ? changeFraction(Number(weekBase.price), price) : 0,
     spark: [...spark, price], // live price as the final point
     drift, // clients recompute the live price off this, not off a formula
+    revenueSource: anchor.source,
   };
 }
 

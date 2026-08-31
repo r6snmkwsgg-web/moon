@@ -104,6 +104,17 @@ export function fmtMarketTime(t: number): string {
 }
 
 /** "Aug 30, 3:04 PM" */
+/**
+ * The market day an instant belongs to, as "YYYY-MM-DD".
+ *
+ * Bucketing revenue needs the same boundary every chart and every day-change
+ * already uses, or a payment at 8pm ET lands on tomorrow for the tape and
+ * today for the ledger.
+ */
+export function marketDayKey(t: number): string {
+  return new Date(marketDayStart(t)).toISOString().slice(0, 10);
+}
+
 export function fmtMarketDateTime(t: number): string {
   return DATETIME.format(new Date(t));
 }

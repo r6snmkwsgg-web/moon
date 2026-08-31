@@ -140,6 +140,9 @@ export interface TickerQuote {
   dayChange: number; // fraction, e.g. 0.052
   weekChange: number;
   spark: number[]; // recent snapshot prices, oldest → newest
+  /** Where the anchor number came from — payments, subscriptions, or the
+   *  last monthly report. */
+  revenueSource: "payments" | "subscriptions" | "reported";
   /**
    * The recorded weather at render time — the drift the poller last drew for
    * this ticker. Clients need it because they can no longer derive it: the
