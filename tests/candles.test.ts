@@ -3,6 +3,7 @@ import {
   axisTimeLabel,
   buildCandles,
   makePriceAt,
+  mergeAnchors,
   MIN_BARS,
   niceTimeStep,
   planZoom,
@@ -176,5 +177,103 @@ describe("planZoom", () => {
     const plan = planZoom({ ...base, maxBars: 4, totalBars: 4, bars: 12, factor: 2 });
     expect(plan.bars).toBe(MIN_BARS);
     expect(plan.offset).toBe(0);
+  });
+});
+
+/* ── anchors: which points are real, and in what order ───────────────────── */
+
+describe("mergeAnchors", () => {
+  const NOW = Date.parse("2026-08-31T05:26:00Z"); // before 06:00, the bad window
+  const base = { snapshots: [], trades: [], ticks: [], now: NOW, live: 27.8 };
+
+  it("REGRESSION: today's snapshot never lands in the future", () => {
+    // The bug, exactly as it shipped: at 05:26 UTC today's row was pinned to
+    // 06:00 — 34 minutes ahead of now — at $30.16 against a live tape of
+    // $27.80. It sorted last, so makePriceAt treated it as the newest real
+    // price and interpolated the whole right edge toward it. Every one of 21
+    // tickers had it; the worst was 44% out.
+    const out = mergeAnchors({
+      ...base,
+      snapshots: [
+        { day: "2026-08-30", price: 29.55 },
+        { day: "2026-08-31", price: 30.16 },
+      ],
+    });
+    expect(out.every((a) => a.t <= NOW)).toBe(true);
+    expect(out.map((a) => a.price)).not.toContain(30.16);
+    expect(out[out.length - 1]).toEqual({ t: NOW, price: 27.8 });
+  });
+
+  it("drops today's row even in the afternoon, when the pin is hours stale", () => {
+    const afternoon = Date.parse("2026-08-31T20:00:00Z");
+    const out = mergeAnchors({
+      ...base,
+      now: afternoon,
+      snapshots: [{ day: "2026-08-31", price: 30.16 }],
+    });
+    // the 06:00 pin is in the past now, but the price is from 20:00 — placing
+    // it fourteen hours early is its own lie
+    expect(out).toHaveLength(1);
+    expect(out[0].t).toBe(afternoon);
+  });
+
+  it("keeps every finished day, pinned to its own 06:00", () => {
+    const out = mergeAnchors({
+      ...base,
+      snapshots: [
+        { day: "2026-08-29", price: 17.9 },
+        { day: "2026-08-30", price: 29.55 },
+      ],
+    });
+    expect(out).toHaveLength(3);
+    expect(out[0].t).toBe(Date.parse("2026-08-29T06:00:00Z"));
+    expect(out[1].t).toBe(Date.parse("2026-08-30T06:00:00Z"));
+  });
+
+  it("nothing outlives the live point, whatever the row says", () => {
+    const out = mergeAnchors({
+      ...base,
+      trades: [
+        { at: NOW - 60_000, price: 27.5 },
+        { at: NOW + 60_000, price: 99 }, // a clock that ran ahead
+        { at: NOW, price: 88 }, // exactly now is still not after now
+      ],
+      ticks: [{ at: NOW + 600_000, price: 77 }],
+    });
+    expect(out.map((a) => a.price)).toEqual([27.5, 27.8]);
+  });
+
+  it("interleaves prints and ticks in time order", () => {
+    const out = mergeAnchors({
+      ...base,
+      snapshots: [{ day: "2026-08-30", price: 29.55 }],
+      trades: [{ at: Date.parse("2026-08-30T19:28:00Z"), price: 29.23 }],
+      ticks: [
+        { at: Date.parse("2026-08-31T04:30:00Z"), price: 27.5 },
+        { at: Date.parse("2026-08-31T05:22:00Z"), price: 27.8 },
+      ],
+    });
+    expect(out.map((a) => a.price)).toEqual([29.55, 29.23, 27.5, 27.8, 27.8]);
+    for (let i = 1; i < out.length; i++) {
+      expect(out[i].t).toBeGreaterThanOrEqual(out[i - 1].t);
+    }
+  });
+
+  it("throws away junk rather than drawing it", () => {
+    const out = mergeAnchors({
+      ...base,
+      trades: [
+        { at: NOW - 1000, price: NaN },
+        { at: NOW - 2000, price: 0 },
+        { at: NOW - 3000, price: -5 },
+        { at: NaN, price: 20 },
+        { at: NOW - 4000, price: 26 },
+      ],
+    });
+    expect(out.map((a) => a.price)).toEqual([26, 27.8]);
+  });
+
+  it("an empty board is still a one-point series, not a crash", () => {
+    expect(mergeAnchors(base)).toEqual([{ t: NOW, price: 27.8 }]);
   });
 });

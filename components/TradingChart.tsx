@@ -39,8 +39,12 @@ const GRID = "#182236";
 
 // MIN_BARS / MAX_BARS live in lib/candles beside planZoom, which is the code
 // that actually reasons about them.
-/** Below this many pixels per bucket a candle is a smear; draw a line instead. */
-const CANDLE_MIN_STEP = 3;
+/**
+ * Below this many pixels per bucket a candle is a smear; draw a line instead.
+ * 2px rather than 3 because on a retina panel that is still 4–6 device pixels
+ * of body and it buys 50% more candles before the handover.
+ */
+const CANDLE_MIN_STEP = 2;
 /** Width of the price axis gutter — subtracted from the wrapper to get plot width. */
 const PAD_R = 52;
 
@@ -141,14 +145,12 @@ export default function TradingChart({
   // reaches the whole history in one gesture and is completely useless when
   // what you wanted was to look at seconds. The frame is the selector's job.)
   //
-  // The limit is what this plot can actually draw. Past CANDLE_MIN_STEP a
-  // candle is a smear, so that is where zoom-out ends; in explicit line mode
-  // there is no smear to worry about, so it runs to MAX_BARS.
-  const drawableBars = dims
-    ? Math.max(MIN_BARS, Math.floor((dims.w - PAD_R) / CANDLE_MIN_STEP))
-    : MAX_BARS;
-  const barCeiling = mode === "line" ? MAX_BARS : drawableBars;
-  const maxBars = Math.max(tf.bars, Math.min(barCeiling, totalBars));
+  // The limit is MAX_BARS, or the ticker's whole life on this frame if that
+  // comes first. Candles are drawn while they still fit at CANDLE_MIN_STEP and
+  // the line takes over past that (labelled "zoomed out" in the legend), so
+  // running out of candle room is not a reason to stop zooming — it never
+  // changes the frame, which is the part that matters.
+  const maxBars = Math.max(tf.bars, Math.min(MAX_BARS, totalBars));
   const viewBars = Math.round(
     Math.min(maxBars, Math.max(MIN_BARS, view?.bars ?? tf.bars))
   );

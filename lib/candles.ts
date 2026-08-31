@@ -66,7 +66,13 @@ export function refreshIntervalFor(tf: Timeframe): number {
 
 /** Zoomed-in floor and ceiling on how many buckets a frame may show. */
 export const MIN_BARS = 12;
-export const MAX_BARS = 1000;
+/**
+ * The most buckets one frame will ever draw. This is a compute budget, not a
+ * design choice: past the candle-legibility step the chart draws a line, and a
+ * line of N points costs one path, so the only real cost is sampling the price
+ * function N times. Measured in a browser before it was raised.
+ */
+export const MAX_BARS = 2500;
 
 export interface ZoomPlan {
   bars: number;
@@ -114,6 +120,63 @@ export function planZoom(input: ZoomInput): ZoomPlan {
       )
     ),
   };
+}
+
+export interface AnchorSources {
+  /** Daily rows, ascending. Each is pinned at 06:00 UTC of its own day. */
+  snapshots: { day: string; price: number }[];
+  /** Every print, ascending, as epoch ms. */
+  trades: { at: number; price: number }[];
+  /** The recorded five-minute walk, ascending, as epoch ms. */
+  ticks: { at: number; price: number }[];
+  /** The instant the page was rendered. */
+  now: number;
+  /** The live price at that instant. */
+  live: number;
+}
+
+/**
+ * Every real point the chart is drawn through, in order, ending at the live
+ * price. Pure, and tested, because getting this wrong is invisible in code
+ * review and unmistakable on screen.
+ *
+ * Two rules earn their keep:
+ *
+ *   · TODAY'S SNAPSHOT IS NOT A 06:00 READING. The daily cron writes it at
+ *     06:00 UTC, but recordTickerSnapshot rewrites it after every trade and
+ *     every pulse — so its price is "as of the last write" while the 06:00 pin
+ *     would place it in the FUTURE all morning and hours stale all evening.
+ *     Measured across a 21-ticker board it sat up to 44% off the live tape,
+ *     and being last in sort order it became makePriceAt's `last`, dragging
+ *     the entire right edge toward a price that was never on the tape. Today
+ *     is covered by the ticks, the prints and the live point; the row adds
+ *     nothing but that spike.
+ *   · NOTHING OUTLIVES THE LIVE POINT. Whatever a clock or a row claims, the
+ *     live price is the last word.
+ */
+export function mergeAnchors({
+  snapshots,
+  trades,
+  ticks,
+  now,
+  live,
+}: AnchorSources): ChartPoint[] {
+  const todayUTC = new Date(now).toISOString().slice(0, 10);
+  const out: ChartPoint[] = [];
+  const keep = (t: number, price: number) => {
+    if (t < now && Number.isFinite(t) && Number.isFinite(price) && price > 0) {
+      out.push({ t, price });
+    }
+  };
+  for (const s of snapshots) {
+    if (s.day >= todayUTC) continue;
+    keep(Date.parse(`${s.day}T06:00:00Z`), Number(s.price));
+  }
+  for (const r of trades) keep(r.at, Number(r.price));
+  for (const k of ticks) keep(k.at, Number(k.price));
+  out.sort((a, b) => a.t - b.t);
+  out.push({ t: now, price: live });
+  return out;
 }
 
 /**

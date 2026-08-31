@@ -12,6 +12,7 @@ import {
   type RevenueEvent,
   type RevenuePoint,
 } from "@/lib/pricing";
+import { mergeAnchors } from "@/lib/candles";
 import { STARTING_CASH } from "@/lib/config";
 import { getRevenueEvents } from "@/lib/pulse";
 import type { EquityHolding, EquityTrade } from "@/lib/equity";
@@ -262,38 +263,22 @@ export async function getPriceSeries(
       .limit(1200),
   ]);
 
-  const anchors: ChartPoint[] = [];
-  for (const s of (snapsRes.data ?? []) as { day: string; price: number }[]) {
-    // the daily cron fires 06:00 UTC — pin snapshots to that moment
-    anchors.push({
-      t: Date.parse(`${s.day}T06:00:00Z`),
-      price: Number(s.price),
-    });
-  }
-  for (const t of (tradesRes.data ?? []) as {
-    price: number;
-    created_at: string;
-  }[]) {
-    anchors.push({ t: Date.parse(t.created_at), price: Number(t.price) });
-  }
-  // the recorded walk — absent until 0007 is applied and the poller has run,
-  // in which case the chart falls back to snapshots and prints as before
-  for (const k of (ticksRes.data ?? []) as { at: string; price: number }[]) {
-    anchors.push({ t: Date.parse(k.at), price: Number(k.price) });
-  }
-  anchors.sort((a, b) => a.t - b.t);
-  anchors.push({
-    t: Date.now(),
-    price: flowPrice(
-      symbol,
-      mrr,
-      sentiment,
-      Date.now(),
-      multiple,
-      shares,
-      events,
-      drift
+  const now = Date.now();
+  // every rule about which points are real, and in what order, lives in
+  // mergeAnchors — pure and covered in tests/candles.test.ts
+  const anchors = mergeAnchors({
+    snapshots: (snapsRes.data ?? []) as { day: string; price: number }[],
+    trades: ((tradesRes.data ?? []) as { price: number; created_at: string }[]).map(
+      (t) => ({ at: Date.parse(t.created_at), price: Number(t.price) })
     ),
+    // the recorded walk — absent until 0007 is applied and the poller has run,
+    // in which case the chart falls back to snapshots and prints as before
+    ticks: ((ticksRes.data ?? []) as { at: string; price: number }[]).map((k) => ({
+      at: Date.parse(k.at),
+      price: Number(k.price),
+    })),
+    now,
+    live: flowPrice(symbol, mrr, sentiment, now, multiple, shares, events, drift),
   });
 
   // Texture-modulated interpolation, pinned to the real values at both ends:
@@ -311,7 +296,7 @@ export async function getPriceSeries(
   // that while zoom stopped at six days; it is months of fiction now that it
   // doesn't. Every recorded anchor is kept, and detail is spent where it can
   // actually be seen.
-  const detailFrom = Date.now() - DETAIL_WINDOW_MS;
+  const detailFrom = now - DETAIL_WINDOW_MS;
   const flowAt = (t: number) => 1 + historyTexture(symbol, t, mrr);
   const series: ChartPoint[] = [];
   for (let i = 0; i < anchors.length; i++) {
@@ -595,10 +580,15 @@ export async function getTickerPage(symbol: string): Promise<{
     trades: todayTrades.length,
   };
 
-  const fairSeries: ChartPoint[] = snapshots.map((s) => ({
-    t: Date.parse(`${s.day}T06:00:00Z`),
-    price: Number(s.fair_price),
-  }));
+  // same rule as the price series: today's row is rewritten all day, so its
+  // 06:00 pin is fiction. The live fair value is appended instead.
+  const fairToday = new Date().toISOString().slice(0, 10);
+  const fairSeries: ChartPoint[] = snapshots
+    .filter((s) => s.day < fairToday)
+    .map((s) => ({
+      t: Date.parse(`${s.day}T06:00:00Z`),
+      price: Number(s.fair_price),
+    }));
   fairSeries.push({ t: Date.now(), price: quote.fairPrice });
 
   return {
