@@ -210,6 +210,13 @@ export async function getMarket(): Promise<TickerQuote[]> {
  * real value stays exactly where it happened): the fabricated volatility
  * between facts, same for every viewer, reconstructible at any time.
  */
+/** How far back the minute-level detail is filled in. Older history is its
+ *  recorded anchors — enough to draw the shape, at a fraction of the payload. */
+const DETAIL_WINDOW_MS = 45 * 86_400_000;
+
+/** Hard ceiling on what gets shipped to the browser. */
+const MAX_SERIES_POINTS = 2600;
+
 export async function getPriceSeries(
   tickerId: string,
   symbol: string,
@@ -266,6 +273,15 @@ export async function getPriceSeries(
 
   // flow-modulated interpolation, pinned to the real values at both ends:
   // p(t) = lerp(real) × (1 + flow(t)) / lerp(1 + flow(endpoints))
+  //
+  // Interpolation only fills the recent window. It costs ~40 points per daily
+  // gap, so filling a whole history and then keeping the tail — which is what
+  // this did — threw the OLD anchors away and left the chart drawing a flat
+  // line at the oldest surviving price for everything before it. Nobody saw
+  // that while zoom stopped at six days; it is months of fiction now that it
+  // doesn't. Every recorded anchor is kept, and detail is spent where it can
+  // actually be seen.
+  const detailFrom = Date.now() - DETAIL_WINDOW_MS;
   const flowAt = (t: number) => 1 + marketFlow(symbol, t, mrr);
   const series: ChartPoint[] = [];
   for (let i = 0; i < anchors.length; i++) {
@@ -275,6 +291,7 @@ export async function getPriceSeries(
     if (!b) break;
     const gap = b.t - a.t;
     if (gap < 30 * 60_000 || a.price <= 0 || b.price <= 0) continue;
+    if (b.t < detailFrom) continue; // older than the window: the anchor alone
     const steps = Math.min(40, Math.floor(gap / (10 * 60_000)));
     const fa = flowAt(a.t);
     const fb = flowAt(b.t);
@@ -286,7 +303,7 @@ export async function getPriceSeries(
       series.push({ t, price: (base * flowAt(t)) / norm });
     }
   }
-  return series.slice(-1500);
+  return series.slice(-MAX_SERIES_POINTS);
 }
 
 /**
@@ -413,7 +430,14 @@ export async function getTickerPage(symbol: string): Promise<{
   dayStats: DayStats;
   floatHeld: number; // shares currently held across all players
   tradePoints: { t: number; shares: number }[];
-  earliest: number; // listing time — charts never invent pre-IPO history
+  /**
+   * Where the chart is allowed to start: the listing, or the first price we
+   * actually recorded if that came later. Drawing back to the listing when
+   * the record starts weeks after it just paints a flat line where no price
+   * was ever observed — invented history, which is the one thing this chart
+   * is not for.
+   */
+  earliest: number;
   revenueEvents: RevenueEvent[]; // Stripe changes since the last report
 } | null> {
   const supabase = await createSupabaseServerClient();
@@ -564,7 +588,10 @@ export async function getTickerPage(symbol: string): Promise<{
     dayStats,
     floatHeld,
     tradePoints,
-    earliest: Date.parse((ticker as Ticker).listed_at),
+    earliest: Math.max(
+      Date.parse((ticker as Ticker).listed_at),
+      series.length > 0 ? series[0].t : 0
+    ),
     revenueEvents,
   };
 }

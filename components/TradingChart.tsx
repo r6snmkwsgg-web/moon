@@ -10,6 +10,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import type { ChartPoint } from "@/lib/types";
+import type { Timeframe } from "@/lib/candles";
 import type { RevenueEvent } from "@/lib/pricing";
 import { fmtPct, fmtPrice } from "@/lib/format";
 import {
@@ -34,7 +35,14 @@ const MUTED = "#8494ab";
 const GRID = "#182236";
 
 const MIN_BARS = 12; // zoomed all the way in
-const MAX_BARS = 600; // zoomed all the way out
+// Buckets on screen at full zoom-out. This is no longer the limit on how far
+// BACK you can see — zoomAt steps up to a coarser granularity when you hit it,
+// so 15m becomes 30m becomes 1h and the reach keeps going. It only decides how
+// much detail is drawn before that handover, which keeps the browser from ever
+// being handed twenty thousand points. 600 was the old hard ceiling on reach.
+const MAX_BARS = 1000;
+/** Below this many pixels per bucket a candle is a smear; draw a line instead. */
+const CANDLE_MIN_STEP = 3;
 
 function niceTicks(min: number, max: number, count = 4): number[] {
   if (!(max > min)) return [min];
@@ -144,28 +152,62 @@ export default function TradingChart({
     [maxBars, totalBars]
   );
 
-  /** Zoom by `factor`, keeping whatever sits at `fx` (0 = left, 1 = right). */
+  /**
+   * Zoom by `factor`, keeping whatever sits at `fx` (0 = left, 1 = right).
+   *
+   * Past the ends of a granularity's useful range it changes granularity
+   * rather than stopping: keep scrolling out on 15m and it becomes 1h, then
+   * 4h, then 1d, so you can go from one second to the whole history in one
+   * gesture. This is what stops the chart hitting a wall — a cap on buckets
+   * alone would either stop early or ask the browser to draw twenty thousand
+   * of them. The visible SPAN is what carries across the switch, so the
+   * picture doesn't jump; only the bucket size changes under it.
+   */
   const zoomAt = useCallback(
     (factor: number, fx: number) => {
-      setView((cur) => {
-        const bars = cur?.bars ?? tf.bars;
-        const off = cur?.offset ?? 0;
-        const next = Math.round(
-          Math.min(maxBars, Math.max(MIN_BARS, bars * factor))
-        );
-        const fromNow = off + (bars - 1) * (1 - fx);
-        const b = Math.round(Math.min(maxBars, Math.max(MIN_BARS, next)));
-        const o = Math.max(
-          0,
-          Math.min(
-            Math.round(fromNow - (b - 1) * (1 - fx)),
-            Math.max(0, totalBars - b)
-          )
-        );
-        return { bars: b, offset: o };
-      });
+      const bars = view?.bars ?? tf.bars;
+      const off = view?.offset ?? 0;
+      const want = bars * factor;
+      const fromNow = off + (bars - 1) * (1 - fx);
+
+      const idx = TIMEFRAMES.findIndex((t) => t.key === tf.key);
+      const finer = idx > 0 ? TIMEFRAMES[idx - 1] : null;
+      // Only step up while the ticker has enough life to fill the bigger
+      // buckets. A two-day-old company on a weekly frame is one bucket and an
+      // empty axis — the granularity has outrun the history, so stop here.
+      const room = (t: Timeframe) =>
+        earliest === undefined ||
+        now === null ||
+        (now - earliest) / t.ms >= MIN_BARS;
+      const nextUp =
+        idx >= 0 && idx < TIMEFRAMES.length - 1 ? TIMEFRAMES[idx + 1] : null;
+      const coarser = nextUp && room(nextUp) ? nextUp : null;
+      const step =
+        want > maxBars && coarser ? coarser : want < MIN_BARS && finer ? finer : null;
+
+      if (step) {
+        // same window of time, bigger or smaller buckets
+        const spanMs = want * tf.ms;
+        const nowMs = fromNow * tf.ms;
+        const b = Math.round(Math.min(MAX_BARS, Math.max(MIN_BARS, spanMs / step.ms)));
+        const o = Math.max(0, Math.round(nowMs / step.ms - (b - 1) * (1 - fx)));
+        setTfKey(step.key);
+        setScrub(null);
+        setView({ bars: b, offset: o });
+        return;
+      }
+
+      const b = Math.round(Math.min(maxBars, Math.max(MIN_BARS, want)));
+      const o = Math.max(
+        0,
+        Math.min(
+          Math.round(fromNow - (b - 1) * (1 - fx)),
+          Math.max(0, totalBars - b)
+        )
+      );
+      setView({ bars: b, offset: o });
     },
-    [tf.bars, maxBars, totalBars]
+    [tf.key, tf.ms, tf.bars, view, maxBars, totalBars, earliest, now]
   );
 
   useEffect(() => {
@@ -270,6 +312,11 @@ export default function TradingChart({
     () => makePriceFmt(geo ? geo.vMax - geo.vMin : 1),
     [geo]
   );
+
+  // The toggle is a preference, not an instruction to draw something illegible:
+  // zoomed far out we draw the line and put the mode back when you zoom in.
+  const tooDenseForCandles = geo !== null && geo.step < CANDLE_MIN_STEP;
+  const drawLine = mode === "line" || tooDenseForCandles;
 
   const active =
     scrub !== null && scrub >= 0 && scrub < candles.length
@@ -605,7 +652,7 @@ export default function TradingChart({
               />
             )}
 
-            {mode === "line" ? (
+            {drawLine ? (
               <>
                 <path
                   d={`${smoothPath(
@@ -808,7 +855,9 @@ export default function TradingChart({
             className="inline-block h-0.5 w-4 rounded-full"
             style={{ background: color }}
           />
-          {tf.label} {mode === "candle" ? "candles" : "line"} · play money
+          {tf.label} {drawLine ? "line" : "candles"}
+          {tooDenseForCandles && mode === "candle" ? " (zoomed out)" : ""} · play
+          money
         </span>
         <span className="flex items-center gap-1.5 text-terminal-amber">
           <span className="inline-block h-0 w-4 border-t border-dashed border-terminal-amber" />

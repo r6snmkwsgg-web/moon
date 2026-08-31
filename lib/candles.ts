@@ -118,6 +118,13 @@ export function makePriceAt(
  * (rather than storing ticks) is what makes every granularity available for
  * free and identical for every viewer.
  */
+/** Price samples per bucket, tapering as buckets get thinner than a pixel. */
+export function sampleCountFor(tf: Timeframe, bars: number): number {
+  const base = tf.ms >= H ? 24 : tf.ms >= M ? 16 : 10;
+  const FULL = 240; // up to here, sample as richly as before
+  return bars <= FULL ? base : Math.max(3, Math.round((base * FULL) / bars));
+}
+
 export function buildCandles({
   priceAt,
   tf,
@@ -151,8 +158,12 @@ export function buildCandles({
     volume.set(b, (volume.get(b) ?? 0) + tr.shares);
   }
 
-  // more samples on wide buckets so wicks reach the real extremes
-  const samples = tf.ms >= H ? 24 : tf.ms >= M ? 16 : 10;
+  // More samples on wide buckets so wicks reach the real extremes — but the
+  // count has to fall away as you zoom out, or the work grows with the view:
+  // 4,000 buckets at 24 samples is ~96k price evaluations per repaint. Past a
+  // few hundred buckets each one is under a pixel wide, so the wick it would
+  // buy is invisible. This keeps the total roughly flat however far out you go.
+  const samples = sampleCountFor(tf, width);
   const out: Candle[] = [];
 
   for (let b = firstBucket; b <= lastBucket; b += tf.ms) {
