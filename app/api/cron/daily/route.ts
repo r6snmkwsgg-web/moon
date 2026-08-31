@@ -10,7 +10,7 @@ import {
 } from "@/lib/pricing";
 import {
   computeMrrFromStripe,
-  decryptStripeKey,
+  authForConnection,
   stripeVerificationConfigured,
 } from "@/lib/stripe";
 import { audienceForTicker, notifyUsers } from "@/lib/notify";
@@ -79,9 +79,7 @@ export async function GET(request: Request) {
         const ticker = tickers.find((t) => t.id === conn.ticker_id);
         if (!ticker) continue;
         try {
-          const mrr = await computeMrrFromStripe(
-            decryptStripeKey(conn.encrypted_key)
-          );
+          const mrr = await computeMrrFromStripe(authForConnection(conn));
           const prev = latestMrr.get(ticker.id);
           await admin.from("mrr_updates").upsert(
             {

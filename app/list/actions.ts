@@ -8,7 +8,9 @@ import {
   encryptStripeKey,
   stripeVerificationConfigured,
   verifyRestrictedKey,
+  type StripeAuth,
 } from "@/lib/stripe";
+import { clearConnectGrant, readConnectGrant } from "@/lib/connect-grant";
 import { fairPrice, shareCountFor, valuationMultiple } from "@/lib/pricing";
 import { currentMonthISO } from "@/lib/format";
 import { MAX_LISTINGS_PER_USER } from "@/lib/config";
@@ -69,6 +71,24 @@ export async function listStartup(
   const logoUrl = String(formData.get("logo_url") ?? "").trim() || null;
   const stripeKey = String(formData.get("stripe_key") ?? "").trim();
 
+  /*
+   * Revenue comes from one of two places, and the rest of this action does
+   * not care which: a Stripe Connect grant redeemed from the signed cookie
+   * the callback set, or a restricted key typed into the form. The grant is
+   * checked against this user so a cookie picked up elsewhere cannot verify
+   * someone else's listing.
+   */
+  const grant = await readConnectGrant(user.id);
+  if (!grant && !stripeKey) {
+    return {
+      error:
+        "Connect Stripe (or paste a read-only key) — the MRR it reports is the listing ticket.",
+    };
+  }
+  const auth: StripeAuth = grant
+    ? { kind: "account", accountId: grant.accountId }
+    : { kind: "key", key: stripeKey };
+
   if (!/^[A-Z]{2,6}$/.test(symbol)) {
     return { error: "Symbol must be 2–6 letters (like PRLA)." };
   }
@@ -79,10 +99,6 @@ export async function listStartup(
   if (logoUrl && !/^https:\/\/.+/.test(logoUrl)) {
     return { error: "Logo URL must start with https://" };
   }
-  if (!stripeKey) {
-    return { error: "The read-only Stripe key is required — it IS the listing ticket." };
-  }
-
   const admin = createSupabaseAdminClient();
 
   const { count: myListings } = await admin
@@ -100,13 +116,19 @@ export async function listStartup(
     .maybeSingle();
   if (existing) return { error: `$${symbol} is taken — pick another symbol.` };
 
-  // Validate the key: format, readable subscriptions, write probe.
-  const check = await verifyRestrictedKey(stripeKey);
-  if (!check.ok) return { error: check.error };
+  // A pasted key has to prove it is read-only before we will hold it. An
+  // OAuth grant needs no such probe: read_only is the scope we asked Stripe
+  // for, and Stripe, not the founder, is the one attesting to it.
+  let livemode = grant?.livemode ?? false;
+  if (!grant) {
+    const check = await verifyRestrictedKey(stripeKey);
+    if (!check.ok) return { error: check.error };
+    livemode = check.livemode;
+  }
 
   let mrr: number;
   try {
-    mrr = await computeMrrFromStripe(stripeKey);
+    mrr = await computeMrrFromStripe(auth);
   } catch {
     return { error: "Couldn't compute MRR from Stripe — try again in a minute." };
   }
@@ -162,13 +184,18 @@ export async function listStartup(
   });
   await admin.from("stripe_connections").insert({
     ticker_id: ticker.id,
-    encrypted_key: encryptStripeKey(stripeKey),
-    key_last4: stripeKey.slice(-4),
-    livemode: check.livemode,
+    method: grant ? "oauth" : "key",
+    // an OAuth connection stores no credential at all — just which account
+    stripe_account_id: grant?.accountId ?? null,
+    connect_scope: grant?.scope ?? null,
+    encrypted_key: grant ? null : encryptStripeKey(stripeKey),
+    key_last4: grant ? null : stripeKey.slice(-4),
+    livemode,
     connected_by: user.id,
     last_synced_at: new Date().toISOString(),
     last_mrr: mrr,
   });
+  if (grant) await clearConnectGrant();
   await admin.from("price_snapshots").upsert(
     {
       ticker_id: ticker.id,

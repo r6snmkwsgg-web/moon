@@ -31,9 +31,25 @@ const STRIPE_KEY_URL =
 
 const STEPS = ["Your startup", "Verify revenue", "IPO"] as const;
 
+/** Where the half-filled form waits while the founder is over on Stripe. */
+const DRAFT = "sx.listing.draft";
+
+const CONNECT_ERRORS: Record<string, string> = {
+  denied: "You cancelled on Stripe — nothing was shared.",
+  state: "That link expired. Start the connection again.",
+  session: "You were signed out mid-connection. Sign in and retry.",
+  nocode: "Stripe didn't send an authorization back — try again.",
+  exchange: "Stripe rejected the authorization. Try again in a minute.",
+};
+
 type SymbolStatus = "idle" | "checking" | "free" | "taken" | "invalid";
 
-export default function ListingForm() {
+export default function ListingForm({
+  connectAvailable,
+}: {
+  /** Whether this deployment has Stripe Connect set up (server-decided). */
+  connectAvailable: boolean;
+}) {
   const [state, formAction, pending] = useActionState(
     listStartup,
     initialState
@@ -50,6 +66,9 @@ export default function ListingForm() {
   >("idle");
   const [logoError, setLogoError] = useState<string | null>(null);
   const [stripeKey, setStripeKey] = useState("");
+  const [connected, setConnected] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [showKey, setShowKey] = useState(false);
   const [symbolStatus, setSymbolStatus] = useState<SymbolStatus>("idle");
   const [copied, setCopied] = useState(false);
   const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,6 +103,25 @@ export default function ListingForm() {
   }, [symbol]);
 
   const sym = symbol.toUpperCase().trim();
+
+  /*
+   * Connecting leaves the page, so the half-filled form has to be parked and
+   * picked back up. sessionStorage is right for this: per-tab, dies with the
+   * tab, and nothing in it is sensitive — the key field is deliberately never
+   * included.
+   */
+  function startConnect() {
+    try {
+      sessionStorage.setItem(
+        DRAFT,
+        JSON.stringify({ symbol: sym, name, pitch, handle, logoUrl })
+      );
+    } catch {
+      // private mode — they will just re-enter the fields
+    }
+    window.location.href = "/api/stripe/connect?return=%2Flist";
+  }
+
   const step1Ok =
     (symbolStatus === "free" || symbolStatus === "idle") &&
     /^[A-Z]{2,6}$/.test(sym) &&
@@ -92,6 +130,8 @@ export default function ListingForm() {
     /^@?[A-Za-z0-9_.]{1,50}$/.test(handle.trim()) &&
     handle.trim().length > 0;
   const keyLooksRight = /^rk_(live|test)_/.test(stripeKey.trim());
+  // either path satisfies step 2
+  const revenueReady = connected !== null || keyLooksRight;
 
   // A dead button with no explanation is the worst thing in a form. Say what
   // is missing, in the order the fields appear.
@@ -108,8 +148,10 @@ export default function ListingForm() {
             : !/^@?[A-Za-z0-9_.]{1,50}$/.test(handle.trim())
               ? "That handle has characters X and Threads don't allow."
               : null;
-  const step2Blocker = !stripeKey.trim()
-    ? "Paste your restricted key to continue — your MRR (and your opening price) comes from it."
+  const step2Blocker = connected
+    ? null
+    : !stripeKey.trim()
+    ? "Connect Stripe (or paste a read-only key) to continue — your MRR sets your opening price."
     : !keyLooksRight
       ? "Restricted keys start with rk_live_ — that's the one to paste."
       : null;
@@ -381,49 +423,105 @@ export default function ListingForm() {
       {/* step 2 — the key */}
       {step === 1 && (
         <div className="panel space-y-3 p-4">
-          <div className="space-y-2 rounded-md border border-terminal-amber/30 bg-terminal-amber/5 p-3">
-            <p className="text-xs font-semibold text-terminal-amber">
-              Your MRR comes straight from Stripe — never typed in. That&apos;s
-              what the verified badge means.
-            </p>
-            <a
-              href={STRIPE_KEY_URL}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="btn-ghost w-full text-xs"
-            >
-              <ExternalLink size={12} />
-              Open Stripe&apos;s key creator — name &amp; permissions pre-filled
-            </a>
-            <p className="text-[11px] leading-relaxed text-terminal-muted">
-              It opens with <b className="text-terminal-text">Subscriptions: Read</b>{" "}
-              and <b className="text-terminal-text">Invoices: Read</b> already
-              selected. Hit <b className="text-terminal-text">Create key</b>,
-              copy the <span className="font-mono">rk_live_…</span> value, paste
-              it below. (If the pre-fill doesn&apos;t stick, set those two to
-              Read and everything else to None.)
-            </p>
-            <input
-              value={stripeKey}
-              onChange={(e) => setStripeKey(e.target.value)}
-              placeholder="rk_live_…"
-              autoComplete="off"
-              spellCheck={false}
-              className="input font-mono"
-              aria-label="Read-only Stripe restricted key"
-            />
-            {stripeKey.trim().startsWith("sk_") && (
-              <p className="text-[11px] font-semibold text-terminal-down">
-                That&apos;s your SECRET key — never share it, with us or anyone.
-                We only accept restricted rk_ keys.
-              </p>
-            )}
-          </div>
-          <p className="text-[11px] leading-relaxed text-terminal-muted">
-            The key is verified read-only (a hidden write probe rejects
-            anything stronger), stored encrypted, never shown or logged, and
-            deleted if you disconnect or delist. Only the MRR number is public.
+          <p className="text-xs font-semibold text-terminal-amber">
+            Your MRR comes straight from Stripe — never typed in. That&apos;s
+            what the verified badge means.
           </p>
+
+          {connected ? (
+            <div className="flex items-start gap-2 rounded-md border border-terminal-up/30 bg-terminal-up/5 p-3">
+              <Check size={14} className="mt-0.5 shrink-0 text-terminal-up" />
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-terminal-up">
+                  Stripe connected — read-only
+                </p>
+                <p className="num font-mono text-[11px] text-terminal-muted">
+                  {connected}
+                </p>
+                <p className="text-[11px] leading-relaxed text-terminal-muted">
+                  We never received a key. You can revoke this from your ticker
+                  page, or from Stripe, at any time.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* the two-click path, and the one almost everyone should take */}
+              {connectAvailable && (
+                <>
+                  <button
+                    type="button"
+                    onClick={startConnect}
+                    className="btn-buy w-full"
+                  >
+                    Connect with Stripe
+                    <ArrowRight size={13} />
+                  </button>
+                  <p className="text-[11px] leading-relaxed text-terminal-muted">
+                    Opens Stripe&apos;s own approval page. You grant{" "}
+                    <b className="text-terminal-text">read-only</b> access and
+                    come straight back — no key to create, copy, or paste.
+                  </p>
+                  {connectError && (
+                    <p className="text-[11px] font-semibold text-terminal-down">
+                      {connectError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowKey((v) => !v)}
+                    className="text-[11px] text-terminal-accent hover:underline"
+                  >
+                    {showKey ? "Hide" : "Paste a restricted key instead"}
+                  </button>
+                </>
+              )}
+
+              {/* kept for founders who want a narrower scope than read_only,
+                  and as the whole flow when Connect isn't configured */}
+              {(showKey || !connectAvailable) && (
+                <div className="space-y-2 rounded-md border border-terminal-line bg-terminal-bg/40 p-3">
+                  <a
+                    href={STRIPE_KEY_URL}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="btn-ghost w-full text-xs"
+                  >
+                    <ExternalLink size={12} />
+                    Open Stripe&apos;s key creator — permissions pre-filled
+                  </a>
+                  <p className="text-[11px] leading-relaxed text-terminal-muted">
+                    Scoped to{" "}
+                    <b className="text-terminal-text">Subscriptions: Read</b> and{" "}
+                    <b className="text-terminal-text">Invoices: Read</b> only —
+                    narrower than the OAuth grant above, if you prefer that.
+                    Create it, then paste the{" "}
+                    <span className="font-mono">rk_live_…</span> value here.
+                  </p>
+                  <input
+                    value={stripeKey}
+                    onChange={(e) => setStripeKey(e.target.value)}
+                    placeholder="rk_live_…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="input font-mono"
+                    aria-label="Read-only Stripe restricted key"
+                  />
+                  {stripeKey.trim().startsWith("sk_") && (
+                    <p className="text-[11px] font-semibold text-terminal-down">
+                      That&apos;s your SECRET key — never share it, with us or
+                      anyone. We only accept restricted rk_ keys.
+                    </p>
+                  )}
+                  <p className="text-[11px] leading-relaxed text-terminal-muted">
+                    Verified read-only by a hidden write probe, stored
+                    encrypted, never shown or logged, deleted if you disconnect.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
           <div className="flex gap-2">
             <button
               type="button"
@@ -434,7 +532,7 @@ export default function ListingForm() {
             </button>
             <button
               type="button"
-              disabled={!keyLooksRight}
+              disabled={!revenueReady}
               onClick={() => setStep(2)}
               className="btn-buy flex-1"
             >

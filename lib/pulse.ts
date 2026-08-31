@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { decryptStripeKey, readStripeRevenue } from "@/lib/stripe";
+import { authForConnection, readStripeRevenue } from "@/lib/stripe";
 import { recordTickerSnapshot } from "@/lib/snapshot";
 import { audienceForTicker, notifyUsers } from "@/lib/notify";
 import { fmtCompact, fmtPct } from "@/lib/format";
@@ -18,7 +18,9 @@ export type RevenueEventKind = "new" | "churn" | "expansion" | "contraction";
 
 interface Connection {
   ticker_id: string;
-  encrypted_key: string;
+  method: string | null;
+  stripe_account_id: string | null;
+  encrypted_key: string | null;
   status: string;
   last_mrr: number | null;
   live_mrr: number | null;
@@ -98,7 +100,7 @@ export async function pollRevenuePulse(
     out.checked++;
     let reading;
     try {
-      reading = await readStripeRevenue(decryptStripeKey(conn.encrypted_key));
+      reading = await readStripeRevenue(authForConnection(conn));
     } catch {
       out.errors++;
       // a single failed read is not a churn — leave the last number standing

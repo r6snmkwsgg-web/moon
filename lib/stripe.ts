@@ -1,9 +1,23 @@
 /**
- * Stripe restricted-key verification. SERVER-ONLY — never import from client
- * components.
+ * Stripe revenue reading and verification. SERVER-ONLY — never import from
+ * client components.
  *
- * Founders verify revenue by pasting a RESTRICTED key (rk_live_/rk_test_)
- * scoped to read-only Subscriptions + Invoices. Rules enforced here:
+ * Two ways a founder can connect, and reads work the same through both:
+ *
+ *   OAUTH (preferred)  Stripe Connect. They approve read-only access on
+ *                      Stripe's own consent screen; we keep an acct_ id and
+ *                      read with the PLATFORM key plus a Stripe-Account
+ *                      header. No third-party credential is ever stored,
+ *                      so there is none to leak, and disconnecting is an
+ *                      API call we can make on their behalf.
+ *
+ *   RESTRICTED KEY     They create an rk_ key scoped to Subscriptions +
+ *                      Invoices read and paste it. More steps, and we hold
+ *                      their credential — but it is narrower than OAuth's
+ *                      read_only, which covers the whole account. Kept for
+ *                      founders who want the tighter scope.
+ *
+ * Rules enforced on a pasted key:
  *   1. Anything that isn't an rk_ key is rejected outright (catches the
  *      classic accident of pasting the full sk_ secret key — we refuse it
  *      and never store or log it).
@@ -22,6 +36,137 @@ import {
 } from "node:crypto";
 
 const STRIPE_API = "https://api.stripe.com/v1";
+const STRIPE_CONNECT = "https://connect.stripe.com/oauth";
+
+/**
+ * How to read one founder's account. A pasted key authenticates as itself;
+ * a connected account authenticates as us, acting on their behalf.
+ */
+export type StripeAuth =
+  | { kind: "key"; key: string }
+  | { kind: "account"; accountId: string };
+
+export function platformKey(): string {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    throw new Error(
+      "STRIPE_SECRET_KEY is not set — Stripe Connect reads need the platform key."
+    );
+  }
+  return key;
+}
+
+/** Whether the Connect (OAuth) path can be offered at all. */
+export function connectConfigured(): boolean {
+  return Boolean(
+    process.env.STRIPE_CONNECT_CLIENT_ID && process.env.STRIPE_SECRET_KEY
+  );
+}
+
+// ── Stripe Connect (OAuth) ──────────────────────────────────────────────────
+
+export interface ConnectGrant {
+  accountId: string; // acct_…
+  scope: string;
+  livemode: boolean;
+}
+
+/**
+ * Where to send a founder to approve access. `state` is ours to verify on the
+ * way back — without it, anyone could hand a victim a callback URL carrying
+ * their own authorization code and graft their Stripe account onto someone
+ * else's ticker.
+ */
+export function connectAuthorizeUrl(state: string, redirectUri: string): string {
+  const clientId = process.env.STRIPE_CONNECT_CLIENT_ID;
+  if (!clientId) throw new Error("STRIPE_CONNECT_CLIENT_ID is not set.");
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: clientId,
+    // read_only is the whole point: we can never write to their account
+    scope: "read_only",
+    redirect_uri: redirectUri,
+    state,
+  });
+  return `${STRIPE_CONNECT}/authorize?${params.toString()}`;
+}
+
+/**
+ * Trade the one-time code for the account it authorized.
+ *
+ * We deliberately keep only `stripe_user_id` and drop the access and refresh
+ * tokens on the floor: reads go through the platform key with a Stripe-Account
+ * header, so holding them would be storing a credential we never use.
+ */
+export async function exchangeConnectCode(code: string): Promise<ConnectGrant> {
+  const res = await fetch(`${STRIPE_CONNECT}/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      client_secret: platformKey(),
+    }),
+    cache: "no-store",
+  });
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok || typeof json.stripe_user_id !== "string") {
+    const detail =
+      typeof json.error_description === "string"
+        ? json.error_description
+        : typeof json.error === "string"
+          ? json.error
+          : `HTTP ${res.status}`;
+    throw new Error(`Stripe rejected the authorization: ${detail}`);
+  }
+  return {
+    accountId: json.stripe_user_id,
+    scope: typeof json.scope === "string" ? json.scope : "read_only",
+    livemode: json.livemode === true,
+  };
+}
+
+/**
+ * Hand the account back. Unlike a pasted key — which only the founder can
+ * revoke, in their own dashboard — this is ours to call, so "disconnect at
+ * any time" is a button rather than a set of instructions.
+ */
+export async function deauthorizeConnect(accountId: string): Promise<void> {
+  const clientId = process.env.STRIPE_CONNECT_CLIENT_ID;
+  if (!clientId) throw new Error("STRIPE_CONNECT_CLIENT_ID is not set.");
+  const res = await fetch(`${STRIPE_CONNECT}/deauthorize`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Bearer ${platformKey()}`,
+    },
+    body: new URLSearchParams({ client_id: clientId, stripe_user_id: accountId }),
+    cache: "no-store",
+  });
+  // Already gone (the founder revoked us from their dashboard) is success.
+  if (res.ok) return;
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (json.error === "invalid_request") return;
+  throw new Error(`Stripe deauthorize failed (${res.status})`);
+}
+
+/** The read descriptor for a stored connection, whichever way it was made. */
+export function authForConnection(conn: {
+  method?: string | null;
+  stripe_account_id?: string | null;
+  encrypted_key?: string | null;
+}): StripeAuth {
+  if (conn.method === "oauth") {
+    if (!conn.stripe_account_id) {
+      throw new Error("OAuth connection is missing its account id.");
+    }
+    return { kind: "account", accountId: conn.stripe_account_id };
+  }
+  if (!conn.encrypted_key) {
+    throw new Error("Key connection is missing its key.");
+  }
+  return { kind: "key", key: decryptStripeKey(conn.encrypted_key) };
+}
 
 export interface StripeKeyCheck {
   ok: boolean;
@@ -33,14 +178,24 @@ export function isRestrictedKeyFormat(key: string): boolean {
   return /^rk_(live|test)_[A-Za-z0-9]{8,}$/.test(key);
 }
 
+/** Auth headers for either connection kind. */
+export function authHeaders(auth: StripeAuth): Record<string, string> {
+  return auth.kind === "key"
+    ? { Authorization: `Bearer ${auth.key}` }
+    : {
+        Authorization: `Bearer ${platformKey()}`,
+        "Stripe-Account": auth.accountId,
+      };
+}
+
 async function stripeFetch(
-  key: string,
+  auth: StripeAuth,
   path: string,
   method: "GET" | "DELETE" = "GET"
 ): Promise<{ status: number; json: Record<string, unknown> }> {
   const res = await fetch(`${STRIPE_API}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${key}` },
+    headers: authHeaders(auth),
     cache: "no-store",
   });
   let json: Record<string, unknown> = {};
@@ -72,7 +227,8 @@ export async function verifyRestrictedKey(key: string): Promise<StripeKeyCheck> 
   }
 
   // Must be able to read subscriptions.
-  const read = await stripeFetch(key, "/subscriptions?limit=1");
+  const auth: StripeAuth = { kind: "key", key };
+  const read = await stripeFetch(auth, "/subscriptions?limit=1");
   if (read.status === 401) {
     return { ok: false, livemode: false, error: "Stripe rejected the key — check it was copied fully." };
   }
@@ -92,7 +248,7 @@ export async function verifyRestrictedKey(key: string): Promise<StripeKeyCheck> 
   // WITH write permission answers resource_missing (404), a properly
   // read-only key answers permission denied (403). We reject the former.
   const probe = await stripeFetch(
-    key,
+    auth,
     "/customers/cus_saasexchange_write_probe",
     "DELETE"
   );
@@ -125,7 +281,7 @@ export interface StripeRevenue {
  * lets the pulse label a change: fewer subscriptions and less money is a
  * churn, the same subscriptions and less money is a downgrade.
  */
-export async function readStripeRevenue(key: string): Promise<StripeRevenue> {
+export async function readStripeRevenue(auth: StripeAuth): Promise<StripeRevenue> {
   let total = 0; // in cents/minor units, face value across currencies
   let subscriptions = 0;
   let startingAfter: string | null = null;
@@ -134,7 +290,7 @@ export async function readStripeRevenue(key: string): Promise<StripeRevenue> {
     const params = new URLSearchParams({ status: "active", limit: "100" });
     if (startingAfter) params.set("starting_after", startingAfter);
     const { status, json } = await stripeFetch(
-      key,
+      auth,
       `/subscriptions?${params.toString()}`
     );
     if (status !== 200) {
@@ -173,8 +329,8 @@ export async function readStripeRevenue(key: string): Promise<StripeRevenue> {
 }
 
 /** MRR alone — the number the monthly report and the IPO price are set from. */
-export async function computeMrrFromStripe(key: string): Promise<number> {
-  return (await readStripeRevenue(key)).mrr;
+export async function computeMrrFromStripe(auth: StripeAuth): Promise<number> {
+  return (await readStripeRevenue(auth)).mrr;
 }
 
 // ── encryption at rest ──────────────────────────────────────────────────────

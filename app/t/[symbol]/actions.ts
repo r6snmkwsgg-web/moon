@@ -203,7 +203,7 @@ export async function connectStripe(formData: FormData) {
 
   const check = await verifyRestrictedKey(stripeKey);
   if (!check.ok) throw new Error(check.error ?? "Key rejected.");
-  const mrr = await computeMrrFromStripe(stripeKey);
+  const mrr = await computeMrrFromStripe({ kind: "key", key: stripeKey });
 
   await admin.from("stripe_connections").upsert(
     {
@@ -239,7 +239,11 @@ export async function connectStripe(formData: FormData) {
   revalidatePath("/");
 }
 
-/** Founder disconnects Stripe: the encrypted key is deleted, badge removed. */
+/**
+ * Founder disconnects Stripe: the connection is deleted and the badge comes
+ * off. On an OAuth connection we also hand the grant back to Stripe, so the
+ * authorization actually ends rather than just being forgotten on our side.
+ */
 export async function disconnectStripe(formData: FormData) {
   const user = await getUser();
   if (!user) throw new Error("Sign in first.");
@@ -253,6 +257,22 @@ export async function disconnectStripe(formData: FormData) {
     .maybeSingle();
   if (!ticker || ticker.claimed_by !== user.id) {
     throw new Error("Only the claimed founder can disconnect Stripe.");
+  }
+  const { deauthorizeConnect } = await import("@/lib/stripe");
+  const { data: conn } = await admin
+    .from("stripe_connections")
+    .select("*")
+    .eq("ticker_id", ticker.id)
+    .maybeSingle();
+
+  if (conn?.method === "oauth" && conn.stripe_account_id) {
+    try {
+      await deauthorizeConnect(conn.stripe_account_id);
+    } catch {
+      // Stripe is unreachable or already revoked it — either way the founder
+      // asked to be disconnected, so drop our side regardless and let them
+      // finish the job from their dashboard if it mattered.
+    }
   }
   await admin.from("stripe_connections").delete().eq("ticker_id", ticker.id);
   await admin

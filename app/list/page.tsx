@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getUser } from "@/lib/supabase/server";
 import { APP_NAME } from "@/lib/config";
 import ListingForm from "./ListingForm";
+import { connectConfigured } from "@/lib/stripe";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export default async function ListPage() {
       </div>
 
       {user ? (
-        <ListingForm />
+        <ListingForm connectAvailable={connectConfigured()} />
       ) : (
         <div className="panel space-y-3 p-4 text-sm">
           <p className="text-terminal-muted">
