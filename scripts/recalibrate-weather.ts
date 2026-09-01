@@ -15,11 +15,16 @@
  * Facts are untouched: trades, revenue events, MRR, sentiment, fair value.
  * Only the weather on top of them changes.
  *
- *   npx tsx scripts/recalibrate-weather.ts <drift-factor> [<vol-factor>] [--dry]
+ *   npx tsx scripts/recalibrate-weather.ts <drift-factor> [<vol-factor>]
+ *       [--symbols=PRL,LNCH] [--steps=state,ticks,snapshots] [--dry]
  *
  * e.g. `0.34 0.6` for the 0.40 → 0.14 / 1.0 → 0.6 move. Run
  * regenerate-history.ts afterwards: the daily snapshots older than the tape
  * are redrawn from the walk, pinned to the (now rescaled) ends.
+ *
+ * It is NOT idempotent — a second run scales again — which is what the two
+ * selectors are for: a run that fails part-way is finished by naming the
+ * tickers and steps still owed, not by running the whole thing twice.
  */
 import { config } from "dotenv";
 import { createClient } from "@supabase/supabase-js";
@@ -30,11 +35,24 @@ config({ path: ".env.local" });
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const DRY = process.argv.includes("--dry");
+const flag = (name: string) =>
+  process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+const ONLY = new Set(
+  (flag("symbols") ?? "")
+    .split(",")
+    .map((x) => x.trim().toUpperCase())
+    .filter(Boolean)
+);
+const STEPS = new Set(
+  (flag("steps") ?? "state,ticks,snapshots").split(",").map((x) => x.trim())
+);
 const K = Number(args[0]);
 const KV = args[1] !== undefined ? Number(args[1]) : K;
-if (!(K > 0 && K <= 1) || !(KV > 0 && KV <= 1)) {
+// any positive factor: a run that scaled something twice is undone with the
+// inverse, which is above 1
+if (!(K > 0) || !(KV > 0)) {
   throw new Error(
-    "usage: recalibrate-weather.ts <drift-factor in (0,1]> [<vol-factor in (0,1]>] [--dry]"
+    "usage: recalibrate-weather.ts <drift-factor> [<vol-factor>] [--symbols=..] [--steps=..] [--dry]"
   );
 }
 
@@ -63,12 +81,13 @@ async function main() {
     drift: number | null;
     vol_state: number | null;
   }[]) {
+    if (ONLY.size > 0 && !ONLY.has(t.symbol.toUpperCase())) continue;
     // ── 1. the live state ─────────────────────────────────────────────────
     const d0 = Number(t.drift ?? 0);
     const v0 = Number(t.vol_state ?? 0);
     const d1 = scaleDrift(d0);
     const v1 = clamp(v0 * KV, -VOL_STATE_CAP, VOL_STATE_CAP);
-    if (!DRY) {
+    if (!DRY && STEPS.has("state")) {
       const { error: e } = await admin
         .from("tickers")
         .update({ drift: d1, vol_state: v1 })
@@ -80,7 +99,7 @@ async function main() {
     const PAGE = 1000;
     let from = 0;
     let n = 0;
-    for (;;) {
+    for (; STEPS.has("ticks"); ) {
       const { data, error: e } = await admin
         .from("flow_ticks")
         .select("at, drift, price")
@@ -116,11 +135,15 @@ async function main() {
     ticks += n;
 
     // ── 3. the daily snapshots ────────────────────────────────────────────
-    // each row's weather is what its price carries over its own anchor
-    const { data: snapRows, error: se } = await admin
-      .from("price_snapshots")
-      .select("day, price, fair_price, sentiment")
-      .eq("ticker_id", t.id);
+    // each row's weather is what its price carries over its own anchor.
+    // The whole row goes back: an upsert is an INSERT first, and a partial
+    // one trips the NOT NULL columns before the conflict is ever resolved.
+    const { data: snapRows, error: se } = STEPS.has("snapshots")
+      ? await admin
+          .from("price_snapshots")
+          .select("day, price, fair_price, sentiment, mrr")
+          .eq("ticker_id", t.id)
+      : { data: [], error: null };
     if (se) throw new Error(`${t.symbol} snapshots: ${se.message}`);
     const updates = (
       (snapRows ?? []) as {
@@ -128,6 +151,7 @@ async function main() {
         price: number;
         fair_price: number;
         sentiment: number;
+        mrr: number;
       }[]
     ).flatMap((s) => {
       const anchor = Number(s.fair_price) * Math.exp(Number(s.sentiment));
@@ -140,10 +164,13 @@ async function main() {
           ticker_id: t.id,
           day: s.day,
           price: Number((anchor * Math.exp(b)).toFixed(6)),
+          fair_price: Number(s.fair_price),
+          sentiment: Number(s.sentiment),
+          mrr: Number(s.mrr),
         },
       ];
     });
-    if (!DRY) {
+    if (!DRY && STEPS.has("snapshots")) {
       for (let i = 0; i < updates.length; i += 200) {
         const { error: ue } = await admin
           .from("price_snapshots")
