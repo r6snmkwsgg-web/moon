@@ -401,6 +401,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             outstanding={quote.shares}
             events={revenueEvents}
             drift={quote.drift}
+            driftAt={t.drift_at ?? null}
             dayBasePrice={quote.dayBasePrice}
             floatHeld={floatHeld}
             quotedAt={renderedAt}

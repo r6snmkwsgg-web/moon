@@ -12,7 +12,9 @@ import {
   settledPrice,
   SHARES_OUTSTANDING,
 } from "@/lib/pricing";
-import { fmtMoney, fmtPct, fmtPrice } from "@/lib/format";
+import { fmtCountdown, fmtMoney, fmtPct, fmtPrice } from "@/lib/format";
+import { FLOW_TICK_MS } from "@/lib/flow";
+import LivePrice from "@/components/LivePrice";
 
 /** Signed money — on a P&L line the sign is the whole point. */
 function fmtSigned(value: number): string {
@@ -38,6 +40,14 @@ function tone(value: number): string {
  * position marked to the settled price with its P&L against your average
  * cost. Same price function as the ticket, same instant, so the two can
  * never disagree.
+ *
+ * Why the quote holds still while the header moves: the header rides the
+ * shimmer, a sub-percent texture that is a function of the clock. Anything a
+ * client can compute ahead of time cannot be a fill price — timing it would
+ * be free money — so the ticket prices off the settled tape, which steps
+ * when the walk does, every five minutes, and on every print and every
+ * revenue event. The countdown under the spread says so, and the numbers
+ * flash when they actually move.
  */
 export default function TradePanel({
   symbol,
@@ -48,6 +58,7 @@ export default function TradePanel({
   floatHeld = 0,
   events = [],
   drift = 0,
+  driftAt = null,
   dayBasePrice = 0,
   quotedAt,
   signedIn,
@@ -70,6 +81,8 @@ export default function TradePanel({
   events?: RevenueEvent[];
   /** The recorded weather the fill prices off. */
   drift?: number;
+  /** When the walk last stepped — the next step is one tick after it. */
+  driftAt?: string | null;
   /** Yesterday's close — what "today" on the position is measured from. */
   dayBasePrice?: number;
   /** Server's clock at render — first paint matches, then we go live. */
@@ -166,6 +179,11 @@ export default function TradePanel({
   const buyEst = shares >= 1 ? est("buy", shares) : null;
   const sellEst = shares >= 1 ? est("sell", shares) : null;
   const buyImpact = buyEst && mark > 0 ? buyEst.avgPrice / mark - 1 : 0;
+  const sellImpact = sellEst && mark > 0 ? sellEst.avgPrice / mark - 1 : 0;
+  const floatShare = outstanding > 0 ? shares / outstanding : 0;
+  // the next step of the walk: one tick after the last recorded one
+  const nextTickAt = driftAt ? Date.parse(driftAt) + FLOW_TICK_MS : null;
+  const untilTick = nextTickAt !== null ? nextTickAt - quoteT : null;
   // quote the spread for the SIZE being traded — a 1-share spread rounds to
   // the same cent on both sides and reads as broken
   const quoteSize = Math.max(1, shares);
@@ -354,22 +372,43 @@ export default function TradePanel({
         <div className="border-r border-terminal-line bg-terminal-down/[0.06] px-2.5 py-1.5">
           <div className="microlabel !tracking-[0.12em]">Sell at</div>
           <div className="num mt-0.5 font-semibold text-terminal-down">
-            {fmtPrice(unitSell.avgPrice)}
+            <LivePrice
+              value={unitSell.avgPrice}
+              formatted={fmtPrice(unitSell.avgPrice)}
+            />
           </div>
         </div>
         <div className="border-r border-terminal-line px-2.5 py-1.5 text-center">
           <div className="microlabel !tracking-[0.12em]">Mark</div>
           <div className="num mt-0.5 font-semibold text-terminal-text">
-            {fmtPrice(mark)}
+            <LivePrice value={mark} formatted={fmtPrice(mark)} />
           </div>
         </div>
         <div className="bg-terminal-up/[0.06] px-2.5 py-1.5 text-right">
           <div className="microlabel !tracking-[0.12em]">Buy at</div>
           <div className="num mt-0.5 font-semibold text-terminal-up">
-            {fmtPrice(unitBuy.avgPrice)}
+            <LivePrice
+              value={unitBuy.avgPrice}
+              formatted={fmtPrice(unitBuy.avgPrice)}
+            />
           </div>
         </div>
       </div>
+      {/* the quote steps with the walk, not with the shimmer — say when */}
+      <p className="-mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 font-mono text-[10px] text-terminal-muted">
+        <span>
+          {quoteSize > 1
+            ? `avg fill for ${quoteSize.toLocaleString("en-US")} shs · settled`
+            : "settled price · steps every 5 min"}
+        </span>
+        {untilTick !== null && (
+          <span className="num">
+            {untilTick > 0
+              ? `next tick ${fmtCountdown(untilTick)}`
+              : "next tick any second"}
+          </span>
+        )}
+      </p>
 
       <div className="flex items-center gap-2">
         <input
@@ -432,10 +471,19 @@ export default function TradePanel({
         )}
       </div>
 
-      {buyEst && buyImpact > 0.005 && (
-        <p className="font-mono text-[11px] text-terminal-muted">
-          size impact: this order moves your avg fill{" "}
-          {(buyImpact * 100).toFixed(1)}% above the mark
+      {shares >= 1 && (buyImpact > 0.005 || sellImpact < -0.005) && (
+        <p className="font-mono text-[11px] leading-snug text-terminal-muted">
+          size: {shares.toLocaleString("en-US")} shs is{" "}
+          {(floatShare * 100).toFixed(floatShare >= 0.1 ? 0 : 1)}% of the
+          float. A buy this big fills{" "}
+          <span className="text-terminal-up">
+            {(buyImpact * 100).toFixed(1)}% above
+          </span>{" "}
+          the mark on average, a sell{" "}
+          <span className="text-terminal-down">
+            {(-sellImpact * 100).toFixed(1)}% below
+          </span>{" "}
+          — the price moves under the order, and a round trip washes.
         </p>
       )}
       {shares >= 1 && buyCeiling >= 1 && shares > buyCeiling && (
