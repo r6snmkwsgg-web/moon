@@ -359,19 +359,22 @@ export function summarisePayments(
  *
  *   · DISCOUNTS WERE IGNORED. price.unit_amount is the list price. A coupon
  *     is a field on the subscription, and Stripe's MRR nets it out.
- *   · A SUBSCRIPTION CANCELLING AT PERIOD END IS STILL status:"active".
- *     It is already churned in every sense that matters — the customer has
- *     left, the last invoice is just still running — and Stripe's MRR
- *     excludes it. Counting it full price is how MRR stays flat through a
- *     wave of cancellations.
+ * A subscription with cancel_at_period_end set is NOT excluded, and an earlier
+ * version of this got that badly wrong. The reasoning was that such a customer
+ * has already left — but they have not. They are still subscribed, still
+ * paying, and the invoice at the end of this period will still be collected.
+ * Stripe counts them, and so must we.
+ *
+ * Excluding them cost a real founder nine subscriptions in a single poll:
+ * $668 to $549.50, logged as a churn, on a day nobody cancelled anything. It
+ * also explains why the number swung from 14% over Stripe to 6% under. The
+ * churn is real when Stripe drops them from status=active, and not a day
+ * sooner.
  *
  * Metered and tiered items have no unit_amount and are still skipped; that
  * makes the number LOW, not high, and needs usage records to do properly.
  */
 export function subscriptionMrrMinor(sub: Record<string, unknown>): number {
-  // already gone, just not expired yet
-  if (sub.cancel_at_period_end === true) return 0;
-
   const items = ((sub.items as Record<string, unknown>)?.data ?? []) as Array<
     Record<string, unknown>
   >;
@@ -498,12 +501,10 @@ export async function readStripeRevenue(auth: StripeAuth): Promise<StripeRevenue
     }
     const subs = (json.data ?? []) as Array<Record<string, unknown>>;
     for (const sub of subs) {
-      const mrr = subscriptionMrrMinor(sub);
-      // a subscription already cancelling contributes nothing and is not
-      // counted, so the churn lands when they cancel rather than weeks later
-      if (sub.cancel_at_period_end === true) continue;
+      // every active subscription counts, cancelling-at-period-end included:
+      // they are still paying, and the churn lands when Stripe drops them
       subscriptions += 1;
-      total += mrr;
+      total += subscriptionMrrMinor(sub);
       if (typeof sub.currency === "string") currencies.add(sub.currency);
     }
     if (!json.has_more || subs.length === 0) break;

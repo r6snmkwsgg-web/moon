@@ -75,12 +75,16 @@ describe("subscriptionMrrMinor", () => {
     ).toBe(0);
   });
 
-  it("REGRESSION: a subscription cancelling at period end is worth nothing", () => {
-    // It is still status:"active" right up to the period boundary, so the old
-    // code counted it at full price — which is how MRR stays flat straight
-    // through a wave of cancellations. The customer has already left.
+  it("REGRESSION: a subscription cancelling at period end still counts", () => {
+    // I briefly excluded these on the reasoning that the customer had already
+    // left. They have not: they are still subscribed, still paying, and this
+    // period's invoice will still be collected. Excluding them cost a real
+    // founder NINE subscriptions in one poll — $668 to $549.50, logged as a
+    // churn, on a day nobody cancelled anything — and swung the total from
+    // 14% over Stripe's own MRR to 6% under it. The churn is real when Stripe
+    // drops them from status=active, not a day sooner.
     const leaving = sub([{ amount: 1000 }], { cancel_at_period_end: true });
-    expect(subscriptionMrrMinor(leaving)).toBe(0);
+    expect(subscriptionMrrMinor(leaving)).toBe(1000);
     expect(subscriptionMrrMinor(sub([{ amount: 1000 }], { cancel_at_period_end: false }))).toBe(1000);
   });
 
