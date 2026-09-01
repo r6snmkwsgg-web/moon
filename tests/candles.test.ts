@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   axisTimeLabel,
+  labelFor,
   buildCandles,
   makePriceAt,
   mergeAnchors,
@@ -85,9 +86,36 @@ describe("time axis", () => {
   it("sizes the label to the tick, not the bar", () => {
     const t = Date.UTC(2026, 7, 30, 14, 30);
     expect(axisTimeLabel(t, DAY)).toMatch(/Aug 30/);
-    expect(axisTimeLabel(t, 30 * MIN)).toMatch(/^\d\d:\d\d$/);
-    expect(axisTimeLabel(t, 5_000)).toMatch(/^\d\d:\d\d:\d\d$/);
     expect(axisTimeLabel(t, 30 * MIN, true)).toMatch(/Aug 30/);
+    // 12-hour by default now: "10:30 AM" read as military time to everyone
+    // looking at a US market, which is the one clock this axis shows
+    expect(axisTimeLabel(t, 30 * MIN)).toBe("10:30 AM");
+    expect(axisTimeLabel(t, 5_000)).toBe("10:30:00 AM");
+  });
+
+  it("writes the same instant in whichever clock was asked for", () => {
+    const t = Date.UTC(2026, 7, 30, 14, 30); // 10:30 in New York
+    expect(axisTimeLabel(t, 30 * MIN, false, false)).toBe("10:30");
+    expect(labelFor(t, timeframeFor("15m"), false)).toBe("10:30");
+    expect(labelFor(t, timeframeFor("15m"), true)).toBe("10:30 AM");
+    // afternoon is where the two forms actually diverge
+    const pm = Date.UTC(2026, 7, 30, 23, 5); // 19:05 in New York
+    expect(labelFor(pm, timeframeFor("15m"), false)).toBe("19:05");
+    expect(labelFor(pm, timeframeFor("15m"), true)).toBe("7:05 PM");
+  });
+
+  it("uses a plain space before AM/PM, not the exotic one Intl emits", () => {
+    // axis collision is measured in characters; a narrow no-break space is
+    // invisible and breaks that arithmetic
+    const label = labelFor(Date.UTC(2026, 7, 30, 23, 5), timeframeFor("15m"), true);
+    expect(label).not.toMatch(/\u202f/);
+    expect(label).toContain(" PM");
+  });
+
+  it("midnight is 12 AM in one form and 00:00 in the other, never 24:00", () => {
+    const midnight = Date.UTC(2026, 7, 30, 4, 0); // 00:00 in New York
+    expect(labelFor(midnight, timeframeFor("15m"), false)).toBe("00:00");
+    expect(labelFor(midnight, timeframeFor("15m"), true)).toBe("12:00 AM");
   });
 });
 

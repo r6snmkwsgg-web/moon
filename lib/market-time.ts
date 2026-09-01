@@ -124,14 +124,15 @@ export function fmtMarketDate(t: number): string {
   return DATE.format(new Date(t));
 }
 
-const CLOCK = new Intl.DateTimeFormat("en-GB", {
+// en-GB renders midnight as 00, where en-US with hour12:false can say 24
+const CLOCK_24 = new Intl.DateTimeFormat("en-GB", {
   timeZone: MARKET_TZ,
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
 });
 
-const CLOCK_SEC = new Intl.DateTimeFormat("en-GB", {
+const CLOCK_24_SEC = new Intl.DateTimeFormat("en-GB", {
   timeZone: MARKET_TZ,
   hour: "2-digit",
   minute: "2-digit",
@@ -139,8 +140,44 @@ const CLOCK_SEC = new Intl.DateTimeFormat("en-GB", {
   hour12: false,
 });
 
-/** "14:00" — the 24-hour form a price axis wants. */
-export function fmtMarketClock(t: number, seconds = false): string {
-  // en-GB renders midnight as 00, where en-US hour12:false can say 24
-  return (seconds ? CLOCK_SEC : CLOCK).format(new Date(t));
+const CLOCK_12 = new Intl.DateTimeFormat("en-US", {
+  timeZone: MARKET_TZ,
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+});
+
+const CLOCK_12_SEC = new Intl.DateTimeFormat("en-US", {
+  timeZone: MARKET_TZ,
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true,
+});
+
+/**
+ * A clock on the market's time, in whichever form the viewer asked for.
+ *
+ * Defaults to 12-hour: the axis used to read "01:58:30" and "14:00", which is
+ * correct and reads as military time to most people looking at a US market.
+ * Always the market's timezone either way — an exchange has one clock, and it
+ * is not the viewer's.
+ *
+ * The narrow no-break space before AM/PM that Intl emits is replaced with a
+ * plain one; an axis label is measured in characters for collision, and an
+ * invisible exotic space breaks that arithmetic.
+ */
+export function fmtMarketClock(
+  t: number,
+  seconds = false,
+  hour12 = true
+): string {
+  const fmt = hour12
+    ? seconds
+      ? CLOCK_12_SEC
+      : CLOCK_12
+    : seconds
+      ? CLOCK_24_SEC
+      : CLOCK_24;
+  return fmt.format(new Date(t)).replace(/\u202f/g, " ");
 }

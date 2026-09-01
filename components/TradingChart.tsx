@@ -30,6 +30,7 @@ import {
   type Candle,
 } from "@/lib/candles";
 import { fmtMarketDate } from "@/lib/market-time";
+import { useClockPref } from "@/lib/clock-pref";
 import Tri from "@/components/Tri";
 
 const UP = "#22c55e";
@@ -124,6 +125,8 @@ export default function TradingChart({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [tfKey, setTfKey] = useState(initialTimeframe ?? DEFAULT_TIMEFRAME);
+  const [clock, setClock] = useClockPref();
+  const hour12 = clock === "12h";
   const [tfOpen, setTfOpen] = useState(false);
   const [mode, setMode] = useState<"candle" | "line">("candle");
   const [now, setNow] = useState<number | null>(null); // null until mounted
@@ -319,11 +322,13 @@ export default function TradingChart({
    */
   const AXIS_CHAR_PX = 6; // 10px ui-monospace
   const scrubLabel =
-    scrub !== null && candles[scrub] ? labelFor(candles[scrub].t, tf) : null;
+    scrub !== null && candles[scrub]
+      ? labelFor(candles[scrub].t, tf, hour12)
+      : null;
   const edgeLabel = candles.length
     ? offset === 0
       ? "now"
-      : labelFor(candles[candles.length - 1].t, tf)
+      : labelFor(candles[candles.length - 1].t, tf, hour12)
     : "";
   const axisLabelClear = (x: number, label: string): boolean => {
     if (!geo) return true;
@@ -531,10 +536,14 @@ export default function TradingChart({
       if (x < 26 || x > rightEdge) return;
       const newDay = lastDay !== null && day(c.t) !== lastDay;
       lastDay = day(c.t);
-      out.push({ x, label: axisTimeLabel(c.t, step, newDay), major: newDay });
+      out.push({
+        x,
+        label: axisTimeLabel(c.t, step, newDay, hour12),
+        major: newDay,
+      });
     });
     return out;
-  }, [geo, candles, tf.ms, offset]);
+  }, [geo, candles, tf.ms, offset, hour12]);
 
   return (
     <div className="panel flex flex-col">
@@ -664,6 +673,31 @@ export default function TradingChart({
                     {t.label}
                   </button>
                 ))}
+                {/* The clock lives here because this is where the times are.
+                    There is no settings page to bury it in, and a preference
+                    you can only find by leaving the thing it affects is a
+                    preference nobody changes. */}
+                <div className="col-span-4 mt-1 flex items-center justify-between gap-2 border-t border-terminal-line pt-1.5">
+                  <span className="font-mono text-[10px] text-terminal-muted">
+                    clock
+                  </span>
+                  <div className="flex gap-0.5">
+                    {(["12h", "24h"] as const).map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setClock(c)}
+                        className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold transition-colors ${
+                          clock === c
+                            ? "bg-terminal-accent/15 text-terminal-accent"
+                            : "text-terminal-muted hover:bg-terminal-raise hover:text-terminal-text"
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -974,7 +1008,7 @@ export default function TradingChart({
                   fontSize="10"
                   fontFamily="ui-monospace, monospace"
                 >
-                  {labelFor(candles[scrub].t, tf)}
+                  {labelFor(candles[scrub].t, tf, hour12)}
                 </text>
               </g>
             )}

@@ -457,14 +457,21 @@ export function tzOffsetMs(at: number = Date.now()): number {
  * "14:00", daily ticks read "Aug 30", and the first tick of a new day always
  * shows the date so a multi-day window stays readable.
  */
-export function axisTimeLabel(t: number, stepMs: number, dayMark = false): string {
+export function axisTimeLabel(
+  t: number,
+  stepMs: number,
+  dayMark = false,
+  hour12 = true
+): string {
   if (stepMs >= D || dayMark) return fmtMarketDate(t);
-  return stepMs < M ? fmtMarketClock(t, true) : fmtMarketClock(t);
+  return stepMs < M
+    ? fmtMarketClock(t, true, hour12)
+    : fmtMarketClock(t, false, hour12);
 }
 
 /** Axis label for a bucket at this granularity. */
-export function labelFor(t: number, tf: Timeframe): string {
-  if (tf.ms < M) return fmtMarketClock(t, true);
-  if (tf.ms < D) return fmtMarketClock(t);
+export function labelFor(t: number, tf: Timeframe, hour12 = true): string {
+  if (tf.ms < M) return fmtMarketClock(t, true, hour12);
+  if (tf.ms < D) return fmtMarketClock(t, false, hour12);
   return fmtMarketDate(t);
 }
