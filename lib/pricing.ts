@@ -334,14 +334,17 @@ export interface Fill {
 // fabricated. Only the weather is simulated, and /how says so.
 
 /**
- * Bound on the weather, in LOG space: e^±1.4 is 0.25x to 4x fair value. Wide
- * on purpose. The old ±0.55 was a linear fraction, and a band that tight
- * combined with a three-day pull made the price an oscillator — measured at
- * lag-1 return autocorrelation -0.14 and a variance ratio of 0.58, where a
- * real market sits at 0.00 and 1.0. A hyped name trading at 3x fair value for
- * a month is normal; being yanked home every three days is not.
+ * Bound on the weather, in LOG space: e^±0.9 is 0.4x to 2.5x fair value.
+ *
+ * This is a hard wall, not the working range — the walk's own spread is
+ * about ±14% (lib/flow DRIFT_STEP_SD), so the wall is six sigma out and only
+ * a violent regime plus a jump ever touches it. It is NOT what keeps the
+ * price honest: that is the 21-day pull. An earlier version tried to do the
+ * job with a tight band and a three-day pull, and got an oscillator (lag-1
+ * autocorrelation -0.14, variance ratio 0.58). Then it swung to ±1.4 — 0.25x
+ * to 4x — which the walk, at its old amplitude, actually reached.
  */
-export const FLOW_CAP = 1.4;
+export const FLOW_CAP = 0.9;
 
 /** Deterministic 32-bit hash → [0, 1). Pure math — identical everywhere. */
 function hash01(seed: string, n: number): number {
@@ -456,9 +459,11 @@ export function bridgeNoise(
 
 /**
  * Typical daily log-return of a ticker's weather, used to size a bridge to the
- * gap it spans. Measured off the drift walk: ~290% annualised.
+ * gap it spans. Matches the drift walk at neutral volatility (lib/flow:
+ * DRIFT_STEP_SD · sqrt(288) ≈ 3.6%), so a gap filled in by a bridge is as
+ * rough as the tape either side of it — no rougher.
  */
-export const DAILY_LOG_VOL = 0.15;
+export const DAILY_LOG_VOL = 0.04;
 
 /**
  * How far a gap-filling bridge should wander, in log price.

@@ -171,7 +171,10 @@ async function main() {
     for (const tr of (trades ?? []) as { created_at: string; price: number }[]) {
       const day = tr.created_at.slice(0, 10);
       const i = rows.findIndex((r) => r.day === day);
-      if (i < 0) continue;
+      // today's row is rewritten all day and excluded from every chart; its
+      // pin is the live drift, and a print from this afternoon must not
+      // drag the path's endpoint away from where the tape actually is
+      if (i < 0 || i === rows.length - 1) continue;
       const anchor = anchorOf(rows[i]);
       if (anchor > 0 && Number(tr.price) > 0) {
         pins.set(i, Math.log(Number(tr.price) / anchor));

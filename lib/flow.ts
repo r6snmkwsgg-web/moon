@@ -34,10 +34,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   FLOW_CAP,
+  SHOCK_HALFLIFE_MS,
   floatOf,
   settledPrice,
   valuationMultiple,
   volatilityFactor,
+  type RevenueEvent,
   type RevenuePoint,
 } from "@/lib/pricing";
 import type { MrrUpdate, Ticker } from "@/lib/types";
@@ -62,35 +64,47 @@ export const DRIFT_HALFLIFE_DAYS = 21;
 export const DRIFT_PULL = 1 - Math.pow(0.5, 1 / (DRIFT_HALFLIFE_DAYS * TICKS_PER_DAY));
 
 /**
- * Per-tick shock size at neutral volatility. Chosen so the walk's stationary
- * spread is ~18% — i.e. the weather usually sits within ±36% of fair value,
- * the same range the old noise field covered:
+ * Per-tick shock size at neutral volatility. Sized for a small-cap tape, not
+ * a meme coin:
  *
- *     sd = DRIFT_STEP_SD / sqrt(2·DRIFT_PULL) ≈ 0.0060 / 0.0151 ≈ 0.40
+ *     daily vol = DRIFT_STEP_SD · sqrt(288)          ≈ 0.0021 · 17 ≈ 3.6%
+ *     spread    = DRIFT_STEP_SD / sqrt(2·DRIFT_PULL) ≈ 0.0021 / 0.0151 ≈ 0.14
  *
- * In log space that is a typical range of about 0.67x to 1.5x fair value,
- * with the tails reaching further — roughly where real hype trades.
+ * so a typical day moves a few percent and the weather usually holds a
+ * ticker within ±14% of fair value (two sigma, ±30%). Small caps run hotter
+ * through volatilityFactor, and a violent regime (below) up to ~3x hotter
+ * still — that is where the crashes live, and they are rare.
+ *
+ * This was 0.0060: a 10% daily vol and a ±40% band. On the live board that
+ * put half the tickers up or down 30% in a day with no trades and no revenue
+ * news, and a 7-day column reading +217% off nothing. The shape of the walk
+ * (its half-life, its clustering) was right; only its amplitude was absurd.
  */
-export const DRIFT_STEP_SD = 0.0060;
+export const DRIFT_STEP_SD = 0.0021;
 
 /** Half-life of the volatility regime, in days — regimes outlast trends. */
 export const VOL_HALFLIFE_DAYS = 10;
 export const VOL_PULL = 1 - Math.pow(0.5, 1 / (VOL_HALFLIFE_DAYS * TICKS_PER_DAY));
 /**
- * Vol-of-vol. Raised from 0.0099: volatility clustering measured 0.19 against
- * a real-market 0.15–0.30, and excess kurtosis 2.0 against +6..15. At 0.022
- * clustering lands at 0.31 and kurtosis at 4.1 — quiet fortnights broken by
- * violent days, which is what makes a crash read as an event instead of as
- * more of the same chop.
+ * Vol-of-vol. The regime's stationary spread is VOL_STEP_SD / sqrt(2·VOL_PULL)
+ * ≈ 0.013 / 0.022 ≈ 0.6 in log space: a typical ticker runs somewhere between
+ * 0.55x and 1.8x its neutral volatility, and the tails reach the cap below.
+ * That is enough to cluster — quiet fortnights broken by violent days, which
+ * is what makes a crash read as an event — without the old 1.0 spread, which
+ * spent a third of every ticker's life either asleep or on fire.
  */
-export const VOL_STEP_SD = 0.022;
-/** exp(±1.6): a sleepy ticker moves at 0.2×, a broken one at 5×. */
-export const VOL_STATE_CAP = 1.6;
+export const VOL_STEP_SD = 0.013;
+/** exp(±1.2): a sleepy ticker moves at 0.3×, a broken one at 3.3×. */
+export const VOL_STATE_CAP = 1.2;
 
 /** Chance per tick of a gap. 1/2000 ticks ≈ once a week per ticker. */
 export const JUMP_PROBABILITY = 1 / 2000;
-/** Gap size, as a standard deviation of the level. */
-export const JUMP_SD = 0.11;
+/**
+ * Gap size, as a standard deviation of the level: a typical jump is ±6%, a
+ * bad one ±12–18%. Revenue news moves prices on its own (lib/pricing
+ * revenueShock); this is the weather's share of the gapping.
+ */
+export const JUMP_SD = 0.06;
 
 /**
  * A cold start (or a poller that slept) is caught up by stepping, not by
@@ -300,6 +314,39 @@ export async function advanceMarketFlow(
     // pre-migration or no connections — reported MRR is the whole story
   }
 
+  // The news the tape is reacting to right now. A print's overshoot lives
+  // for a few hours (revenueShock), and the recorded price has to carry it:
+  // the tape used to be written without it, so for exactly those hours the
+  // live quote sat 20–40% under every recorded tick, the chart's last candle
+  // disagreed with the header above it, and the dip the market was actually
+  // trading through vanished from history five minutes later.
+  const news = new Map<string, RevenueEvent[]>();
+  try {
+    const { data } = await admin
+      .from("revenue_events")
+      .select("ticker_id, at, prev_mrr, mrr, prev_subscriptions")
+      .gte("at", new Date(now - SHOCK_HALFLIFE_MS * 8).toISOString())
+      .order("at", { ascending: true });
+    for (const e of (data ?? []) as {
+      ticker_id: string;
+      at: string;
+      prev_mrr: number;
+      mrr: number;
+      prev_subscriptions: number | null;
+    }[]) {
+      const list = news.get(e.ticker_id) ?? [];
+      list.push({
+        at: Date.parse(e.at),
+        mrr: Number(e.mrr),
+        prevMrr: Number(e.prev_mrr),
+        catchUp: e.prev_subscriptions === null,
+      });
+      news.set(e.ticker_id, list);
+    }
+  } catch {
+    // no revenue_events table — nothing to react to
+  }
+
   const rows: { ticker_id: string; at: string; drift: number; price: number }[] =
     [];
   const at = new Date(now).toISOString();
@@ -355,7 +402,7 @@ export async function advanceMarketFlow(
         now,
         valuationMultiple(record),
         floatOf(ticker.shares_outstanding),
-        [],
+        news.get(ticker.id) ?? [],
         next.drift
       ),
     });

@@ -115,20 +115,20 @@ describe("the drift walk", () => {
     }
   });
 
-  it("holds the spread it was calibrated for (~40% in log space)", () => {
+  it("holds the spread it was calibrated for (~14% in log space)", () => {
     // sd = DRIFT_STEP_SD / sqrt(2·DRIFT_PULL) for the neutral-volatility OU;
-    // stochastic vol widens it, jumps widen it further. In log space 0.40 is
-    // a typical band of about 0.67x to 1.5x fair value, with tails past that
-    // — roughly where real hype trades. The old 0.18 with a three-day pull
-    // was a leash, and it showed: the price sawtoothed instead of going
-    // anywhere.
+    // stochastic vol widens it, jumps widen it further. In log space 0.14 is
+    // a typical band of about 0.87x to 1.15x fair value, two sigma 0.75x to
+    // 1.33x — where a small cap's hype actually trades. It was 0.40, which
+    // is a band of 0.67x to 1.5x, and on the live board that put half the
+    // tickers 30% from fair value on a day with no trades and no news.
     const analytic = DRIFT_STEP_SD / Math.sqrt(2 * DRIFT_PULL);
-    expect(analytic).toBeGreaterThan(0.3);
-    expect(analytic).toBeLessThan(0.55);
+    expect(analytic).toBeGreaterThan(0.1);
+    expect(analytic).toBeLessThan(0.2);
 
     const observed = sd(walk(60_000, 8_000, 4242).slice(2_000));
-    expect(observed).toBeGreaterThan(0.1);
-    expect(observed).toBeLessThan(1.0);
+    expect(observed).toBeGreaterThan(0.05);
+    expect(observed).toBeLessThan(0.4);
   });
 
   it("REGRESSION: it wanders instead of sawtoothing", () => {
@@ -162,11 +162,34 @@ describe("the drift walk", () => {
     expect(va(agg) / 5 / va(daily)).toBeGreaterThan(0.7); // was 0.58
   });
 
-  it("moves enough per day to be worth trading", () => {
+  it("moves enough per day to be worth trading, and no more", () => {
     const perDay = DRIFT_STEP_SD * Math.sqrt(86_400_000 / FLOW_TICK_MS);
-    expect(perDay).toBeGreaterThan(0.08); // ≥8% of drift movement a day
-    // annualised, that is meme-coin territory rather than blue chip
-    expect(perDay * Math.sqrt(365)).toBeGreaterThan(1.5);
+    expect(perDay).toBeGreaterThan(0.025); // ≥2.5% of drift movement a day
+    expect(perDay).toBeLessThan(0.06); // and not a meme coin
+    // annualised: small-cap territory, somewhere between 40% and 120%
+    expect(perDay * Math.sqrt(365)).toBeGreaterThan(0.4);
+    expect(perDay * Math.sqrt(365)).toBeLessThan(1.2);
+  });
+
+  it("REGRESSION: a quiet day is a quiet day — the weather is not the news", () => {
+    // Measured on the live board before this: no trades, no revenue events,
+    // and half the tickers up or down 30% on the day, with one 7-day column
+    // reading +217%. Over a long run the weather's daily moves should look
+    // like a small cap's — a few percent typically, a bad day in the teens,
+    // and a halving only ever on actual news.
+    const series = walk(400 * 288, 5_000, 2026);
+    const moves: number[] = [];
+    for (let d = 1; d * 288 < series.length; d++) {
+      moves.push(Math.abs(series[d * 288] - series[(d - 1) * 288]));
+    }
+    moves.sort((a, b) => a - b);
+    const q = (p: number) => moves[Math.floor(p * (moves.length - 1))];
+    expect(q(0.5)).toBeGreaterThan(0.01); // it does move
+    expect(q(0.5)).toBeLessThan(0.05); // a typical day: a few percent
+    expect(q(0.95)).toBeLessThan(0.2); // a bad day: not a halving
+    expect(moves.filter((m) => m > 0.3).length / moves.length).toBeLessThan(
+      0.01
+    );
   });
 
   it("clusters: quiet fortnights and violent ones, not uniform chop", () => {
@@ -275,6 +298,10 @@ function fakeDb(tables: Record<string, Row[]>) {
       },
       lt: (col: string, val: string) => {
         filters.push((r) => String(r[col] ?? "") < val);
+        return api;
+      },
+      gte: (col: string, val: string) => {
+        filters.push((r) => String(r[col] ?? "") >= val);
         return api;
       },
       or: (expr: string) => {
@@ -484,6 +511,47 @@ describe("advanceMarketFlow", () => {
       ),
       10
     );
+  });
+
+  it("REGRESSION: the tape carries the news — a print's overshoot is recorded", async () => {
+    // A churn's overshoot lives for a few hours (revenueShock). The tape was
+    // written without it, so for exactly those hours the live quote sat well
+    // under every recorded tick: the header read $6.30, the chart's last
+    // candle $8.15, and the dip everyone traded through vanished from the
+    // record five minutes later.
+    const { advanceMarketFlow } = await import("@/lib/flow");
+    const { settledPrice, valuationMultiple, revenueShock } = await import(
+      "@/lib/pricing"
+    );
+    const now = Date.parse("2026-09-01T21:45:00Z");
+    const at = now - 2 * 60_000;
+    const tables: Record<string, Row[]> = {
+      ...seedTables(),
+      stripe_connections: [{ ticker_id: "t1", live_mrr: 4_000 }],
+      revenue_events: [
+        {
+          ticker_id: "t1",
+          at: new Date(at).toISOString(),
+          prev_mrr: 5_000,
+          mrr: 4_000,
+          prev_subscriptions: 10,
+        },
+      ],
+    };
+    const db = fakeDb(tables);
+    await advanceMarketFlow(db.client, { rng: seeded(5), now });
+
+    const tick = db.tables.flow_ticks[0] as { drift: number; price: number };
+    const news = [{ at, mrr: 4_000, prevMrr: 5_000 }];
+    const mult = valuationMultiple([{ month: MONTH, mrr: 5_000 }]);
+    expect(tick.price).toBeCloseTo(
+      settledPrice(4_000, 0.2, now, mult, 10_000, news, tick.drift),
+      10
+    );
+    // and it really is under the no-news price by exactly the shock
+    const quiet = settledPrice(4_000, 0.2, now, mult, 10_000, [], tick.drift);
+    expect(revenueShock(news, now)).toBeLessThan(-0.2);
+    expect(tick.price / quiet - 1).toBeCloseTo(revenueShock(news, now), 10);
   });
 
   it("stands down cleanly when 0007 has not been applied", async () => {

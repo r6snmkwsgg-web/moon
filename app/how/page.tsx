@@ -12,6 +12,7 @@ import {
   SHOCK_OVERSHOOT,
   TARGET_OPENING_PRICE,
   TRADE_IMPACT_FACTOR,
+  FLOW_CAP,
 } from "@/lib/pricing";
 import { fmtPrice } from "@/lib/format";
 import PricingPlayground from "./PricingPlayground";
@@ -189,10 +190,14 @@ export default function HowPage() {
             Between real events, prices ride <b>the drift</b>: a per-ticker
             random walk that runs, dips, squeezes and crashes around the
             anchor. It is drawn fresh every five minutes, it pulls back toward
-            fair value with about a three-day half-life, and its own
+            fair value with about a three-week half-life, and its own
             volatility drifts too — so a ticker can go quiet for a fortnight
             and then come apart in a day. Small caps swing hardest. It is
-            capped at ±55% either way.
+            sized like a small-cap stock, not a coin: a typical day moves a
+            few percent, the weather usually holds a ticker within about 15%
+            of fair value, and there is a hard wall at{" "}
+            {Math.exp(-FLOW_CAP).toFixed(1)}x–{Math.exp(FLOW_CAP).toFixed(1)}x
+            that only a violent regime ever touches.
           </p>
           <p className="text-terminal-muted">
             Full disclosure, and the important part: the drift is{" "}
