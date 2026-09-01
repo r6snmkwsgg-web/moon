@@ -159,6 +159,72 @@ export interface AnchorSources {
   live: number;
   /** When the ticker was listed. Nothing may be drawn before it existed. */
   notBefore?: number;
+  /**
+   * Instants the price is KNOWN to have jumped — a churn, a signup, an
+   * earnings print. `weight` is how much of the move that one is responsible
+   * for (the log MRR change); equal shares if omitted.
+   */
+  steps?: { at: number; weight?: number }[];
+}
+
+/**
+ * Split a gap at the instants the price is known to have jumped.
+ *
+ * The tape records every five minutes, and the chart joins recorded points
+ * with a straight line. A churn is not gradual — it happens at a moment — so
+ * an 18% drop that landed between two ticks was drawn as a seven-minute ramp
+ * of little candles walking downhill, which is not what anybody traded:
+ *
+ *     19:03:23  $13.70   the tick seven seconds before the churn
+ *     19:03:30           the churn: MRR $668 -> $549.50
+ *     19:10:29  $11.23   the next tick
+ *
+ * Three facts were known and only two were used. The price before, the price
+ * after, and — sitting in revenue_events all along — exactly when it moved.
+ * Holding the line flat to that instant and gapping there invents nothing: it
+ * places a move we already recorded at the time we already recorded it.
+ *
+ * Several jumps inside one gap share the move in proportion to their weights,
+ * so a churn and a signup ninety seconds apart land as two steps of the right
+ * size rather than one lump.
+ */
+export function stepAnchors(
+  anchors: ChartPoint[],
+  steps: { at: number; weight?: number }[]
+): ChartPoint[] {
+  if (!steps.length || anchors.length < 2) return anchors;
+  const sorted = [...steps].sort((a, b) => a.at - b.at);
+  const out: ChartPoint[] = [];
+
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    out.push(a);
+    const b = anchors[i + 1];
+    if (!b || a.price <= 0 || b.price <= 0) continue;
+
+    // strictly inside the gap — a jump landing on an anchor is already exact
+    const inside = sorted.filter((s) => s.at > a.t && s.at < b.t);
+    if (inside.length === 0) continue;
+
+    const weights = inside.map((s) =>
+      Number.isFinite(s.weight) && Math.abs(s.weight as number) > 0
+        ? Math.abs(s.weight as number)
+        : 1
+    );
+    const totalWeight = weights.reduce((x, y) => x + y, 0) || inside.length;
+    const totalMove = Math.log(b.price / a.price);
+
+    let done = 0;
+    for (let k = 0; k < inside.length; k++) {
+      const before = Math.exp(Math.log(a.price) + totalMove * (done / totalWeight));
+      done += weights[k];
+      const after = Math.exp(Math.log(a.price) + totalMove * (done / totalWeight));
+      // hold flat right up to the instant, then step
+      out.push({ t: inside[k].at - 1, price: before });
+      out.push({ t: inside[k].at, price: after });
+    }
+  }
+  return out;
 }
 
 /**
@@ -182,6 +248,7 @@ export interface AnchorSources {
  *   · NOTHING PREDATES THE LISTING. A backfill once laid seven hours of tape
  *     ahead of a ticker's own listing timestamp, which is the same lie as a
  *     snapshot dated in the future, just pointed the other way.
+ *   · A KNOWN JUMP IS DRAWN AS A JUMP. See stepAnchors below.
  */
 export function mergeAnchors({
   snapshots,
@@ -190,6 +257,7 @@ export function mergeAnchors({
   now,
   live,
   notBefore = -Infinity,
+  steps,
 }: AnchorSources): ChartPoint[] {
   const todayUTC = new Date(now).toISOString().slice(0, 10);
   const out: ChartPoint[] = [];
@@ -211,8 +279,9 @@ export function mergeAnchors({
   for (const r of trades) keep(r.at, Number(r.price));
   for (const k of ticks) keep(k.at, Number(k.price));
   out.sort((a, b) => a.t - b.t);
-  out.push({ t: now, price: live });
-  return out;
+  const stepped = steps?.length ? stepAnchors(out, steps) : out;
+  stepped.push({ t: now, price: live });
+  return stepped;
 }
 
 /**

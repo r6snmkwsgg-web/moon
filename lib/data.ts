@@ -324,6 +324,12 @@ export async function getPriceSeries(
     now,
     live: flowPrice(symbol, mrr, sentiment, now, multiple, shares, events, drift),
     notBefore: listedAt,
+    // a churn happens at a moment, not over the five minutes until the next
+    // tick — weight each by its log MRR change so several inside one gap
+    // split the move the way they actually caused it
+    steps: events
+      .filter((e) => e.prevMrr > 0 && e.mrr > 0)
+      .map((e) => ({ at: e.at, weight: Math.abs(Math.log(e.mrr / e.prevMrr)) })),
   });
 
   // A BROWNIAN BRIDGE between each pair of real prices, in log space.

@@ -305,6 +305,76 @@ describe("mergeAnchors", () => {
     expect(out).toHaveLength(2);
   });
 
+  it("REGRESSION: a known jump is drawn as a jump, not a ramp", () => {
+    // PRL's churn, exactly as recorded. The tape ticks every five minutes and
+    // the chart joins recorded points with a straight line, so an 18% MRR drop
+    // that landed seven seconds after a tick got smeared across the seven
+    // minutes until the next one — a staircase of little candles walking
+    // downhill that nobody traded.
+    const tickBefore = Date.parse("2026-08-31T23:03:23Z");
+    const churn = Date.parse("2026-08-31T23:03:30Z");
+    const tickAfter = Date.parse("2026-08-31T23:10:29Z");
+    const out = mergeAnchors({
+      ...base,
+      now: tickAfter + 60_000,
+      ticks: [
+        { at: tickBefore, price: 13.7 },
+        { at: tickAfter, price: 11.23 },
+      ],
+      steps: [{ at: churn }],
+    });
+    // flat right up to the instant, then the whole move in one step
+    expect(out.map((a) => [a.t - churn, Number(a.price.toFixed(2))])).toEqual([
+      [tickBefore - churn, 13.7],
+      [-1, 13.7],
+      [0, 11.23],
+      [tickAfter - churn, 11.23],
+      [tickAfter + 60_000 - churn, 27.8],
+    ]);
+  });
+
+  it("several jumps in one gap split the move by weight", () => {
+    const a = Date.parse("2026-08-31T20:00:00Z");
+    const b = Date.parse("2026-08-31T20:05:00Z");
+    const out = mergeAnchors({
+      ...base,
+      now: b + 60_000,
+      ticks: [
+        { at: a, price: 100 },
+        { at: b, price: 400 },
+      ],
+      // the second is worth twice the first, so it takes twice the log move
+      steps: [
+        { at: a + 60_000, weight: 1 },
+        { at: a + 120_000, weight: 2 },
+      ],
+    });
+    const at = (t: number) => out.find((p) => p.t === t)!.price;
+    expect(at(a + 60_000)).toBeCloseTo(100 * Math.cbrt(4), 6); // one third
+    expect(at(a + 120_000)).toBeCloseTo(400, 6); // the rest
+  });
+
+  it("a jump landing exactly on a recorded price changes nothing", () => {
+    const a = Date.parse("2026-08-31T20:00:00Z");
+    const b = Date.parse("2026-08-31T20:05:00Z");
+    const plain = { ...base, now: b + 60_000, ticks: [
+      { at: a, price: 100 }, { at: b, price: 80 } ] };
+    expect(mergeAnchors({ ...plain, steps: [{ at: b }] })).toEqual(
+      mergeAnchors(plain)
+    );
+  });
+
+  it("a jump outside the recorded range is ignored", () => {
+    const a = Date.parse("2026-08-31T20:00:00Z");
+    const out = mergeAnchors({
+      ...base,
+      now: a + 600_000,
+      ticks: [{ at: a, price: 100 }],
+      steps: [{ at: a - 999_999 }, { at: a + 599_999 }],
+    });
+    expect(out).toHaveLength(2); // the tick and the live point
+  });
+
   it("an empty board is still a one-point series, not a crash", () => {
     expect(mergeAnchors(base)).toEqual([{ t: NOW, price: 27.8 }]);
   });
