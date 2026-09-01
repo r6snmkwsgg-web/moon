@@ -449,7 +449,16 @@ export async function readStripePayments(
       `/charges?${params.toString()}`
     );
     if (status !== 200) {
-      throw new Error(`Stripe charges read failed (${status})`);
+      // Stripe's own message is the useful part. A restricted key made to
+      // read subscriptions has no charges:read, and Stripe says so in as many
+      // words — "does not have the required permissions". A bare status code
+      // leaves the founder guessing which of five things is wrong.
+      const detail = String(
+        ((json.error ?? {}) as Record<string, unknown>).message ?? ""
+      ).slice(0, 200);
+      throw new Error(
+        `Stripe charges read failed (${status})${detail ? `: ${detail}` : ""}`
+      );
     }
     const rows = (json.data ?? []) as Array<Record<string, unknown>>;
     all.push(...(rows as ChargeLike[]));

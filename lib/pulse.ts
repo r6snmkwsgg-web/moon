@@ -30,6 +30,7 @@ interface Connection {
   last_mrr: number | null;
   live_mrr: number | null;
   revenue_backfilled?: boolean | null;
+  revenue_error?: string | null;
   live_subscriptions: number | null;
   live_synced_at: string | null;
 }
@@ -38,6 +39,8 @@ export interface PulseResult {
   checked: number;
   changed: number;
   errors: number;
+  /** Payment syncs that failed — surfaced so an empty ledger is explainable. */
+  revenueErrors?: number;
   events: { symbol: string; kind: RevenueEventKind; from: number; to: number }[];
 }
 
@@ -166,15 +169,34 @@ export async function pollRevenuePulse(
 
     out.checked++;
 
-    // money received, which is what the price anchors on. Kept separate from
+    // Money received, which is what the price anchors on. Kept separate from
     // the subscription read so a failure in one does not lose the other, and
-    // tolerated entirely: 0008 may not be applied yet, and a missing revenue
-    // row must never stop a ticker trading.
+    // never fatal: a missing revenue row must not stop a ticker trading.
+    //
+    // But it is RECORDED. The first version swallowed the error whole, and
+    // the result was daily_revenue sitting empty with no way to tell whether
+    // the migration was missing, the deploy was behind, or the restricted key
+    // simply has no charge-read scope — which is the likeliest of the three,
+    // because a key created to read subscriptions does not get charges.
     try {
       await recordDailyRevenue(admin, conn, now);
-    } catch {
-      // pre-migration, or Stripe refused the charges scope — the anchor falls
-      // back to subscriptions on its own
+      if (conn.revenue_error) {
+        await admin
+          .from("stripe_connections")
+          .update({ revenue_error: null })
+          .eq("ticker_id", conn.ticker_id);
+      }
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      out.revenueErrors = (out.revenueErrors ?? 0) + 1;
+      await admin
+        .from("stripe_connections")
+        .update({ revenue_error: reason.slice(0, 300) })
+        .eq("ticker_id", conn.ticker_id)
+        .then(
+          () => undefined,
+          () => undefined // pre-0008: nowhere to write it, carry on
+        );
     }
 
     let reading;

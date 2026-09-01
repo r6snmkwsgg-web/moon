@@ -49,3 +49,12 @@ alter table public.stripe_connections
 
 comment on column public.stripe_connections.revenue_backfilled is
   'Set once the historical charge backfill has run for this connection, so the poller only walks the long window one time.';
+
+-- Why a payment sync failed, if it did. Without this an empty daily_revenue
+-- is unexplainable from the outside: a missing migration, a stale deploy and
+-- a restricted key with no charge-read scope all look identical.
+alter table public.stripe_connections
+  add column if not exists revenue_error text;
+
+comment on column public.stripe_connections.revenue_error is
+  'Last payment-sync failure, cleared on the next success. A restricted key created to read subscriptions does not get charges:read, and that is the usual cause.';

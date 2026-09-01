@@ -274,7 +274,19 @@ export function mergeAnchors({
   };
   for (const s of snapshots) {
     if (s.day >= todayUTC) continue;
-    keep(Date.parse(`${s.day}T06:00:00Z`), Number(s.price));
+    // A snapshot is pinned to a nominal 06:00, which for the LISTING DAY can
+    // fall before the listing itself — PRL went live at 07:05 and lost its
+    // whole first day to the notBefore guard, so a three-day-old ticker only
+    // scrolled back one. The row is real; only its nominal slot is early, so
+    // it slides to the listing instant instead of being thrown away. A tick
+    // is timestamped for real, so an early one stays dropped.
+    const pin = Date.parse(`${s.day}T06:00:00Z`);
+    // ...but only the listing day's own row slides. A snapshot dated a week
+    // before the ticker existed is not an early pin, it is bad data, and it
+    // stays dropped.
+    const dayEnd = pin + 86_400_000;
+    const t = pin < notBefore && dayEnd > notBefore ? notBefore : pin;
+    keep(t, Number(s.price));
   }
   for (const r of trades) keep(r.at, Number(r.price));
   for (const k of ticks) keep(k.at, Number(k.price));

@@ -297,6 +297,25 @@ describe("mergeAnchors", () => {
     expect(out.map((a) => a.price)).toEqual([18.1, 17.9, 29.55, 27.8]);
   });
 
+  it("REGRESSION: the listing day's own snapshot slides, it is not discarded", () => {
+    // Snapshots are pinned to a nominal 06:00. PRL went live at 07:05, so its
+    // first day sat 65 minutes "before the listing" and the guard threw it
+    // away — a three-day-old ticker that would only scroll back one, and no
+    // way to drag any further. The row is real; only its slot was early.
+    const listed = Date.parse("2026-08-29T07:05:00Z");
+    const out = mergeAnchors({
+      ...base,
+      now: Date.parse("2026-08-31T12:00:00Z"),
+      notBefore: listed,
+      snapshots: [
+        { day: "2026-08-29", price: 18.14 }, // pinned 06:00, an hour early
+        { day: "2026-08-30", price: 17.91 },
+      ],
+    });
+    expect(out[0]).toEqual({ t: listed, price: 18.14 });
+    expect(out).toHaveLength(3); // both days plus the live point
+  });
+
   it("without a listing time nothing is filtered out", () => {
     const out = mergeAnchors({
       ...base,
