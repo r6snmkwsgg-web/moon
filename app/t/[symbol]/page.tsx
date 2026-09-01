@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
+  getFollowedIds,
+  getHolders,
   getRecentTrades,
   getTickerPage,
   getTickerPosts,
@@ -21,6 +23,7 @@ import PulseKeeper from "@/components/PulseKeeper";
 import Discussion from "@/components/Discussion";
 import TradingChart from "@/components/TradingChart";
 import ThesisFeed from "@/components/ThesisFeed";
+import HoldersTable from "@/components/HoldersTable";
 import LiveQuote from "@/components/LiveQuote";
 import LiveMarketCap from "@/components/LiveMarketCap";
 import TradePanel from "@/components/TradePanel";
@@ -90,12 +93,15 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const user = await getUser();
   const isFounder = user !== null && t.claimed_by === user.id;
 
-  const [gauge, recentTrades, posts, theses] = await Promise.all([
-    getVoteGauge(t.id),
-    getRecentTrades(10, t.id),
-    getTickerPosts(t.id, quote.price),
-    getRecentTrades(15, t.id, undefined, true),
-  ]);
+  const [gauge, recentTrades, posts, theses, holders, followedIds] =
+    await Promise.all([
+      getVoteGauge(t.id),
+      getRecentTrades(10, t.id),
+      getTickerPosts(t.id, quote.price),
+      getRecentTrades(15, t.id, undefined, true),
+      getHolders(t.id, quote.price, quote.shares),
+      user ? getFollowedIds(user.id) : Promise.resolve([] as string[]),
+    ]);
 
   // Signed-in extras (own rows only — RLS applies).
   let cash: number | null = null;
@@ -453,14 +459,25 @@ export default async function TickerPage({ params, searchParams }: Props) {
 
       {/* the social floor — full width, and below the rail on mobile so
           trading is always the first thing you reach */}
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <Discussion
-          posts={posts}
-          tickerId={t.id}
-          symbol={t.symbol}
-          signedIn={user !== null}
-          viewerId={user?.id ?? null}
-        />
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-4">
+          <HoldersTable
+            rows={holders.rows}
+            total={holders.total}
+            symbol={t.symbol}
+            followedIds={followedIds}
+            viewerId={user?.id ?? null}
+            signedIn={user !== null}
+            now={renderedAt}
+          />
+          <Discussion
+            posts={posts}
+            tickerId={t.id}
+            symbol={t.symbol}
+            signedIn={user !== null}
+            viewerId={user?.id ?? null}
+          />
+        </div>
         <ThesisFeed theses={theses} />
       </div>
 

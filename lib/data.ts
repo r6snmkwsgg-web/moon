@@ -15,6 +15,7 @@ import {
 } from "@/lib/pricing";
 import { mergeAnchors } from "@/lib/candles";
 import { anchorRevenue } from "@/lib/revenue";
+import { summariseHolderTrades } from "@/lib/holders";
 import type { DailyRevenue } from "@/lib/surprise";
 import { STARTING_CASH } from "@/lib/config";
 import { getRevenueEvents } from "@/lib/pulse";
@@ -809,6 +810,105 @@ export async function getRecentTrades(
       note: (t.note as string) ?? null,
     };
   });
+}
+
+/** One row of the public holders table — every number off the ledger. */
+export interface HolderRow {
+  userId: string;
+  trader: string;
+  username: string | null;
+  shares: number;
+  avgCost: number;
+  /** shares × the live price */
+  value: number;
+  /** value − shares × avgCost */
+  pnl: number;
+  /** pnl over cost, as a fraction */
+  pnlPct: number;
+  /** avgCost × the float — the market cap they bought in at */
+  entryMarketCap: number;
+  /** epoch ms the open position started; null when the ledger has no buy */
+  heldSince: number | null;
+  thesis: string | null;
+  thesisAt: number | null;
+  lastTradeAt: number | null;
+}
+
+/**
+ * Who holds a ticker, biggest position first. Service role: holdings are
+ * RLS "read own", but a position is already public beside every discussion
+ * post and every print carries a name on the tape — this is the same fact,
+ * sorted. `limit` caps the rows shipped; `total` is the whole count.
+ */
+export async function getHolders(
+  tickerId: string,
+  price: number,
+  float: number,
+  limit = 100
+): Promise<{ rows: HolderRow[]; total: number }> {
+  const admin = createSupabaseAdminClient();
+  const { data, count } = await admin
+    .from("holdings")
+    .select("user_id, shares, avg_cost, profiles(display_name, username)", {
+      count: "exact",
+    })
+    .eq("ticker_id", tickerId)
+    .gt("shares", 0)
+    .order("shares", { ascending: false })
+    .limit(limit);
+  const held = (data ?? []) as Array<Record<string, unknown>>;
+  if (held.length === 0) return { rows: [], total: count ?? 0 };
+
+  const ids = held.map((h) => String(h.user_id));
+  const { data: tradeRows } = await admin
+    .from("trades")
+    .select("user_id, side, shares, created_at, note")
+    .eq("ticker_id", tickerId)
+    .in("user_id", ids)
+    .order("created_at", { ascending: true })
+    .limit(5000);
+  const activity = summariseHolderTrades(
+    ((tradeRows ?? []) as {
+      user_id: string;
+      side: "buy" | "sell";
+      shares: number;
+      created_at: string;
+      note: string | null;
+    }[]).map((t) => ({
+      userId: t.user_id,
+      side: t.side,
+      shares: Number(t.shares),
+      at: Date.parse(t.created_at),
+      note: t.note ?? null,
+    }))
+  );
+
+  const rows = held
+    .map((h): HolderRow => {
+      const profile = (h.profiles ?? {}) as Record<string, unknown>;
+      const shares = Number(h.shares);
+      const avgCost = Number(h.avg_cost);
+      const value = shares * price;
+      const cost = shares * avgCost;
+      const a = activity.get(String(h.user_id));
+      return {
+        userId: String(h.user_id),
+        trader: String(profile.display_name ?? "trader"),
+        username: (profile.username as string) ?? null,
+        shares,
+        avgCost,
+        value,
+        pnl: value - cost,
+        pnlPct: cost > 0 ? (value - cost) / cost : 0,
+        entryMarketCap: avgCost * float,
+        heldSince: a?.heldSince ?? null,
+        thesis: a?.thesis ?? null,
+        thesisAt: a?.thesisAt ?? null,
+        lastTradeAt: a?.lastTradeAt ?? null,
+      };
+    })
+    .sort((a, b) => b.value - a.value);
+  return { rows, total: count ?? rows.length };
 }
 
 // ── social core (0003) ──────────────────────────────────────────────────────
