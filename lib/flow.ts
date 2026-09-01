@@ -173,10 +173,23 @@ export function advanceFlow(
   return next;
 }
 
-/** How many ticks are owed since `since`. */
+/**
+ * A scheduler that fires "every five minutes" does not fire on the second,
+ * and a strict floor punishes it for that. A cron landing at 4m58s counted
+ * zero ticks and stood down; the next one, ten minutes after the last write,
+ * counted two and advanced the walk twice — but wrote a single row, because
+ * one call records where the walk LANDED, not every step it took.
+ *
+ * Measured on the live board: 106 ticks in fourteen hours where there should
+ * have been 168, and 55 gaps of nine to eleven minutes. The tape was running
+ * at half its resolution because of two seconds of jitter.
+ */
+export const TICK_GRACE_MS = 30_000;
+
+/** How many ticks are owed since `since`, forgiving a late scheduler. */
 export function ticksDue(since: number | null, now: number): number {
   if (since === null || !Number.isFinite(since)) return 1;
-  return Math.floor((now - since) / FLOW_TICK_MS);
+  return Math.floor((now - since + TICK_GRACE_MS) / FLOW_TICK_MS);
 }
 
 /**
@@ -298,7 +311,8 @@ export async function advanceMarketFlow(
   // the "is it due" test is part of the UPDATE rather than a read before it:
   // whichever request writes first moves drift_at forward, and the other one
   // matches no rows and stands down.
-  const staleBefore = new Date(now - FLOW_TICK_MS).toISOString();
+  // the same grace, or the row the read judged due matches nothing on write
+  const staleBefore = new Date(now - FLOW_TICK_MS + TICK_GRACE_MS).toISOString();
 
   for (const ticker of tickers) {
     const owed = due.get(ticker.id);

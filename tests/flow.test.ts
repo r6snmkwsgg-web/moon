@@ -208,10 +208,26 @@ describe("the drift walk", () => {
 describe("catching up", () => {
   it("counts whole intervals since the last tick", () => {
     const now = Date.parse("2026-08-31T12:00:00Z");
-    expect(ticksDue(now - 4 * 60_000, now)).toBe(0); // inside the interval
+    expect(ticksDue(now - 4 * 60_000, now)).toBe(0); // genuinely early
     expect(ticksDue(now - FLOW_TICK_MS, now)).toBe(1);
     expect(ticksDue(now - 62 * 60_000, now)).toBe(12);
     expect(ticksDue(null, now)).toBe(1); // never stepped
+  });
+
+  it("REGRESSION: a cron two seconds early still counts as due", () => {
+    // Vercel does not fire on the second. A strict floor made a 4m58s cron
+    // count zero and stand down, so the next one came ten minutes after the
+    // last write and advanced twice — writing ONE row, because a call records
+    // where the walk landed, not every step. The live board showed 106 ticks
+    // in fourteen hours instead of 168, with 55 gaps of nine to eleven
+    // minutes. Half resolution, from two seconds of jitter.
+    const now = Date.parse("2026-08-31T12:00:00Z");
+    expect(ticksDue(now - (FLOW_TICK_MS - 2_000), now)).toBe(1);
+    expect(ticksDue(now - (FLOW_TICK_MS - 25_000), now)).toBe(1);
+    // and it stays one, not two, when the scheduler runs a touch late
+    expect(ticksDue(now - (FLOW_TICK_MS + 25_000), now)).toBe(1);
+    // but a genuinely early nudge is still turned away
+    expect(ticksDue(now - 60_000, now)).toBe(0);
   });
 
   it("a slept poller advances the market, it does not freeze it", () => {
