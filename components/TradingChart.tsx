@@ -411,6 +411,17 @@ export default function TradingChart({
   const pinch = useRef<{ dist: number; span: number } | null>(null);
 
   function onDown(e: React.PointerEvent) {
+    // CAPTURE THE POINTER. Without this the wrapper only hears the drag while
+    // the cursor stays inside it, and a real hand does not stay inside it — a
+    // fast yank overshoots the edge on the first move, pointerleave fired,
+    // and the gesture silently died a few pixels in. That is what "it won't
+    // let me grab the graph" feels like. With capture, the drag follows the
+    // hand wherever it goes and ends only when the button comes up.
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // synthetic events and some embedders refuse — hover-drag still works
+    }
     touches.current.set(e.pointerId, e.clientX);
     if (touches.current.size === 2) {
       const [a, b] = [...touches.current.values()];
@@ -459,6 +470,11 @@ export default function TradingChart({
   }
 
   function onUp(e: React.PointerEvent) {
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // never captured — nothing to release
+    }
     touches.current.delete(e.pointerId);
     if (touches.current.size < 2) pinch.current = null;
     drag.current = null;
@@ -663,9 +679,12 @@ export default function TradingChart({
         onPointerUp={onUp}
         onPointerCancel={onUp}
         onDoubleClick={() => setView(null)}
-        onPointerLeave={(e) => {
-          onUp(e);
-          setScrub(null);
+        onPointerLeave={() => {
+          // Leaving only ends the HOVER. It used to end the gesture too,
+          // which combined with the missing pointer capture meant any drag
+          // that crossed the edge of the box was cancelled mid-pull. A drag
+          // ends when the button comes up, nowhere else.
+          if (!drag.current && !pinch.current) setScrub(null);
         }}
       >
         {geo && candles.length > 1 ? (
