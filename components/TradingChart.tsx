@@ -29,6 +29,7 @@ import {
   timeframeFor,
   type Candle,
 } from "@/lib/candles";
+import { fmtMarketDate } from "@/lib/market-time";
 import Tri from "@/components/Tri";
 
 const UP = "#22c55e";
@@ -369,12 +370,41 @@ export default function TradingChart({
   // colour of the thing under the cursor
   const barUp = active ? active.c >= active.o : true;
 
+  /**
+   * One render per frame, however fast input arrives. Modern Chromium already
+   * coalesces pointermove to the frame rate — measured: a 400-event burst
+   * renders identically with and without this — but that courtesy is the
+   * browser's, not the spec's: pen input and older WebKits deliver per event,
+   * and at maximum zoom-out each render is 2,500 SVG nodes. Everything a move
+   * wants to change is parked in a ref and flushed once per animation frame,
+   * so the worst any input source can do is one render per frame.
+   */
+  const frame = useRef<number | null>(null);
+  const pending = useRef<{ offset?: number; scrub?: number | null }>({});
+  const flushOnFrame = () => {
+    if (frame.current !== null) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = null;
+      const p = pending.current;
+      pending.current = {};
+      if (p.offset !== undefined) setView(clampView(viewBars, p.offset));
+      if (p.scrub !== undefined) setScrub(p.scrub);
+    });
+  };
+  useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+    },
+    []
+  );
+
   function scrubAt(e: React.PointerEvent) {
     if (!geo) return;
     const rect = wrapRef.current?.getBoundingClientRect();
     if (!rect) return;
     const i = Math.floor((e.clientX - rect.left - geo.shift) / geo.step);
-    setScrub(Math.max(0, Math.min(candles.length - 1, i)));
+    pending.current.scrub = Math.max(0, Math.min(candles.length - 1, i));
+    flushOnFrame();
   }
 
   // wheel = zoom (shift or a horizontal wheel = pan). Non-passive, because the
@@ -461,8 +491,9 @@ export default function TradingChart({
       const dx = e.clientX - d.x;
       if (Math.abs(dx) > 2) d.moved = true;
       if (d.moved) {
-        setScrub(null);
-        setView(clampView(viewBars, d.offset + dx / geo.step));
+        pending.current.offset = d.offset + dx / geo.step;
+        pending.current.scrub = null; // panning, not pointing
+        flushOnFrame();
         return;
       }
     }
@@ -725,6 +756,42 @@ export default function TradingChart({
                 </text>
               </g>
             ))}
+
+            {/* The beginning of the ticker. When the window reaches it, a
+                pull that pins here is the END OF HISTORY, not a broken drag —
+                and without this line there was nothing on screen to say so.
+                A three-day-old listing at full zoom-out has its whole life
+                visible; every further pull does nothing, which reads as a bug
+                unless the wall is drawn. */}
+            {earliest !== undefined &&
+              candles.length > 1 &&
+              (() => {
+                const i = (earliest - candles[0].t) / tf.ms;
+                if (i < -0.5 || i > candles.length - 1) return null;
+                const x = geo.x(Math.max(0, i));
+                return (
+                  <g opacity="0.6">
+                    <line
+                      x1={x}
+                      x2={x}
+                      y1={geo.padT}
+                      y2={geo.h - geo.padB}
+                      stroke={MUTED}
+                      strokeWidth="1"
+                      strokeDasharray="2 3"
+                    />
+                    <text
+                      x={x + 5}
+                      y={geo.padT + 10}
+                      fill={MUTED}
+                      fontSize="9"
+                      fontFamily="ui-monospace, monospace"
+                    >
+                      listed {fmtMarketDate(earliest)}
+                    </text>
+                  </g>
+                );
+              })()}
 
             {/* fair-value anchor */}
             {fairPrice > geo.vMin && fairPrice < geo.vMax && (

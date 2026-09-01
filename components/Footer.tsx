@@ -38,6 +38,16 @@ export default function Footer() {
           disconnect it or request delisting at any time — delisting removes
           all of the ticker&apos;s data.
         </p>
+        {/* Which build this actually is. Baked in at build time by Vercel, so
+            "am I on the new version?" stops being an argument and becomes a
+            thing anyone can read off the bottom of any page or screenshot. */}
+        <p className="font-mono text-[10px] opacity-60">
+          build{" "}
+          {(process.env.VERCEL_GIT_COMMIT_SHA ?? "dev").slice(0, 7)}
+          {process.env.VERCEL_GIT_COMMIT_MESSAGE
+            ? ` · ${process.env.VERCEL_GIT_COMMIT_MESSAGE.split("\n")[0].slice(0, 60)}`
+            : ""}
+        </p>
       </div>
     </footer>
   );
