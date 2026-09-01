@@ -11,6 +11,7 @@ import {
 } from "@/lib/pricing";
 import { recordTickerSnapshot } from "@/lib/snapshot";
 import { getRevenueEvents } from "@/lib/pulse";
+import { anchorRevenue } from "@/lib/revenue";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
 
   // the whole revenue record, because the multiple is earned by durability —
   // fetched alongside the float check, since neither needs the other
-  const [{ data: revenue }, { data: heldRows }, { data: conn }, events] =
+  const [{ data: revenue }, { data: heldRows }, { data: conn }, events, dailyRes] =
     await Promise.all([
       admin
         .from("mrr_updates")
@@ -94,6 +95,19 @@ export async function POST(request: Request) {
         .eq("ticker_id", ticker.id)
         .maybeSingle(),
       getRevenueEvents(admin, ticker.id, 12 * 3600_000),
+      // the takings the QUOTE anchors on (lib/data buildQuote). Absent
+      // pre-0008 or without charge scope, in which case the anchor falls
+      // back to subscriptions exactly as the quote does.
+      admin
+        .from("daily_revenue")
+        .select("day, net_minor")
+        .eq("ticker_id", ticker.id)
+        .gte(
+          "day",
+          new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10)
+        )
+        .order("day", { ascending: true })
+        .limit(400),
     ]);
   const outstanding = floatOf(
     (ticker as { shares_outstanding?: number }).shares_outstanding
@@ -102,11 +116,21 @@ export async function POST(request: Request) {
     (r) => ({ month: r.month, mrr: Number(r.mrr) })
   );
   const reportedMrr = history.length ? history[history.length - 1].mrr : 0;
-  // fills price off live revenue, exactly like the quote the trader saw
-  const liveMrr = Number(
-    (conn as { live_mrr?: number | null } | null)?.live_mrr ?? 0
-  );
-  const mrr = liveMrr > 0 ? liveMrr : reportedMrr;
+  // Fills price off the SAME anchor as the quote the trader saw — one
+  // function, lib/revenue anchorRevenue, decides what the business makes.
+  // This used to read live_mrr straight off the connection, which agreed
+  // with the tape only while the payments anchor was empty; the first day
+  // the run rate took over, every fill would have quietly priced off
+  // subscriptions while the chart traded on takings.
+  const stripeMrr = (conn as { live_mrr?: number | null } | null)?.live_mrr;
+  const anchor = anchorRevenue({
+    daily: ((dailyRes.data ?? []) as { day: string; net_minor: number }[]).map(
+      (r) => ({ day: r.day, amount: Number(r.net_minor) / 100 })
+    ),
+    stripeMrr: stripeMrr === null || stripeMrr === undefined ? null : Number(stripeMrr),
+    reportedMrr,
+  });
+  const mrr = anchor.monthly;
   const multiple = valuationMultiple(history);
 
   // Two limits, both enforced here and not just in the UI:

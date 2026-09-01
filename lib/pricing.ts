@@ -607,7 +607,8 @@ export function settledPrice(
  * over the moving stretch is fair × (1 + mean sentiment); any shares filled
  * after sentiment pins at the ±40% cap fill flat at the cap price.
  * NOTE: callers fill at the weather-adjusted price — scale avgPrice/total by
- * (1 + drift) at execution time (see executionFillAt).
+ * exp(drift) at execution time (see executionFillAt), the same factor the
+ * tape uses in settledPrice.
  */
 export function executionFill(
   mrr: number,
@@ -687,9 +688,12 @@ export function executionFillAt(
     multiple,
     outstanding
   );
-  // fills price off the same weather everyone is watching, news included
+  // fills price off the same weather everyone is watching, news included.
+  // exp(drift), NOT (1 + drift): the tape (settledPrice) is in log space, so
+  // a linear factor here would fill every buy below the quote whenever the
+  // weather is negative — a free discount the panel would have to lie about.
   const scale =
-    (1 + drift) * (1 + (events.length ? revenueShock(events, t) : 0));
+    Math.exp(drift) * (1 + (events.length ? revenueShock(events, t) : 0));
   return {
     avgPrice: base.avgPrice * scale,
     total: base.total * scale,

@@ -3,6 +3,7 @@ import { Bell, Zap } from "lucide-react";
 import {
   getEarningsWire,
   getHeroStory,
+  getLiveRevenue,
   getMarket,
   getMissedToday,
   getPriceSeries,
@@ -57,13 +58,21 @@ export default async function ExchangePage() {
   // Dense series + real story dots for the hero (signed-out only).
   const [heroSeries, heroEvents] = !user && featured
     ? await (async () => {
+        // The same anchor, weather and news the board row uses. This used to
+        // pass the last monthly REPORT and no drift, so the hero quoted the
+        // un-weathered price of a ticker the board, two scrolls down, had 25%
+        // lower — two prices for one stock on one page.
+        const live = await getLiveRevenue(30 * 86_400_000);
         const series = await getPriceSeries(
           featured.ticker.id,
           featured.ticker.symbol,
-          featured.latestMrr,
+          featured.liveMrr,
           Number(featured.ticker.sentiment),
           featured.multiple,
-          featured.shares
+          featured.shares,
+          live.get(featured.ticker.id)?.events ?? [],
+          featured.drift,
+          Date.parse(featured.ticker.listed_at)
         );
         const events = await getHeroStory(featured.ticker.id, series);
         return [series, events] as const;

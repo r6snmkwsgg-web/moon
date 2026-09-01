@@ -400,7 +400,7 @@ describe("the weather (drift + shimmer)", () => {
       "INBX", 8_000, 0, "buy", 500, t, 2.5, 10_000, [], drift
     );
     expect(buy.avgPrice).toBeCloseTo(
-      executionFill(8_000, 0, "buy", 500).avgPrice * (1 + drift),
+      executionFill(8_000, 0, "buy", 500).avgPrice * Math.exp(drift),
       10
     );
     // the shimmer is a function of the clock; if it leaked into fills, timing
@@ -412,6 +412,34 @@ describe("the weather (drift + shimmer)", () => {
       tapeJitter("INBX", t + 91_000, 8_000)
     );
     expect(later.avgPrice).toBe(buy.avgPrice);
+  });
+
+  it("REGRESSION: BUY AT is the price on the tape, whatever the weather", () => {
+    // The tape is anchor × e^drift (settledPrice); the fill was still being
+    // scaled by (1 + drift). Identical at drift 0 and a lie everywhere else:
+    // at drift -0.3 a buy filled 5.5% under the quoted price, which the trade
+    // panel dutifully showed as BUY AT $7.84 under a tape reading $8.23 — a
+    // free discount on every red day, and a free skim for anyone who noticed
+    // that selling back at the tape's number was arithmetic.
+    const t = Date.parse("2026-09-01T21:00:00Z");
+    for (const drift of [-0.9, -0.3, -0.1, 0, 0.1, 0.3, 0.9]) {
+      const tape = settledPrice(8_000, 0.1, t, 2.5, 10_000, [], drift);
+      const buy = executionFillAt(
+        "INBX", 8_000, 0.1, "buy", 1, t, 2.5, 10_000, [], drift
+      );
+      const sell = executionFillAt(
+        "INBX", 8_000, 0.1, "sell", 1, t, 2.5, 10_000, [], drift
+      );
+      // one share in ten thousand moves the hype curve by a hair, so the
+      // fill and the tape agree to a hundredth of a percent
+      expect(Math.abs(buy.avgPrice / tape - 1)).toBeLessThan(1e-3);
+      expect(Math.abs(sell.avgPrice / tape - 1)).toBeLessThan(1e-3);
+      expect(buy.avgPrice).toBeGreaterThanOrEqual(sell.avgPrice);
+    }
+    // the old formula, by number: 5.5% under the tape at drift -0.3
+    const tape = settledPrice(8_000, 0.1, t, 2.5, 10_000, [], -0.3);
+    const linear = executionFill(8_000, 0.1, "buy", 1).avgPrice * (1 - 0.3);
+    expect(linear / tape).toBeLessThan(0.95);
   });
 
   it("round trips at one instant are still exactly a wash", () => {

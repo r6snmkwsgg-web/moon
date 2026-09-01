@@ -13,6 +13,7 @@ import { fmtCompact, fmtMonth, fmtPct, currentMonthISO } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import { changeFraction } from "@/lib/pricing";
 import { openingTimeframe } from "@/lib/candles";
+import { realizedPnl } from "@/lib/equity";
 import { nextEarningsDate } from "@/lib/xp";
 import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import CountdownChip from "@/components/CountdownChip";
@@ -99,20 +100,30 @@ export default async function TickerPage({ params, searchParams }: Props) {
   // Signed-in extras (own rows only — RLS applies).
   let cash: number | null = null;
   let sharesHeld = 0;
+  let avgCost = 0;
+  let realized = 0;
   let delistRequested = false;
   let watching = false;
   let myVote: 1 | -1 | null = null;
   if (user) {
     const supabase = await createSupabaseServerClient();
-    const [profileRes, holdingRes, delistRes, watchRes, voteRes] =
+    const [profileRes, holdingRes, myTradesRes, delistRes, watchRes, voteRes] =
       await Promise.all([
         supabase.from("profiles").select("cash").eq("id", user.id).maybeSingle(),
         supabase
           .from("holdings")
-          .select("shares")
+          .select("shares, avg_cost")
           .eq("user_id", user.id)
           .eq("ticker_id", t.id)
           .maybeSingle(),
+        // every print of mine in this name, for the P&L already booked
+        supabase
+          .from("trades")
+          .select("side, shares, price, total, created_at")
+          .eq("user_id", user.id)
+          .eq("ticker_id", t.id)
+          .order("created_at", { ascending: true })
+          .limit(2000),
         isFounder
           ? supabase
               .from("delist_requests")
@@ -136,6 +147,26 @@ export default async function TickerPage({ params, searchParams }: Props) {
       ]);
     cash = profileRes.data ? Number(profileRes.data.cash) : null;
     sharesHeld = holdingRes.data ? Number(holdingRes.data.shares) : 0;
+    avgCost = holdingRes.data ? Number(holdingRes.data.avg_cost) : 0;
+    realized = realizedPnl(
+      (
+        (myTradesRes.data ?? []) as {
+          side: "buy" | "sell";
+          shares: number;
+          price: number;
+          total: number;
+          created_at: string;
+        }[]
+      ).map((tr) => ({
+        t: Date.parse(tr.created_at),
+        symbol: t.symbol,
+        side: tr.side,
+        shares: Number(tr.shares),
+        price: Number(tr.price),
+        total: Number(tr.total),
+        note: null,
+      }))
+    );
     delistRequested = Boolean(delistRes.data);
     watching = Boolean(watchRes.data);
     myVote = voteRes.data ? (Number(voteRes.data.vote) as 1 | -1) : null;
@@ -358,18 +389,20 @@ export default async function TickerPage({ params, searchParams }: Props) {
         <div className="space-y-3 lg:sticky lg:top-20">
           <TradePanel
             symbol={t.symbol}
-            price={quote.price}
             mrr={quote.liveMrr}
             sentiment={Number(t.sentiment)}
             multiple={quote.multiple}
             outstanding={quote.shares}
             events={revenueEvents}
             drift={quote.drift}
+            dayBasePrice={quote.dayBasePrice}
             floatHeld={floatHeld}
-            quotedAt={Date.now()}
+            quotedAt={renderedAt}
             signedIn={user !== null}
             cash={cash}
             sharesHeld={sharesHeld}
+            avgCost={avgCost}
+            realized={realized}
           />
           <VoteBar
             tickerId={t.id}
