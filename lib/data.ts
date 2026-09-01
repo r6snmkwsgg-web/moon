@@ -56,12 +56,16 @@ export async function getLiveRevenue(
   const out = new Map<string, LiveRevenue>();
   const [connsRes, eventsRes, dailyRes] = await Promise.all([
     admin.from("stripe_connections").select("*").eq("status", "active"),
+    // NEWEST first. Ordered ascending, the row cap silently kept the OLDEST
+    // events and dropped everything recent — so once the board carried a few
+    // thousand events, every chart lost its markers and its earnings steps
+    // while the table was full of them. Sorted back into time order below.
     admin
       .from("revenue_events")
       .select("ticker_id, at, prev_mrr, mrr, prev_subscriptions")
       .gte("at", new Date(Date.now() - sinceMs).toISOString())
-      .order("at", { ascending: true })
-      .limit(1000),
+      .order("at", { ascending: false })
+      .limit(4000),
     // the takings the price anchors on. A long window regardless of sinceMs:
     // the run rate is an average over weeks, not a recent-events feed.
     admin
@@ -102,6 +106,8 @@ export async function getLiveRevenue(
     });
     out.set(e.ticker_id, entry);
   }
+  // the fetch came back newest-first; everything downstream walks time forward
+  for (const entry of out.values()) entry.events.sort((a, b) => a.at - b.at);
   // absent until 0008 is applied and the poller has run once, in which case
   // the anchor falls back to subscriptions exactly as before
   for (const r of (dailyRes.data ?? []) as {
