@@ -49,6 +49,12 @@ const GRID = "#182236";
  * the chart look nothing like a real one.
  */
 const CANDLE_BODY_MIN_STEP = 3;
+/**
+ * Empty slots between the newest candle and the price axis. Every terminal
+ * leaves this margin: the last bar is the one you are watching, and a bar
+ * glued to the axis with its price tag over it reads as cut off.
+ */
+const FUTURE_SLOTS = 5;
 /** Width of the price axis gutter — subtracted from the wrapper to get plot width. */
 const PAD_R = 52;
 
@@ -287,9 +293,11 @@ export default function TradingChart({
     const plotW = w - padR;
     // slots, not candles: when history is shorter than the window the bars
     // keep their width and sit at the live edge, with empty space behind.
-    const slots = Math.max(candles.length, viewBars);
+    const slots = Math.max(candles.length, viewBars) + FUTURE_SLOTS;
     const step = plotW / slots;
-    const shift = plotW - step * candles.length;
+    // `shift` is the x of slot zero: the newest candle sits FUTURE_SLOTS in
+    // from the axis, so the scrub map (x → index) stays a single division
+    const shift = plotW - step * (candles.length + FUTURE_SLOTS);
     const x = (i: number) => shift + step * (i + 0.5);
     const y = (v: number) =>
       padT + (1 - (v - vMin) / (vMax - vMin || 1)) * plotH;
@@ -886,9 +894,14 @@ export default function TradingChart({
                     />
                   );
                 }
-                const bw = Math.max(1.5, Math.min(14, geo.step * 0.66));
+                // The body takes most of its slot and is FILLED either way.
+                // Hollow up-candles next to solid down-candles is a style of
+                // its own, and mixed with a thin body it is the single thing
+                // that made these read as not-quite-a-chart.
+                const bw = Math.max(1.5, Math.min(24, geo.step * 0.72));
                 const top = Math.min(yO, yC);
                 const bodyH = Math.max(1, Math.abs(yC - yO));
+                const wickW = Math.max(1, Math.min(2, bw * 0.12));
                 return (
                   <g key={c.t}>
                     <line
@@ -897,16 +910,16 @@ export default function TradingChart({
                       y1={geo.y(c.h)}
                       y2={geo.y(c.l)}
                       stroke={col}
-                      strokeWidth="1"
+                      strokeWidth={wickW}
+                      shapeRendering="crispEdges"
                     />
                     <rect
                       x={geo.x(i) - bw / 2}
                       y={top}
                       width={bw}
                       height={bodyH}
-                      fill={bull ? "none" : col}
-                      stroke={col}
-                      strokeWidth="1.2"
+                      fill={col}
+                      shapeRendering="crispEdges"
                     />
                   </g>
                 );
@@ -917,7 +930,7 @@ export default function TradingChart({
             {hasVolume &&
               candles.map((c, i) => {
                 if (c.v <= 0) return null;
-                const bw = Math.max(1.5, Math.min(14, geo.step * 0.66));
+                const bw = Math.max(1.5, Math.min(24, geo.step * 0.72));
                 const hgt = geo.vy(c.v);
                 return (
                   <rect
@@ -927,7 +940,8 @@ export default function TradingChart({
                     width={bw}
                     height={hgt}
                     fill={c.c >= c.o ? UP : DOWN}
-                    opacity="0.35"
+                    opacity="0.45"
+                    shapeRendering="crispEdges"
                   />
                 );
               })}

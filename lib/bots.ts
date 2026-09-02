@@ -53,24 +53,30 @@ export interface BotOrder {
 }
 
 /** Hard ceiling on prints per round, board-wide — a heartbeat, not a flood. */
-export const MAX_TRADES_PER_ROUND = 6;
+export const MAX_TRADES_PER_ROUND = 10;
 
-/** How often each style pulls the trigger in a given round. */
+/**
+ * How often each style pulls the trigger in a given round, and how big it
+ * goes at full conviction. Tuned for MANY SMALL prints rather than a few
+ * large ones: a single 1.2%-of-float buy was a vertical wall on the chart,
+ * where a real move is a ramp of smaller trades. Half the size, twice the
+ * frequency — the same flow, drawn the way a market draws it.
+ */
 const ACT_CHANCE: Record<BotStyle, number> = {
-  value: 0.25,
-  momentum: 0.3,
-  news: 0.35,
-  noise: 0.22,
-  whale: 0.06,
+  value: 0.45,
+  momentum: 0.5,
+  news: 0.6,
+  noise: 0.4,
+  whale: 0.1,
 };
 
 /** Order size at full conviction, as a fraction of the float. */
 const SIZE_OF_FLOAT: Record<BotStyle, number> = {
-  value: 0.012,
-  momentum: 0.01,
-  news: 0.015,
-  noise: 0.005,
-  whale: 0.035,
+  value: 0.006,
+  momentum: 0.005,
+  news: 0.0075,
+  noise: 0.0025,
+  whale: 0.02,
 };
 
 /** Below this, a bot has no view worth trading. */

@@ -93,8 +93,8 @@ describe("decide", () => {
     expect(o).not.toBeNull();
     expect(o!.side).toBe("buy");
     expect(o!.symbol).toBe("SNDR");
-    // 1.2% of the float at full conviction, scaled by the size draw (0.6 at unit 0)
-    expect(o!.shares).toBe(Math.round(25_000 * 0.012 * 0.6));
+    // 0.6% of the float at full conviction, scaled by the size draw (0.6 at unit 0)
+    expect(o!.shares).toBe(Math.round(25_000 * 0.006 * 0.6));
 
     // cash-bound: $100 buys four shares at $20 with slack for the curve
     expect(decide(bot("value"), 100, [v], fixed(0.0))!.shares).toBe(4);
@@ -125,9 +125,9 @@ describe("decide", () => {
       if (decide(bot("value"), 1e6, [view({ price: 20, fair: 25 })], rng)) acted++;
     }
     const rate = acted / 2_000;
-    expect(rate).toBeGreaterThan(0.15);
-    expect(rate).toBeLessThan(0.35); // ACT_CHANCE.value is 0.25
-    expect(MAX_TRADES_PER_ROUND).toBeLessThanOrEqual(8);
+    expect(rate).toBeGreaterThan(0.35);
+    expect(rate).toBeLessThan(0.55); // ACT_CHANCE.value is 0.45
+    expect(MAX_TRADES_PER_ROUND).toBeLessThanOrEqual(12);
   });
 
   it("writes a thesis sometimes, with the numbers filled in", () => {

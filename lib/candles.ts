@@ -1,5 +1,11 @@
 import type { ChartPoint } from "@/lib/types";
-import { flowPrice, tapeJitter, type RevenueEvent } from "@/lib/pricing";
+import {
+  bridgeAmplitude,
+  bridgeNoise,
+  flowPrice,
+  tapeJitter,
+  type RevenueEvent,
+} from "@/lib/pricing";
 import {
   fmtMarketClock,
   fmtMarketDate,
@@ -306,6 +312,9 @@ export function mergeAnchors({
  * more. Everything up to the newest recorded tick is history; everything at or
  * after it holds the last drawn drift, because the next draw has not happened.
  */
+/** The longest gap between two recorded prices that gets bridge texture. */
+export const BRIDGE_MAX_SPAN_MS = 30 * 60_000;
+
 export function makePriceAt(
   symbol: string,
   mrr: number,
@@ -337,11 +346,29 @@ export function makePriceAt(
     const b = sorted[hi];
     const span = b.t - a.t || 1;
     const w = (t - a.t) / span;
-    const lerp = a.price + (b.price - a.price) * w;
-    // texture between two real prices, faded to nothing AT them — every
-    // recorded value still lands exactly where it happened, but the ten
-    // minutes in between get wicks instead of a ruler line.
-    return lerp * (1 + Math.sin(Math.PI * w) * tapeJitter(symbol, t, mrr));
+    // Only the tape's own gaps get a bridge: the five-minute ticks and the
+    // ten-minute fill between older anchors. A longer gap is a record with
+    // nothing in it, and a bridge across a day would be invented history.
+    if (!(a.price > 0) || !(b.price > 0) || span > BRIDGE_MAX_SPAN_MS) {
+      const lerp = a.price + (b.price - a.price) * w;
+      return lerp * (1 + Math.sin(Math.PI * w) * tapeJitter(symbol, t, mrr));
+    }
+    // Between two recorded prices the path is a Brownian BRIDGE, not a ruler
+    // with a bump on it. A straight line times a smooth shimmer was what the
+    // one-minute candles were drawn from, and it showed: runs of same-way
+    // bars along a diagonal, every five minutes a kink. The bridge is the
+    // distribution a random walk takes given both endpoints — jagged at
+    // every zoom, pinned to zero at both ends so every recorded value still
+    // lands exactly where it happened — seeded per segment so every viewer
+    // draws the same past. The shimmer stays on top for the second-scale
+    // texture a bridge sampled at this resolution cannot supply.
+    const logA = Math.log(a.price);
+    const logB = Math.log(b.price);
+    const amp = bridgeAmplitude(span, mrr, logB - logA);
+    const path = Math.exp(
+      logA + (logB - logA) * w + amp * bridgeNoise(`${symbol}@${a.t}`, w)
+    );
+    return path * (1 + Math.sin(Math.PI * w) * tapeJitter(symbol, t, mrr));
   };
 }
 
