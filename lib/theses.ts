@@ -100,9 +100,9 @@ const T: Record<string, string[]> = {
     "sized out of {sym}. the multiple got silly.",
   ],
   "panic/sell": [
-    "{sym} down {m15}% in fifteen minutes and i am not finding out why. out.",
+    "{sym} down {m15}% just now and i am not finding out why. out.",
     "nope. sold {sym}. whatever that was i want no part of it.",
-    "cut {sym}. {m15}% in a quarter hour is not a dip, it is a trend.",
+    "cut {sym}. {m15}% that fast is not a dip, it is a trend.",
     "someone just dumped {sym} and i am not the bag holder today.",
     "{sym} just lost {m15}% and i was up on it an hour ago. gone.",
     "paper hands and proud. {sym} out before it gets worse.",
@@ -111,7 +111,7 @@ const T: Record<string, string[]> = {
     "{sym} rugged. selling what is left and going for a walk.",
   ],
   "dip/buy": [
-    "{sym} down {m15}% in a quarter hour with revenue unchanged. buying the panic.",
+    "{sym} down {m15}% just now with revenue unchanged. buying the panic.",
     "somebody sold {sym} into no news at all. thank you, filled at {price}.",
     "{sym} is {edge}% under fair after that dump. this is what the cash was for.",
     "bought {sym} from whoever just panicked. mrr is still {mrr} a month.",
@@ -157,7 +157,11 @@ function fill(line: string, s: Situation): string {
     .replace(/\{sym\}/g, `$${s.symbol}`)
     .replace(/\{edge\}/g, Math.abs(s.edgePct).toFixed(0))
     .replace(/\{h1\}/g, Math.abs(s.change1hPct).toFixed(1))
-    .replace(/\{m15\}/g, Math.abs(s.change15mPct ?? s.change1hPct).toFixed(1))
+    // the move that shook them: the quarter hour if it is still in it, else the hour
+    .replace(
+      /\{m15\}/g,
+      Math.max(Math.abs(s.change15mPct ?? 0), Math.abs(s.change1hPct)).toFixed(1)
+    )
     .replace(/\{d1\}/g, Math.abs(s.change24hPct).toFixed(1))
     .replace(/\{price\}/g, money(s.price))
     .replace(/\{fair\}/g, money(s.fair))
@@ -177,7 +181,8 @@ export function inVoice(line: string, voice: Voice, side: "buy" | "sell" | null,
       return cap.endsWith(".") ? cap : `${cap}.`;
     }
     case "terse": {
-      const first = line.split(/[,.—]/)[0].trim().toLowerCase();
+      // the first clause — a period inside a number ("12.5%") is not a stop
+      const first = line.split(/[,—]|\.(?!\d)/)[0].trim().toLowerCase();
       return first.length >= 8 ? first : line.toLowerCase().replace(/\.$/, "");
     }
     case "emoji": {

@@ -99,8 +99,12 @@ export const SHAKE_WAKE = { paper: 0.8, swing: 0.4, diamond: 0.1 } as const;
 export const DIP_WAKE = 0.12;
 /** How hard the drop pushes a holder toward selling, by grip. */
 const PANIC = { paper: 1.2, swing: 0.6, diamond: 0.1 } as const;
-/** How many extra accounts a shake may wake in one round. */
-export const MAX_SHAKEN = 60;
+/**
+ * How many extra accounts a shake may wake in one round. Waking is cheap —
+ * the fills are what the round budget bounds — and a low cap here meant one
+ * ticker's holders used it up before the next ticker's were even rolled.
+ */
+export const MAX_SHAKEN = 200;
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
