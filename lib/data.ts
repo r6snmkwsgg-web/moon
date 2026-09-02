@@ -1202,40 +1202,45 @@ export async function getEquityInputs(userId: string): Promise<{
     ...tradeRows.map((t) => t.ticker_id),
   ]);
 
-  const holdings: EquityHolding[] = [];
-  for (const id of touched) {
-    const quote = byId.get(id);
-    if (!quote) continue;
-    const events = await getRevenueEvents(admin, id, 30 * 86_400_000);
-    const series = await getPriceSeries(
-      id,
-      quote.ticker.symbol,
-      quote.liveMrr,
-      Number(quote.ticker.sentiment),
-      quote.multiple,
-      quote.shares,
-      events,
-      quote.drift,
-      Date.parse(quote.ticker.listed_at)
-    );
-    holdings.push({
-      symbol: quote.ticker.symbol,
-      shares: heldNow.get(id) ?? 0,
-      mrr: quote.liveMrr,
-      sentiment: Number(quote.ticker.sentiment),
-      multiple: quote.multiple,
-      outstanding: quote.shares,
-      series,
-      events,
-      drift: quote.drift,
-      name: quote.ticker.name,
-      logoUrl: quote.ticker.logo_url,
-      avgCost: Number(costOf.get(id) ?? 0),
-      dayChange: quote.dayChange,
-      weekChange: quote.weekChange,
-      spark: quote.spark,
-    });
-  }
+  // every name at once — this walked them one by one, two round trips
+  // each, and a six-name book was twelve in a row before the curve drew
+  const holdings = (
+    await Promise.all(
+      [...touched].map(async (id): Promise<EquityHolding | null> => {
+        const quote = byId.get(id);
+        if (!quote) return null;
+        const events = await getRevenueEvents(admin, id, 30 * 86_400_000);
+        const series = await getPriceSeries(
+          id,
+          quote.ticker.symbol,
+          quote.liveMrr,
+          Number(quote.ticker.sentiment),
+          quote.multiple,
+          quote.shares,
+          events,
+          quote.drift,
+          Date.parse(quote.ticker.listed_at)
+        );
+        return {
+          symbol: quote.ticker.symbol,
+          shares: heldNow.get(id) ?? 0,
+          mrr: quote.liveMrr,
+          sentiment: Number(quote.ticker.sentiment),
+          multiple: quote.multiple,
+          outstanding: quote.shares,
+          series,
+          events,
+          drift: quote.drift,
+          name: quote.ticker.name,
+          logoUrl: quote.ticker.logo_url,
+          avgCost: Number(costOf.get(id) ?? 0),
+          dayChange: quote.dayChange,
+          weekChange: quote.weekChange,
+          spark: quote.spark,
+        };
+      })
+    )
+  ).filter((h): h is EquityHolding => h !== null);
 
   const symbolOf = new Map(quotes.map((q) => [q.ticker.id, q.ticker.symbol]));
   const trades: EquityTrade[] = tradeRows
