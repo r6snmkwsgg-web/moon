@@ -309,7 +309,7 @@ export default function TradePanel({
 
   return (
     <div
-      className={`panel space-y-3 p-3 transition-shadow duration-500 ${
+      className={`panel space-y-2.5 p-2.5 transition-shadow duration-500 ${
         filled ? "shadow-[0_0_0_1.5px_rgba(34,197,94,0.6)]" : ""
       }`}
     >

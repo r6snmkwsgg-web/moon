@@ -506,13 +506,6 @@ export interface DayStats {
   volumeShares: number;
   volumeNotional: number;
   trades: number;
-  /** Today's order flow, split by side. */
-  buys: number;
-  sells: number;
-  buyNotional: number;
-  sellNotional: number;
-  buyers: number;
-  sellers: number;
 }
 
 /** One ticker page's worth of data. */
@@ -536,6 +529,8 @@ export async function getTickerPage(symbol: string): Promise<{
    */
   earliest: number;
   revenueEvents: RevenueEvent[]; // Stripe changes since the last report
+  /** Every print of the last 24 hours — the About card's window stats. */
+  flow24h: { side: "buy" | "sell"; total: number; userId: string; at: number }[];
 } | null> {
   const supabase = await createSupabaseServerClient();
 
@@ -590,6 +585,7 @@ export async function getTickerPage(symbol: string): Promise<{
     todayTradesRes,
     allTradesRes,
     series,
+    flowRes,
   ] = await Promise.all([
     admin
       .from("holdings")
@@ -603,7 +599,7 @@ export async function getTickerPage(symbol: string): Promise<{
     admin.from("holdings").select("shares").eq("ticker_id", ticker.id),
     admin
       .from("trades")
-      .select("price, shares, total, side, user_id")
+      .select("price, shares, total")
       .eq("ticker_id", ticker.id)
       .gte("created_at", todayStart),
     // every print, for the chart's volume histogram at any granularity
@@ -624,7 +620,28 @@ export async function getTickerPage(symbol: string): Promise<{
       quote.drift,
       Date.parse((ticker as Ticker).listed_at)
     ),
+    // the last day's order flow, for the window stats (5M / 1H / 4H / 1D)
+    admin
+      .from("trades")
+      .select("side, total, user_id, created_at")
+      .eq("ticker_id", ticker.id)
+      .gte("created_at", new Date(Date.now() - 86_400_000).toISOString())
+      .order("created_at", { ascending: false })
+      .limit(2000),
   ]);
+  const flow24h = (
+    (flowRes.data ?? []) as {
+      side: "buy" | "sell";
+      total: number;
+      user_id: string;
+      created_at: string;
+    }[]
+  ).map((t) => ({
+    side: t.side,
+    total: Number(t.total),
+    userId: t.user_id,
+    at: Date.parse(t.created_at),
+  }));
 
   const tradePoints = (
     (allTradesRes.data ?? []) as { shares: number; created_at: string }[]
@@ -639,11 +656,7 @@ export async function getTickerPage(symbol: string): Promise<{
     price: number;
     shares: number;
     total: number;
-    side: "buy" | "sell";
-    user_id: string;
   }[];
-  const buysToday = todayTrades.filter((t) => t.side === "buy");
-  const sellsToday = todayTrades.filter((t) => t.side === "sell");
   const prevSnap = [...snapshots]
     .reverse()
     .find((s) => s.day < todayStart.slice(0, 10));
@@ -665,12 +678,6 @@ export async function getTickerPage(symbol: string): Promise<{
     volumeShares: todayTrades.reduce((s, t) => s + Number(t.shares), 0),
     volumeNotional: todayTrades.reduce((s, t) => s + Number(t.total), 0),
     trades: todayTrades.length,
-    buys: buysToday.length,
-    sells: sellsToday.length,
-    buyNotional: buysToday.reduce((s, t) => s + Number(t.total), 0),
-    sellNotional: sellsToday.reduce((s, t) => s + Number(t.total), 0),
-    buyers: new Set(buysToday.map((t) => t.user_id)).size,
-    sellers: new Set(sellsToday.map((t) => t.user_id)).size,
   };
 
   // same rule as the price series: today's row is rewritten all day, so its
@@ -700,6 +707,7 @@ export async function getTickerPage(symbol: string): Promise<{
       series.length > 0 ? series[0].t : 0
     ),
     revenueEvents,
+    flow24h,
   };
 }
 

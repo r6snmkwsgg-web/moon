@@ -113,10 +113,10 @@ export default function HoldersTable({
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-[13px]">
             <thead>
               <tr className="microlabel border-b border-terminal-line text-left">
-                <th className="px-3 py-2 font-normal">Trader</th>
+                <th className="px-3 py-1.5 font-normal">Trader</th>
                 <th className="px-3 py-2 text-right font-normal">Position</th>
                 <th className="px-3 py-2 text-right font-normal">PnL</th>
                 <th className="hidden px-3 py-2 text-right font-normal md:table-cell">
@@ -138,7 +138,7 @@ export default function HoldersTable({
                       mine ? "bg-terminal-accent/[0.06]" : "row-hover"
                     }`}
                   >
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-1.5">
                       <div className="flex items-baseline gap-1.5">
                         {r.username ? (
                           <Link
@@ -168,14 +168,14 @@ export default function HoldersTable({
                           : "held —"}
                       </div>
                     </td>
-                    <td className="num px-3 py-2.5 text-right font-mono">
+                    <td className="num px-3 py-1.5 text-right font-mono">
                       <div>{fmtMoney(r.value)}</div>
                       <div className="text-[11px] text-terminal-muted">
                         {r.shares.toLocaleString("en-US")} shs
                       </div>
                     </td>
                     <td
-                      className={`num px-3 py-2.5 text-right font-mono ${
+                      className={`num px-3 py-1.5 text-right font-mono ${
                         up ? "text-terminal-up" : "text-terminal-down"
                       }`}
                     >
@@ -185,13 +185,13 @@ export default function HoldersTable({
                       </div>
                       <div className="text-[11px]">{fmtPct(r.pnlPct)}</div>
                     </td>
-                    <td className="num hidden px-3 py-2.5 text-right font-mono md:table-cell">
+                    <td className="num hidden px-3 py-1.5 text-right font-mono md:table-cell">
                       <div>{fmtCompact(r.entryMarketCap)} MC</div>
                       <div className="text-[11px] text-terminal-muted">
                         {fmtPrice(r.avgCost)}
                       </div>
                     </td>
-                    <td className="hidden max-w-[22rem] px-3 py-2.5 lg:table-cell">
+                    <td className="hidden max-w-[22rem] px-3 py-1.5 lg:table-cell">
                       {r.thesis ? (
                         <>
                           <p className="line-clamp-2 text-[13px] leading-snug text-terminal-text">

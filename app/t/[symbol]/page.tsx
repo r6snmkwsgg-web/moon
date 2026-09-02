@@ -23,6 +23,7 @@ import Discussion from "@/components/Discussion";
 import TradingChart from "@/components/TradingChart";
 import ThesisFeed from "@/components/ThesisFeed";
 import HoldersTable from "@/components/HoldersTable";
+import Tabs from "@/components/Tabs";
 import LiveQuote from "@/components/LiveQuote";
 import TradePanel, { type OwnPrint } from "@/components/TradePanel";
 import AboutCard from "@/components/AboutCard";
@@ -87,6 +88,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
     tradePoints,
     earliest,
     revenueEvents,
+    flow24h,
   } = data;
   const t = quote.ticker;
   const user = await getUser();
@@ -195,6 +197,11 @@ export default async function TickerPage({ params, searchParams }: Props) {
     myVote = voteRes.data ? (Number(voteRes.data.vote) as 1 | -1) : null;
   }
 
+  // the strip over the chart: what fomo-style pages put first
+  const topTen = holders.rows.slice(0, 10).reduce((sum, r) => sum + r.shares, 0);
+  const topTenPct = quote.shares > 0 ? Math.min(100, (topTen / quote.shares) * 100) : 0;
+  const vol24h = flow24h.reduce((sum, p) => sum + p.total, 0);
+
   const latestUpdate = mrrHistory[mrrHistory.length - 1];
   const prevUpdate = mrrHistory[mrrHistory.length - 2];
   const mom =
@@ -204,7 +211,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const shareUrl = `${siteUrl()}/t/${t.symbol}`;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {ipo === "1" && (
         <div className="panel flex flex-wrap items-center gap-3 border-terminal-up/40 bg-terminal-up/10 px-4 py-3">
           <span className="flex items-center gap-1.5 font-mono text-sm font-bold text-terminal-up">
@@ -220,13 +227,16 @@ export default async function TickerPage({ params, searchParams }: Props) {
         </div>
       )}
 
-      {/* header */}
-      <div className="flex flex-wrap items-start gap-3">
-        <LogoTile symbol={t.symbol} logoUrl={t.logo_url} size={44} />
+      {/* header: one line for the name, one strip for the numbers */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <LogoTile symbol={t.symbol} logoUrl={t.logo_url} size={34} />
         <div className="min-w-0 flex-1">
-          <h1 className="flex flex-wrap items-center gap-2 font-mono text-xl font-bold">
+          <h1 className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-lg font-bold leading-tight">
             ${t.symbol}
             <TickerBadges ticker={t} />
+            <span className="font-sans text-sm font-normal text-terminal-text">
+              {t.name}
+            </span>
             {!t.claimed && (
               <Link
                 href={`/claim/${t.symbol}`}
@@ -236,30 +246,32 @@ export default async function TickerPage({ params, searchParams }: Props) {
               </Link>
             )}
           </h1>
-          <p className="text-sm text-terminal-text">{t.name}</p>
-          <p className="text-sm text-terminal-muted">{t.pitch}</p>
-          {t.founder_handle && (
-            <p className="mt-1 text-xs text-terminal-muted">
-              founder:{" "}
-              <span className="font-mono text-terminal-accent">
-                @{t.founder_handle}
-              </span>
-            </p>
-          )}
+          <p className="truncate text-xs text-terminal-muted">
+            {t.pitch}
+            {t.founder_handle && (
+              <>
+                {" "}
+                · founder{" "}
+                <span className="font-mono text-terminal-accent">@{t.founder_handle}</span>
+              </>
+            )}
+          </p>
         </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <LiveQuote
-            symbol={t.symbol}
-            mrr={quote.liveMrr}
-            sentiment={Number(t.sentiment)}
-            series={series}
-            multiple={quote.multiple}
-            shares={quote.shares}
-            events={revenueEvents}
-            drift={quote.drift}
-            dayBasePrice={quote.dayBasePrice}
-            renderedAt={renderedAt}
-          />
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col items-end">
+            <LiveQuote
+              symbol={t.symbol}
+              mrr={quote.liveMrr}
+              sentiment={Number(t.sentiment)}
+              series={series}
+              multiple={quote.multiple}
+              shares={quote.shares}
+              events={revenueEvents}
+              drift={quote.drift}
+              dayBasePrice={quote.dayBasePrice}
+              renderedAt={renderedAt}
+            />
+          </div>
           <span className="flex items-center gap-1.5">
             <WatchStar
               tickerId={t.id}
@@ -277,14 +289,40 @@ export default async function TickerPage({ params, searchParams }: Props) {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-1.5">
+        {(
+          [
+            ["Mkt cap", fmtCompact(quote.marketCap)],
+            ["24H change", <ChangePct key="chg" value={quote.dayChange} className="text-[13px]" />],
+            ["24H vol", vol24h > 0 ? fmtCompact(vol24h) : "$0"],
+            [
+              quote.revenueSource === "payments" ? "Revenue / mo" : "MRR",
+              quote.liveMrr > 0 ? fmtCompact(quote.liveMrr) : "—",
+            ],
+            ["Multiple", `${quote.multiple.toFixed(1)}×`],
+            ["Holders", holders.total.toLocaleString("en-US")],
+            ["Top 10 holding", `${topTenPct.toFixed(topTenPct >= 10 ? 0 : 1)}%`],
+          ] as [string, React.ReactNode][]
+        ).map(([label, value]) => (
+          <div
+            key={label}
+            className="panel min-w-[92px] flex-1 px-2.5 py-1.5 text-center"
+          >
+            <div className="microlabel !text-[9px]">{label}</div>
+            <div className="num mt-0.5 font-mono text-[13px] font-semibold">{value}</div>
+          </div>
+        ))}
+      </div>
+
       {/* every ticker, not just the Stripe-verified ones: the walk has to be
           advanced for fixtures too, or their tape stops when the cron does */}
       <PulseKeeper symbol={t.symbol} />
 
-      {/* split rail: chart + market data left, a permanent trade rail right */}
-      <div className="grid items-start gap-4 lg:grid-cols-[1fr_330px]">
-        <div className="min-w-0 space-y-4">
+      {/* split rail: the chart and the floor left, the ticket and the card right */}
+      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-3">
           <TradingChart
+            heightClass="h-[340px] sm:h-[440px] lg:h-[540px] 2xl:h-[620px]"
             symbol={t.symbol}
             mrr={quote.liveMrr}
             sentiment={Number(t.sentiment)}
@@ -299,10 +337,59 @@ export default async function TickerPage({ params, searchParams }: Props) {
             initialTimeframe={openingTimeframe(renderedAt - earliest)}
           />
 
+          {/* the floor: who holds it, and the tape, right under the chart */}
+          <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
+            <HoldersTable
+              rows={holders.rows}
+              total={holders.total}
+              symbol={t.symbol}
+              followedIds={followedIds}
+              viewerId={user?.id ?? null}
+              signedIn={user !== null}
+              now={renderedAt}
+            />
+            <Tabs
+              tabs={[
+                {
+                  key: "trades",
+                  label: `Trades · ${recentTrades.length}`,
+                  pane: (
+                    <>
+                      <TradesList
+                        trades={recentTrades}
+                        showSymbol={false}
+                        signedIn={user !== null}
+                        showNotes={false}
+                      />
+                      <Link
+                        href="/tape"
+                        className="block border-t border-terminal-line px-3 py-1.5 font-mono text-[11px] text-terminal-accent hover:underline"
+                      >
+                        full tape →
+                      </Link>
+                    </>
+                  ),
+                },
+                {
+                  key: "theses",
+                  label: `Theses · ${theses.length}`,
+                  pane: <ThesisFeed theses={theses} bare />,
+                },
+              ]}
+            />
+          </div>
+
+          <Discussion
+            posts={posts}
+            tickerId={t.id}
+            symbol={t.symbol}
+            signedIn={user !== null}
+            viewerId={user?.id ?? null}
+          />
         </div>
 
         {/* the rail — trading is always in reach */}
-        <div className="space-y-3 lg:sticky lg:top-20">
+        <div className="space-y-3">
           <TradePanel
             symbol={t.symbol}
             mrr={quote.liveMrr}
@@ -345,6 +432,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             }
             mom={mom}
             dayStats={dayStats}
+            flow={flow24h}
             floatHeld={floatHeld}
             holders={holdersCount}
             earliest={earliest}
@@ -359,46 +447,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
             myVote={myVote}
             signedIn={user !== null}
           />
-          <section className="panel">
-            <div className="flex items-baseline justify-between border-b border-terminal-line px-3 py-2">
-              <h2 className="microlabel">Recent trades</h2>
-              <Link href="/tape" className="text-[11px] text-terminal-accent">
-                full tape →
-              </Link>
-            </div>
-            <TradesList
-              trades={recentTrades}
-              showSymbol={false}
-              signedIn={user !== null}
-              showNotes={false}
-            />
-          </section>
           <ShareButton url={shareUrl} />
         </div>
-      </div>
-
-      {/* the social floor — full width, and below the rail on mobile so
-          trading is always the first thing you reach */}
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-4">
-          <HoldersTable
-            rows={holders.rows}
-            total={holders.total}
-            symbol={t.symbol}
-            followedIds={followedIds}
-            viewerId={user?.id ?? null}
-            signedIn={user !== null}
-            now={renderedAt}
-          />
-          <Discussion
-            posts={posts}
-            tickerId={t.id}
-            symbol={t.symbol}
-            signedIn={user !== null}
-            viewerId={user?.id ?? null}
-          />
-        </div>
-        <ThesisFeed theses={theses} />
       </div>
 
       {/* founder tools */}

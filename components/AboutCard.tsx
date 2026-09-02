@@ -6,58 +6,33 @@ import type { RevenueEvent } from "@/lib/pricing";
 import { makePriceAt } from "@/lib/candles";
 import { fmtCompact, fmtMoney, fmtPct } from "@/lib/format";
 import CountdownChip from "@/components/CountdownChip";
+import WindowStats, { type FlowPrint, type WindowChange } from "@/components/WindowStats";
 
-/** Change over a window, read off the same price function the chart draws. */
+const WINDOWS: [string, number][] = [
+  ["5M", 5 * 60_000],
+  ["1H", 3_600_000],
+  ["4H", 4 * 3_600_000],
+  ["1D", 86_400_000],
+];
+
+/** Change over each window, read off the same price function the chart draws. */
 export function windowChanges(
   priceAt: (t: number) => number,
   now: number,
   earliest: number
-): { label: string; change: number | null }[] {
-  const windows: [string, number][] = [
-    ["5M", 5 * 60_000],
-    ["1H", 3_600_000],
-    ["4H", 4 * 3_600_000],
-    ["1D", 86_400_000],
-  ];
+): WindowChange[] {
   const nowPrice = priceAt(now);
-  return windows.map(([label, ms]) => {
+  return WINDOWS.map(([label, ms]) => {
     const from = now - ms;
-    if (from < earliest || nowPrice <= 0) return { label, change: null };
+    if (from < earliest || nowPrice <= 0) return { label, ms, change: null };
     const then = priceAt(from);
-    return { label, change: then > 0 ? nowPrice / then - 1 : null };
+    return { label, ms, change: then > 0 ? nowPrice / then - 1 : null };
   });
-}
-
-function Split({
-  left,
-  right,
-  leftLabel,
-  rightLabel,
-}: {
-  left: number;
-  right: number;
-  leftLabel: string;
-  rightLabel: string;
-}) {
-  const total = left + right;
-  const share = total > 0 ? left / total : 0.5;
-  return (
-    <div className="space-y-1">
-      <div className="num flex items-baseline justify-between font-mono text-[11px]">
-        <span className="text-terminal-up">{leftLabel}</span>
-        <span className="text-terminal-down">{rightLabel}</span>
-      </div>
-      <div className="flex h-1 gap-0.5 overflow-hidden rounded-full">
-        <div className="bg-terminal-up" style={{ width: `${share * 100}%` }} />
-        <div className="flex-1 bg-terminal-down" />
-      </div>
-    </div>
-  );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1 text-[12px]">
+    <div className="flex items-baseline justify-between gap-3 py-[3px] text-[12px]">
       <span className="shrink-0 text-terminal-muted">{label}</span>
       <span className="flex-1 border-b border-dotted border-terminal-line/70" />
       <span className="num shrink-0 text-right font-mono text-terminal-text">
@@ -68,10 +43,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 /**
- * The stock, on one card: what it is, how it has moved, who has been buying
- * and selling today, and the numbers the price is built from. Replaces the
- * row of tiles under the chart and the three lines of revenue commentary
- * that used to follow it.
+ * The stock, on one card: what it is, how it has moved over each window and
+ * who was buying and selling inside it (click a window, the flow follows),
+ * and the numbers the price is built from.
  */
 export default function AboutCard({
   ticker,
@@ -88,6 +62,7 @@ export default function AboutCard({
   latestReport,
   mom,
   dayStats,
+  flow,
   floatHeld,
   holders,
   earliest,
@@ -108,6 +83,8 @@ export default function AboutCard({
   latestReport: { month: string; mrr: number; source: string } | null;
   mom: number | null;
   dayStats: DayStats;
+  /** Every print of the last day. */
+  flow: FlowPrint[];
   floatHeld: number;
   holders: number;
   earliest: number;
@@ -140,88 +117,34 @@ export default function AboutCard({
     day: "numeric",
     year: "numeric",
   });
+  const nextMonth = latestReport
+    ? new Date(
+        new Date(latestReport.month).setUTCMonth(
+          new Date(latestReport.month).getUTCMonth() + 1
+        )
+      ).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })
+    : null;
 
   return (
-    <section className="panel space-y-3 p-3">
+    <section className="panel space-y-2.5 p-3">
       <div>
         <h2 className="font-mono text-sm font-bold">About ${ticker.symbol}</h2>
-        <p className="text-sm text-terminal-text">{ticker.name}</p>
         <p className="text-xs leading-snug text-terminal-muted">{ticker.pitch}</p>
         {ticker.founder_handle && (
           <a
             href={`https://x.com/${ticker.founder_handle.replace(/^@/, "")}`}
             target="_blank"
             rel="noreferrer"
-            className="mt-1 inline-block font-mono text-[11px] text-terminal-accent hover:underline"
+            className="mt-0.5 inline-block font-mono text-[11px] text-terminal-accent hover:underline"
           >
             @{ticker.founder_handle.replace(/^@/, "")} on X ↗
           </a>
         )}
       </div>
 
-      {/* how it has moved */}
-      <div className="grid grid-cols-4 gap-1">
-        {changes.map((c) => {
-          const dir =
-            c.change === null ? "flat" : c.change > 0.0005 ? "up" : c.change < -0.0005 ? "down" : "flat";
-          return (
-            <div
-              key={c.label}
-              className={`rounded-md border px-1.5 py-1.5 text-center ${
-                dir === "up"
-                  ? "border-terminal-up/30 bg-terminal-up/[0.07]"
-                  : dir === "down"
-                    ? "border-terminal-down/30 bg-terminal-down/[0.07]"
-                    : "border-terminal-line bg-terminal-bg"
-              }`}
-            >
-              <div className="microlabel !tracking-[0.12em]">{c.label}</div>
-              <div
-                className={`num font-mono text-[11px] font-semibold ${
-                  dir === "up"
-                    ? "text-terminal-up"
-                    : dir === "down"
-                      ? "text-terminal-down"
-                      : "text-terminal-muted"
-                }`}
-              >
-                {c.change === null ? "—" : fmtPct(c.change)}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <WindowStats changes={changes} flow={flow} now={renderedAt} />
 
-      {/* who was buying and selling today */}
-      {dayStats.trades > 0 ? (
-        <div className="space-y-2 border-t border-terminal-line pt-3">
-          <Split
-            left={dayStats.buys}
-            right={dayStats.sells}
-            leftLabel={`${dayStats.buys.toLocaleString("en-US")} buys`}
-            rightLabel={`${dayStats.sells.toLocaleString("en-US")} sells`}
-          />
-          <Split
-            left={dayStats.buyNotional}
-            right={dayStats.sellNotional}
-            leftLabel={`${fmtCompact(dayStats.buyNotional)} vol.`}
-            rightLabel={`${fmtCompact(dayStats.sellNotional)} vol.`}
-          />
-          <Split
-            left={dayStats.buyers}
-            right={dayStats.sellers}
-            leftLabel={`${dayStats.buyers.toLocaleString("en-US")} buyers`}
-            rightLabel={`${dayStats.sellers.toLocaleString("en-US")} sellers`}
-          />
-        </div>
-      ) : (
-        <p className="border-t border-terminal-line pt-3 font-mono text-[11px] text-terminal-muted">
-          No prints yet today.
-        </p>
-      )}
-
-      {/* the numbers under the price */}
-      <div className="border-t border-terminal-line pt-2">
+      <div className="border-t border-terminal-line pt-1.5">
         <Row label="Market cap">{fmtCompact(price * shares)}</Row>
         <Row label={revenueLabel}>
           {liveMrr > 0 ? fmtMoney(liveMrr, liveMrr < 10_000 ? 2 : 0) : "—"}
@@ -253,8 +176,8 @@ export default function AboutCard({
               year: "numeric",
               timeZone: "UTC",
             })}{" "}
-            · {fmtCompact(Number(latestReport.mrr))}
-            <span className="ml-1 text-terminal-muted">
+            · {fmtCompact(Number(latestReport.mrr))}{" "}
+            <span className="text-terminal-muted">
               {latestReport.source === "stripe"
                 ? "Stripe"
                 : latestReport.source === "self-reported"
@@ -277,8 +200,8 @@ export default function AboutCard({
         <Row label="Next earnings">
           {nextEarningsAt ? (
             <CountdownChip target={nextEarningsAt} prefix="" />
-          ) : latestReport ? (
-            `~${new Date(new Date(latestReport.month).setUTCMonth(new Date(latestReport.month).getUTCMonth() + 1)).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}`
+          ) : nextMonth ? (
+            `~${nextMonth}`
           ) : (
             "—"
           )}

@@ -40,7 +40,7 @@ export default function TradesList({
       {trades.map((t) => (
         <li
           key={t.id}
-          className={`space-y-0.5 px-3 py-2 text-[13px] ${
+          className={`space-y-0.5 px-3 py-1.5 text-[12px] ${
             showSymbol ? "row-hover cursor-pointer" : ""
           }`}
         >

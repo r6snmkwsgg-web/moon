@@ -21,17 +21,23 @@ function timeAgo(iso: string): string {
 export default function ThesisFeed({
   theses,
   showSymbol = false,
+  bare = false,
 }: {
   theses: FeedTrade[];
   showSymbol?: boolean;
+  /** No panel chrome of its own — it is a pane inside something else. */
+  bare?: boolean;
 }) {
+  const Wrap = bare ? "div" : "section";
   return (
-    <section className="panel">
-      <div className="flex items-center gap-2 border-b border-terminal-line px-3 py-2">
-        <ScrollText size={12} className="text-terminal-muted" />
-        <h2 className="microlabel font-bold !text-terminal-text">Theses</h2>
-        <span className="microlabel">{theses.length} on record</span>
-      </div>
+    <Wrap className={bare ? "" : "panel"}>
+      {!bare && (
+        <div className="flex items-center gap-2 border-b border-terminal-line px-3 py-2">
+          <ScrollText size={12} className="text-terminal-muted" />
+          <h2 className="microlabel font-bold !text-terminal-text">Theses</h2>
+          <span className="microlabel">{theses.length} on record</span>
+        </div>
+      )}
       {theses.length === 0 ? (
         <p className="px-3 py-6 text-center text-sm text-terminal-muted">
           No theses yet. Attach one to your next trade — it goes on the
@@ -40,7 +46,7 @@ export default function ThesisFeed({
       ) : (
         <ul className="divide-y divide-terminal-line/40">
           {theses.map((t) => (
-            <li key={t.id} className="space-y-1 px-3 py-2.5">
+            <li key={t.id} className="space-y-1 px-3 py-2">
               <p className="text-sm leading-snug text-terminal-text">
                 “{t.note}”
               </p>
@@ -76,6 +82,6 @@ export default function ThesisFeed({
           ))}
         </ul>
       )}
-    </section>
+    </Wrap>
   );
 }
