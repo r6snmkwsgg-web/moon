@@ -1252,6 +1252,15 @@ export type LeaderboardRange = "all" | "7d" | "30d";
 export interface LeaderboardRow {
   valuation: PortfolioValuation;
   rangePnl: number;
+  /** What the account was worth at the start of the window — the stake the PnL is a return on. */
+  rangeBase: number;
+  /** rangePnl over rangeBase. Bankrolls run from $25 to $250k, so this is the rank. */
+  rangePct: number;
+}
+
+function leaderboardRow(v: PortfolioValuation, base: number): LeaderboardRow {
+  const rangePnl = v.totalValue - base;
+  return { valuation: v, rangePnl, rangeBase: base, rangePct: base > 0 ? rangePnl / base : 0 };
 }
 
 /**
@@ -1263,10 +1272,12 @@ export async function getLeaderboard(
   range: LeaderboardRange
 ): Promise<LeaderboardRow[]> {
   const valuations = await getAllValuations();
+  const stake = (v: PortfolioValuation) =>
+    startingCashFor(v.profile.username, STARTING_CASH, v.profile.persona);
   if (range === "all") {
     return valuations
-      .map((v) => ({ valuation: v, rangePnl: v.totalPnl }))
-      .sort((a, b) => b.rangePnl - a.rangePnl);
+      .map((v) => leaderboardRow(v, stake(v)))
+      .sort((a, b) => b.rangePct - a.rangePct);
   }
 
   const startDay = isoDaysAgo(range === "7d" ? 7 : 30);
@@ -1286,14 +1297,8 @@ export async function getLeaderboard(
   }
 
   return valuations
-    .map((v) => ({
-      valuation: v,
-      rangePnl:
-        v.totalValue -
-        (baseline.get(v.profile.id) ??
-          startingCashFor(v.profile.username, STARTING_CASH, v.profile.persona)),
-    }))
-    .sort((a, b) => b.rangePnl - a.rangePnl);
+    .map((v) => leaderboardRow(v, baseline.get(v.profile.id) ?? stake(v)))
+    .sort((a, b) => b.rangePct - a.rangePct);
 }
 
 export interface PublicProfileData {

@@ -51,7 +51,7 @@ export interface OwnPrint {
 
 const USD_CHIPS = [10, 100, 500, 1000];
 const SHARE_CHIPS = [10, 100, 1000];
-const PCT_CHIPS = [25, 50, 75, 100];
+const PCT_CHIPS = [25, 50, 75];
 
 /**
  * The ticket. One tab for each side, one number, one button.
@@ -255,8 +255,20 @@ export default function TradePanel({
   // sell fill for every share, walked down the hype curve. The mark above
   // includes your own impact — a fresh 10%-of-float buy reads +10% before
   // anyone else has traded — and this is the number that does not.
-  const exit = shownHeld > 0 ? est("sell", shownHeld) : null;
-  const exitPnl = exit ? exit.total - cost : 0;
+  // With a sell size typed in, the line quotes THAT slice — what 25% of the
+  // stack returns, against the cost of those shares — and falls back to the
+  // whole position when the ticket is empty or on the buy side.
+  const exitShares =
+    tab === "sell" && shares >= 1 && shares < shownHeld ? shares : shownHeld;
+  const exit = exitShares > 0 ? est("sell", exitShares) : null;
+  const exitCost = exitShares * shownAvg;
+  const exitPnl = exit ? exit.total - exitCost : 0;
+  const exitLabel =
+    exitShares === shownHeld
+      ? "sell all now"
+      : `sell ${exitShares.toLocaleString("en-US")} (${Math.round(
+          (exitShares / shownHeld) * 100
+        )}%) now`;
 
   // the next step of the walk: one tick after the last recorded one
   const nextTickAt = driftAt ? Date.parse(driftAt) + FLOW_TICK_MS : null;
@@ -422,7 +434,7 @@ export default function TradePanel({
       </div>
 
       {/* ── quick sizes ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-5 gap-1">
+      <div className={`grid gap-1 ${tab === "sell" ? "grid-cols-4" : "grid-cols-5"}`}>
         {tab === "sell"
           ? PCT_CHIPS.map((p) => (
               <button
@@ -543,11 +555,13 @@ export default function TradePanel({
           {exit && (
             <div
               className="num mt-1 flex flex-wrap items-baseline justify-between gap-x-3 border-t border-terminal-line/60 pt-1 font-mono text-[11px] text-terminal-muted"
-              title="The sell fill for every share you hold, walked down the hype curve — the mark above includes your own buying"
+              title="The sell fill for these shares, walked down the hype curve — the mark above includes your own buying"
             >
-              <span>sell all now → {fmtMoney(exit.total)}</span>
+              <span>
+                {exitLabel} → {fmtMoney(exit.total)}
+              </span>
               <span className={tone(exitPnl)}>
-                {fmtSigned(exitPnl)} ({fmtPct(cost > 0 ? exitPnl / cost : 0)})
+                {fmtSigned(exitPnl)} ({fmtPct(exitCost > 0 ? exitPnl / exitCost : 0)})
               </span>
             </div>
           )}

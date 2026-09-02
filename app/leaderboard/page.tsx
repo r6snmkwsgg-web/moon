@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getLeaderboard, getXpMap, type LeaderboardRange } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, fmtPct } from "@/lib/format";
 import { STARTING_CASH } from "@/lib/config";
 import TierBadge from "@/components/TierBadge";
 import AiChip from "@/components/AiChip";
@@ -95,7 +95,7 @@ export default async function LeaderboardPage({
                 Total value
               </th>
               <th className="microlabel px-3 py-2.5 text-right font-normal">
-                {range === "all" ? "PnL" : `PnL · ${range}`}
+                {range === "all" ? "Return" : `Return · ${range}`}
               </th>
             </tr>
           </thead>
@@ -150,8 +150,11 @@ export default async function LeaderboardPage({
                       row.rangePnl >= 0 ? "text-terminal-up" : "text-terminal-down"
                     }`}
                   >
-                    {row.rangePnl >= 0 ? "+" : ""}
-                    {fmtMoney(row.rangePnl)}
+                    {fmtPct(row.rangePct)}
+                    <span className="ml-1.5 text-[11px] text-terminal-muted">
+                      {row.rangePnl >= 0 ? "+" : ""}
+                      {fmtMoney(row.rangePnl)}
+                    </span>
                   </td>
                 </tr>
               );

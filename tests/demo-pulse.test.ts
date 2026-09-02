@@ -37,6 +37,35 @@ describe("the demo pulse", () => {
     expect(nextDemoEvent({ mrr: 100, subs: 2, reportedMrr: 100 }, seq(0.1, 0.5))).toBeNull();
   });
 
+  it("one customer in the tail is worth many — a churn you can see", () => {
+    // gauss = 2 is the two-sigma customer: e^(1.1·2) ≈ 9× the average plan
+    const whale: FlowRandom = { unit: (() => { const u = [0.1, 0.5]; let i = 0; return () => u[Math.min(i++, 1)]; })(), gauss: () => 2 };
+    const ev = nextDemoEvent({ mrr: 10_000, subs: 100, reportedMrr: 10_000 }, whale);
+    expect(ev?.kind).toBe("churn");
+    expect(ev?.subs).toBe(99);
+    expect(10_000 - ev!.mrr).toBeGreaterThan(800);
+    expect(10_000 - ev!.mrr).toBeLessThan(1_200);
+  });
+
+  it("a launch brings a wave of customers, and a wave never empties the book", () => {
+    // roll → new, size 0.5, wave roll 0.1 (< WAVE_CHANCE), count roll 0.5 → 2 + 3
+    const ev = nextDemoEvent({ mrr: 10_000, subs: 100, reportedMrr: 10_000 }, seq(0.9, 0.5, 0.1, 0.5));
+    expect(ev?.kind).toBe("new");
+    expect(ev?.subs).toBe(105);
+    expect(ev?.mrr).toBeCloseTo(10_600, 5);
+    // a churn wave on three customers takes one — the last two stay
+    const thin = nextDemoEvent({ mrr: 300, subs: 3, reportedMrr: 300 }, seq(0.1, 0.5, 0.1, 0.9));
+    expect(thin?.kind).toBe("churn");
+    expect(thin?.subs).toBe(2);
+  });
+
+  it("caps a single event at a fifth of MRR", () => {
+    const big: FlowRandom = { unit: seq(0.9, 0.9, 0.1, 0.99).unit, gauss: () => 4 };
+    const ev = nextDemoEvent({ mrr: 10_000, subs: 20, reportedMrr: 10_000 }, big);
+    expect(ev?.kind).toBe("new");
+    expect(ev?.mrr).toBeCloseTo(12_000, 5);
+  });
+
   it("expansion and contraction move money, not the count", () => {
     const up = nextDemoEvent({ mrr: 10_000, subs: 100, reportedMrr: 10_000 }, seq(0.2, 0.5));
     const down = nextDemoEvent({ mrr: 10_000, subs: 100, reportedMrr: 10_000 }, seq(0.3, 0.5));

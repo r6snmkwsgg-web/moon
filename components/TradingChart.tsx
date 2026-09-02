@@ -1023,6 +1023,11 @@ export default function TradingChart({
               const up = e.mrr >= e.prevMrr;
               const x = geo.x(i);
               const y = geo.h - geo.padB - 4;
+              // the mark is sized to the news: one small customer is a
+              // tick, a whale or a wave is a flag you can see from across
+              // the room — so a small triangle never promises a big move
+              const size = e.prevMrr > 0 ? Math.abs(e.mrr / e.prevMrr - 1) : 0;
+              const r = size >= 0.02 ? 5 : size >= 0.005 ? 4 : 2.5;
               return (
                 <g key={`re${e.at}`} opacity="0.9">
                   <line
@@ -1038,13 +1043,22 @@ export default function TradingChart({
                   <path
                     d={
                       up
-                        ? `M ${x} ${y - 7} L ${x + 4} ${y} L ${x - 4} ${y} Z`
-                        : `M ${x} ${y} L ${x + 4} ${y - 7} L ${x - 4} ${y - 7} Z`
+                        ? `M ${x} ${y - r * 1.75} L ${x + r} ${y} L ${x - r} ${y} Z`
+                        : `M ${x} ${y} L ${x + r} ${y - r * 1.75} L ${x - r} ${y - r * 1.75} Z`
                     }
                     fill={up ? UP : DOWN}
                   >
                     <title>
-                      {`${up ? "Revenue up" : "Revenue down"}: ${e.prevMrr} → ${e.mrr} MRR`}
+                      {`${up ? "Revenue up" : "Revenue down"} ${
+                        e.prevMrr > 0
+                          ? `${(e.mrr / e.prevMrr - 1) * 100 >= 0 ? "+" : ""}${(
+                              (e.mrr / e.prevMrr - 1) *
+                              100
+                            ).toFixed(2)}% MRR`
+                          : ""
+                      }: $${Math.round(e.prevMrr).toLocaleString("en-US")} → $${Math.round(
+                        e.mrr
+                      ).toLocaleString("en-US")}`}
                     </title>
                   </path>
                 </g>

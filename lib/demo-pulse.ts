@@ -50,6 +50,22 @@ export interface DemoEvent {
 export const DEMO_BAND = { floor: 0.55, ceil: 1.75 };
 
 /**
+ * Customers are not all the same size. Most are near the average; one in ten
+ * is a plan worth four of them and one in a hundred is the team account worth
+ * a dozen — log-normal around the average, and that tail is what makes one
+ * churn on the chart worth looking at.
+ */
+export const WHALE_SIGMA = 1.1;
+/**
+ * Signups and churn cluster: a launch, a newsletter feature, a price hike
+ * bring several at once. About one event in four is a wave of 2–7.
+ */
+export const WAVE_CHANCE = 0.28;
+export const WAVE_MAX = 7;
+/** No single event moves MRR more than this share of it. */
+export const EVENT_CAP = 0.2;
+
+/**
  * One more month-of-a-small-SaaS step, forward this time. A customer is worth
  * roughly the average one with spread; the walk is steered back toward its
  * band rather than allowed to escape it, so a listing is still a believable
@@ -75,21 +91,29 @@ export function nextDemoEvent(state: DemoState, rng: FlowRandom): DemoEvent | nu
         : roll < 0.34
           ? "contraction"
           : "new";
-  const unit = Math.max(1, (running / subs) * (0.5 + rng.unit() * 1.4));
+  // this customer's size: the average with spread, times the whale tail
+  const unit = Math.max(
+    1,
+    (running / subs) * (0.5 + rng.unit() * 1.4) * Math.exp(WHALE_SIGMA * rng.gauss())
+  );
+  // how many of them: a wave, or the usual one
+  const wave = rng.unit() < WAVE_CHANCE ? 2 + Math.floor(rng.unit() * (WAVE_MAX - 1)) : 1;
+  const cap = running * EVENT_CAP;
 
   let after = running;
   let nextSubs = subs;
   if (kind === "new") {
-    after = running + unit;
-    nextSubs = subs + 1;
+    after = running + Math.min(unit * wave, cap);
+    nextSubs = subs + wave;
   } else if (kind === "churn") {
     if (subs <= 2) return null; // the last customers stay
-    after = running - unit;
-    nextSubs = subs - 1;
+    const leaving = Math.min(wave, subs - 2);
+    after = running - Math.min(unit * leaving, cap);
+    nextSubs = subs - leaving;
   } else if (kind === "expansion") {
-    after = running + unit * 0.4;
+    after = running + Math.min(unit * 0.4, cap);
   } else {
-    after = running - unit * 0.4;
+    after = running - Math.min(unit * 0.4, cap);
   }
   if (after <= 1) return null;
   return {
