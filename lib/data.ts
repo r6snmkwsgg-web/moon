@@ -1,6 +1,8 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { marketDayStart } from "@/lib/market-time";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { pageAll } from "@/lib/supabase/page-all";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   annualRevenue,
   changeFraction,
@@ -33,6 +35,7 @@ import type {
   Profile,
   Ticker,
   TickerQuote,
+  Trade,
 } from "@/lib/types";
 
 const SPARK_DAYS = 30;
@@ -131,6 +134,12 @@ export async function getLiveRevenue(
     entry.daily.push({ day: r.day, amount: Number(r.net_minor) / 100 });
     out.set(r.ticker_id, entry);
   }
+  return out;
+}
+
+function chunk<T>(list: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
   return out;
 }
 
@@ -774,21 +783,24 @@ export async function getPortfolio(userId: string): Promise<{
  */
 export async function getAllValuations(): Promise<PortfolioValuation[]> {
   const admin = createSupabaseAdminClient();
-  const [quotes, profilesRes, holdingsRes] = await Promise.all([
+  // a thousand accounts and their positions are past the API's page — read all
+  const [quotes, profiles, holdings] = await Promise.all([
     getMarket(),
-    admin.from("profiles").select("*"),
-    admin.from("holdings").select("*"),
+    pageAll<Profile>((f, t) => admin.from("profiles").select("*").order("id").range(f, t)),
+    pageAll<Holding>((f, t) =>
+      admin.from("holdings").select("*").order("user_id").order("ticker_id").range(f, t)
+    ),
   ]);
 
   const quotesById = new Map(quotes.map((q) => [q.ticker.id, q]));
   const holdingsByUser = new Map<string, Holding[]>();
-  for (const h of (holdingsRes.data ?? []) as Holding[]) {
+  for (const h of holdings) {
     const list = holdingsByUser.get(h.user_id) ?? [];
     list.push(h);
     holdingsByUser.set(h.user_id, list);
   }
 
-  return ((profilesRes.data ?? []) as Profile[])
+  return profiles
     // the AI traders rank too — labeled, and measured from their own stake
     .map((p) => valuePortfolio(p, holdingsByUser.get(p.id) ?? [], quotesById))
     .sort((a, b) => b.totalValue - a.totalValue);
@@ -1247,7 +1259,12 @@ export async function getEquityInputs(userId: string): Promise<{
   };
 }
 
-export type LeaderboardRange = "all" | "7d" | "30d";
+export type LeaderboardRange = "all" | "1d" | "7d" | "30d";
+const RANGE_MS: Record<Exclude<LeaderboardRange, "all">, number> = {
+  "1d": 86_400_000,
+  "7d": 7 * 86_400_000,
+  "30d": 30 * 86_400_000,
+};
 
 export interface LeaderboardRow {
   valuation: PortfolioValuation;
@@ -1268,6 +1285,108 @@ function leaderboardRow(v: PortfolioValuation, base: number): LeaderboardRow {
  * before the window start (players without history fall back to the
  * $10,000 starting stake).
  */
+/**
+ * What every account was worth at one instant, rebuilt from the ledger: the
+ * cash and shares of right now with every trade since then undone, marked
+ * at the tape as it stood then. This is the 24h baseline — the daily
+ * snapshots are a day coarse and did not exist for most of the population
+ * until it did.
+ */
+async function valuesAt(
+  admin: SupabaseClient,
+  valuations: PortfolioValuation[],
+  t0: number
+): Promise<Map<string, number>> {
+  const iso = new Date(t0).toISOString();
+  const day = iso.slice(0, 10);
+  const [trades, ticks, snaps] = await Promise.all([
+    pageAll<Pick<Trade, "user_id" | "ticker_id" | "side" | "shares" | "total">>((f, t) =>
+      admin
+        .from("trades")
+        .select("user_id, ticker_id, side, shares, total")
+        .gte("created_at", iso)
+        .order("id")
+        .range(f, t)
+    ),
+    // the last tick at or before the instant — the walk steps every five
+    // minutes, so two hours back is plenty
+    pageAll<{ ticker_id: string; price: number }>((f, t) =>
+      admin
+        .from("flow_ticks")
+        .select("ticker_id, at, price")
+        .lte("at", iso)
+        .gte("at", new Date(t0 - 2 * 3_600_000).toISOString())
+        .order("at", { ascending: false })
+        .range(f, t)
+    ),
+    admin.from("price_snapshots").select("ticker_id, price").eq("day", day),
+  ]);
+  const priceThen = new Map<string, number>();
+  for (const k of ticks) if (!priceThen.has(k.ticker_id)) priceThen.set(k.ticker_id, Number(k.price));
+  for (const k of (snaps.data ?? []) as { ticker_id: string; price: number }[]) {
+    if (!priceThen.has(k.ticker_id)) priceThen.set(k.ticker_id, Number(k.price));
+  }
+  // undo the window: a buy gave up cash for shares, so undoing it is the reverse
+  const undo = new Map<string, { cash: number; shares: Map<string, number> }>();
+  const lastPrint = new Map<string, number>(); // a price of last resort
+  for (const tr of trades) {
+    const u = undo.get(tr.user_id) ?? { cash: 0, shares: new Map<string, number>() };
+    const sign = tr.side === "buy" ? 1 : -1;
+    u.cash += sign * Number(tr.total);
+    u.shares.set(tr.ticker_id, (u.shares.get(tr.ticker_id) ?? 0) - sign * Number(tr.shares));
+    undo.set(tr.user_id, u);
+    if (Number(tr.shares) > 0) lastPrint.set(tr.ticker_id, Number(tr.total) / Number(tr.shares));
+  }
+  const out = new Map<string, number>();
+  for (const v of valuations) {
+    const shares = new Map<string, number>();
+    const priceNow = new Map<string, number>();
+    for (const pos of v.positions) {
+      shares.set(pos.holding.ticker_id, Number(pos.holding.shares));
+      priceNow.set(pos.holding.ticker_id, pos.quote.price);
+    }
+    let cash = Number(v.profile.cash);
+    const u = undo.get(v.profile.id);
+    if (u) {
+      cash += u.cash;
+      for (const [tid, d] of u.shares) shares.set(tid, (shares.get(tid) ?? 0) + d);
+    }
+    let value = cash;
+    for (const [tid, n] of shares) {
+      if (n <= 0) continue;
+      value += n * (priceThen.get(tid) ?? priceNow.get(tid) ?? lastPrint.get(tid) ?? 0);
+    }
+    out.set(v.profile.id, value);
+  }
+  return out;
+}
+
+/** The daily snapshot on or just before a day, for everyone who has one. */
+async function snapshotValuesAt(admin: SupabaseClient, t0: number): Promise<Map<string, number>> {
+  const day = new Date(t0).toISOString().slice(0, 10);
+  const floor = new Date(t0 - 3 * 86_400_000).toISOString().slice(0, 10);
+  const rows = await pageAll<{ user_id: string; day: string; total_value: number }>((f, t) =>
+    admin
+      .from("portfolio_snapshots")
+      .select("user_id, day, total_value")
+      .lte("day", day)
+      .gte("day", floor)
+      .order("day", { ascending: false })
+      .order("user_id")
+      .range(f, t)
+  );
+  const out = new Map<string, number>();
+  for (const r of rows) if (!out.has(r.user_id)) out.set(r.user_id, Number(r.total_value));
+  return out;
+}
+
+/**
+ * Leaderboard over a window. The return is measured from what the account
+ * was worth when the window opened: rebuilt from the ledger for 24h, the
+ * daily snapshot for a week or a month. An account younger than the window
+ * is measured from its stake — its return over the window is its return
+ * since it existed.
+ */
 export async function getLeaderboard(
   range: LeaderboardRange
 ): Promise<LeaderboardRow[]> {
@@ -1280,24 +1399,21 @@ export async function getLeaderboard(
       .sort((a, b) => b.rangePct - a.rangePct);
   }
 
-  const startDay = isoDaysAgo(range === "7d" ? 7 : 30);
-  const baseline = new Map<string, number>();
+  const t0 = Date.now() - RANGE_MS[range];
+  let baseline = new Map<string, number>();
   try {
     const admin = createSupabaseAdminClient();
-    const { data } = await admin
-      .from("portfolio_snapshots")
-      .select("user_id, day, total_value")
-      .lte("day", startDay)
-      .order("day", { ascending: true });
-    for (const s of (data ?? []) as PortfolioSnapshot[]) {
-      baseline.set(s.user_id, Number(s.total_value)); // ascending → last wins
-    }
+    baseline =
+      range === "1d" ? await valuesAt(admin, valuations, t0) : await snapshotValuesAt(admin, t0);
   } catch {
-    // table missing pre-migration — everyone falls back to starting cash
+    // no history to read — everyone is measured from their stake
   }
 
   return valuations
-    .map((v) => leaderboardRow(v, baseline.get(v.profile.id) ?? stake(v)))
+    .map((v) => {
+      const young = Date.parse(v.profile.created_at) > t0;
+      return leaderboardRow(v, young ? stake(v) : (baseline.get(v.profile.id) ?? stake(v)));
+    })
     .sort((a, b) => b.rangePct - a.rangePct);
 }
 
@@ -1543,11 +1659,26 @@ export async function getXpMap(): Promise<Map<string, number>> {
   const xp = new Map<string, number>();
   try {
     const admin = createSupabaseAdminClient();
-    const [tradesRes, votesRes, tickersRes, profilesRes] = await Promise.all([
-      admin.from("trades").select("user_id"),
-      admin.from("ticker_votes").select("user_id"),
+    // tiers are for people: the AI traders have no XP, and their prints
+    // would be most of the trades table in a week
+    const profiles = (
+      await pageAll<{ id: string; invited_by: string | null; username?: string | null; is_bot?: boolean | null }>(
+        (f, t) => admin.from("profiles").select("id, invited_by, username, is_bot").order("id").range(f, t)
+      )
+    ).filter((p) => !isBotProfile(p));
+    const humans = profiles.map((p) => p.id);
+    const byHuman = (table: "trades" | "ticker_votes") =>
+      Promise.all(
+        chunk(humans, 200).map((ids) =>
+          pageAll<{ user_id: string }>((f, t) =>
+            admin.from(table).select("user_id").in("user_id", ids).order("user_id").range(f, t)
+          )
+        )
+      ).then((pages) => pages.flat());
+    const [trades, votes, tickersRes] = await Promise.all([
+      byHuman("trades"),
+      byHuman("ticker_votes"),
       admin.from("tickers").select("listed_by"),
-      admin.from("profiles").select("id, invited_by"),
     ]);
     const counts = new Map<
       string,
@@ -1563,10 +1694,10 @@ export async function getXpMap(): Promise<Map<string, number>> {
       c[key] += 1;
       counts.set(userId, c);
     };
-    for (const t of (tradesRes.data ?? []) as { user_id: string }[]) bump(t.user_id, "trades");
-    for (const v of (votesRes.data ?? []) as { user_id: string }[]) bump(v.user_id, "votes");
+    for (const t of trades) bump(t.user_id, "trades");
+    for (const v of votes) bump(v.user_id, "votes");
     for (const t of (tickersRes.data ?? []) as { listed_by: string | null }[]) bump(t.listed_by, "listings");
-    for (const p of (profilesRes.data ?? []) as { id: string; invited_by: string | null }[]) bump(p.invited_by, "invites");
+    for (const p of profiles) bump(p.invited_by, "invites");
     for (const [userId, c] of counts) xp.set(userId, computeXp(c));
   } catch {
     // XP layer degrades to zero

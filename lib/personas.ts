@@ -230,6 +230,17 @@ export function timeOfDayFactor(t: number): number {
 }
 
 /** Chance a persona acts in one interval of the poller. */
+/**
+ * activityPerDay was sized for a roster of twelve on one board. Spread a
+ * thousand accounts over thirty listings at a print a day each and every
+ * listing sees one trade an hour — an empty room. Everyone wakes this many
+ * times more often than their activity says.
+ */
+export const WAKE_SCALE = 3;
+
 export function actChance(p: Persona, t: number, intervalMs = 5 * 60_000): number {
-  return Math.min(0.95, (p.activityPerDay * intervalMs * timeOfDayFactor(t)) / 86_400_000);
+  return Math.min(
+    0.95,
+    (p.activityPerDay * WAKE_SCALE * intervalMs * timeOfDayFactor(t)) / 86_400_000
+  );
 }

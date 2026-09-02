@@ -122,6 +122,7 @@ const T: Record<string, string[]> = {
 
 const EMOJI_UP = ["🚀", "📈", "🟢", "💚", "🔥", "👀"];
 const EMOJI_DOWN = ["📉", "🔻", "🩸", "💀", "🫡", "😬"];
+const EMOJI_FLAT = ["👀", "🤔", "🧐", "⏳", "🫠"];
 const DEGEN_TAILS = [" lol", " ngl", " fr", " lmao", "", "", ""];
 const DEGEN_OPENERS = ["ok so ", "bro ", "ngl ", "", "", "", "look, "];
 
@@ -159,7 +160,7 @@ export function inVoice(line: string, voice: Voice, side: "buy" | "sell" | null,
       return first.length >= 8 ? first : line.toLowerCase().replace(/\.$/, "");
     }
     case "emoji": {
-      const pool = side === "sell" ? EMOJI_DOWN : EMOJI_UP;
+      const pool = side === "sell" ? EMOJI_DOWN : side === "buy" ? EMOJI_UP : EMOJI_FLAT;
       const n = 1 + (rng.unit() < 0.4 ? 1 : 0);
       let out = line;
       for (let i = 0; i < n; i++) out += ` ${pool[Math.floor(rng.unit() * pool.length)]}`;
@@ -179,13 +180,23 @@ export function inVoice(line: string, voice: Voice, side: "buy" | "sell" | null,
  * on a print (the ledger's limit) and 280 on a post.
  */
 export function composeThesis(persona: Persona, s: Situation, rng: Rng): string {
-  const key =
+  const take =
     s.side === null
-      ? `take/${s.edgePct > 8 ? "bull" : s.edgePct < -8 ? "bear" : rng.unit() < 0.5 ? "bull" : "flat"}`
-      : `${s.reason === "take" ? "noise" : s.reason}/${s.side}`;
+      ? s.edgePct > 8
+        ? "bull"
+        : s.edgePct < -8
+          ? "bear"
+          : rng.unit() < 0.5
+            ? "bull"
+            : "flat"
+      : null;
+  const key = take ? `take/${take}` : `${s.reason === "take" ? "noise" : s.reason}/${s.side}`;
   const pool = T[key] ?? T["noise/buy"];
   const line = fill(pool[Math.floor(rng.unit() * pool.length)], s);
-  const out = inVoice(line, persona.voice, s.side, rng);
+  // a bearish take gets the bear's emoji, not a rocket — the voice follows
+  // the direction of what is being said, trade or no trade
+  const lean = take === "bull" ? "buy" : take === "bear" ? "sell" : s.side;
+  const out = inVoice(line, persona.voice, lean, rng);
   const max = s.side === null ? 280 : 140;
   return out.length > max ? out.slice(0, max - 1).trimEnd() + "…" : out;
 }

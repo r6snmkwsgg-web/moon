@@ -20,7 +20,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { BOTS, type BotSpec, type BotStyle } from "@/lib/bot-roster";
 import { cryptoRandom, type FlowRandom } from "@/lib/flow";
-import { actChance, type Persona } from "@/lib/personas";
+import { actChance, timeOfDayFactor, type Persona } from "@/lib/personas";
+import { pageAll } from "@/lib/supabase/page-all";
 import {
   fairPrice,
   floatOf,
@@ -68,6 +69,10 @@ export const MAX_TRADES_PER_ROUND = 40;
 
 /** Standalone theses per round, board-wide. */
 export const MAX_POSTS_PER_ROUND = 6;
+/** Tickers filling at once in a round. */
+export const FILL_CONCURRENCY = 4;
+/** How long a round may spend filling before it stops — the cron has sixty seconds for everything. */
+export const ROUND_BUDGET_MS = 30_000;
 
 /** Below this, a bot has no view worth trading. */
 const MIN_CONVICTION = 0.15;
@@ -241,14 +246,18 @@ interface Account {
 /** Every bot account: the flagged population (0009), else the roster. */
 async function loadPopulation(admin: SupabaseClient): Promise<Account[]> {
   const specByName = new Map(BOTS.map((b) => [b.username, b]));
-  const flagged = await admin
-    .from("profiles")
-    .select("id, username, cash, persona")
-    .eq("is_bot", true)
-    .limit(5000);
   const rows: { id: string; username: string; cash: number; persona?: unknown }[] = [];
-  if (!flagged.error && flagged.data && flagged.data.length > 0) {
-    rows.push(...(flagged.data as typeof rows));
+  let flagged: typeof rows = [];
+  try {
+    // past the API's thousand-row page — read every page
+    flagged = await pageAll<(typeof rows)[number]>((f, t) =>
+      admin.from("profiles").select("id, username, cash, persona").eq("is_bot", true).order("id").range(f, t)
+    );
+  } catch {
+    // pre-0009: no is_bot column
+  }
+  if (flagged.length > 0) {
+    rows.push(...flagged);
   } else {
     // pre-0009: the roster is the population
     const { data } = await admin
@@ -283,12 +292,13 @@ async function loadPopulation(admin: SupabaseClient): Promise<Account[]> {
  */
 export async function runBotRound(
   admin: SupabaseClient,
-  opts: { now?: number; rng?: FlowRandom; maxTrades?: number; maxPosts?: number } = {}
+  opts: { now?: number; rng?: FlowRandom; maxTrades?: number; maxPosts?: number; budgetMs?: number } = {}
 ): Promise<BotRoundResult> {
   const now = opts.now ?? Date.now();
   const rng = opts.rng ?? cryptoRandom();
   const maxTrades = opts.maxTrades ?? MAX_TRADES_PER_ROUND;
   const maxPosts = opts.maxPosts ?? MAX_POSTS_PER_ROUND;
+  const budgetMs = opts.budgetMs ?? ROUND_BUDGET_MS;
   const out: BotRoundResult = { bots: 0, awake: 0, attempted: 0, filled: 0, posted: 0, errors: [] };
 
   const population = await loadPopulation(admin);
@@ -327,7 +337,15 @@ export async function runBotRound(
       .select("ticker_id, at, prev_mrr, mrr, prev_subscriptions")
       .gte("at", newsSince)
       .order("at", { ascending: true }),
-    admin.from("holdings").select("user_id, ticker_id, shares").gt("shares", 0),
+    pageAll<{ user_id: string; ticker_id: string; shares: number }>((f, t) =>
+      admin
+        .from("holdings")
+        .select("user_id, ticker_id, shares")
+        .gt("shares", 0)
+        .order("user_id")
+        .order("ticker_id")
+        .range(f, t)
+    ).then((data) => ({ data })),
     admin
       .from("flow_ticks")
       .select("ticker_id, at, price")
@@ -442,46 +460,60 @@ export async function runBotRound(
       };
     });
 
-  // shuffle so the same bot is not always first to the trough
+  // Everyone decides off the same board, then the orders fill ticker by
+  // ticker, a few tickers at a time: orders on one ticker queue behind each
+  // other (placeOrder's claim is per ticker) while different tickers fill
+  // together. Filled one after another, forty prints took a minute — the
+  // whole cron's budget. Shuffled so the same bot is not always first to
+  // the trough, and stopped at the deadline whatever is left.
   const roster = [...awake].sort(() => rng.unit() - 0.5);
-  const idle: Account[] = [];
+  const orders: { account: Account; o: NonNullable<ReturnType<typeof decide>> }[] = [];
   for (const account of roster) {
-    if (out.filled >= maxTrades) break;
+    if (orders.length >= maxTrades) break;
     const o = decide(account.persona, account.cash, viewsFor(account), rng);
-    if (!o) {
-      idle.push(account);
-      continue;
-    }
-    out.attempted++;
-    const result = await placeOrder(
-      admin,
-      { userId: account.id, symbol: o.symbol, side: o.side, shares: o.shares, note: o.note ?? undefined },
-      { now }
-    );
-    if (!result.ok) {
-      out.errors.push(`${account.username} ${o.side} ${o.shares} ${o.symbol}: ${result.error}`);
-      continue;
-    }
-    await result.settle();
-    out.filled++;
-    // keep the board honest for the next bot in the same round
-    const v = board.find((b) => b.symbol === o.symbol);
-    if (v) {
-      const signed = o.side === "buy" ? o.shares : -o.shares;
-      v.floatHeld += signed;
-      const key = `${account.id}/${v.id}`;
-      mine.set(key, (mine.get(key) ?? 0) + signed);
-      account.cash = Number(account.cash) + (o.side === "buy" ? -result.total : result.total);
-      const l = printsBy.get(account.username) ?? [];
-      l.push({ tickerId: v.id, side: o.side });
-      printsBy.set(account.username, l);
-    }
+    if (o) orders.push({ account, o });
   }
+  const queues = new Map<string, typeof orders>();
+  for (const order of orders) {
+    const q = queues.get(order.o.symbol) ?? [];
+    q.push(order);
+    queues.set(order.o.symbol, q);
+  }
+  const pending = [...queues.values()];
+  const deadline = Date.now() + budgetMs;
+  const traded = new Set<string>();
+  await Promise.all(
+    Array.from({ length: FILL_CONCURRENCY }, async () => {
+      for (let q = pending.shift(); q; q = pending.shift()) {
+        for (const { account, o } of q) {
+          if (Date.now() > deadline) return;
+          out.attempted++;
+          const result = await placeOrder(
+            admin,
+            { userId: account.id, symbol: o.symbol, side: o.side, shares: o.shares, note: o.note ?? undefined },
+            { now }
+          );
+          if (!result.ok) {
+            out.errors.push(`${account.username} ${o.side} ${o.shares} ${o.symbol}: ${result.error}`);
+            continue;
+          }
+          await result.settle();
+          out.filled++;
+          traded.add(account.id);
+        }
+      }
+    })
+  );
 
-  // a few of the ones with nothing to trade say something instead
-  for (const account of idle) {
+  // A take does not need a trade. Anyone in the population can say
+  // something this round, at their own rate and the hour's — it used to be
+  // only the handful awake and idle, which rolled that rate against six
+  // accounts instead of a thousand and posted about never.
+  const hour = timeOfDayFactor(now);
+  for (const account of population) {
     if (out.posted >= maxPosts) break;
-    if (rng.unit() >= account.persona.postRate / 288) continue;
+    if (traded.has(account.id)) continue;
+    if (rng.unit() >= (account.persona.postRate * hour) / 288) continue;
     const views = viewsFor(account);
     // talk about what you hold, else about whatever is most mispriced
     const held = views.filter((v) => v.held > 0);

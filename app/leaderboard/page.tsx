@@ -17,7 +17,14 @@ const RANGES: { key: LeaderboardRange; label: string }[] = [
   { key: "all", label: "All-time" },
   { key: "30d", label: "30d" },
   { key: "7d", label: "7d" },
+  { key: "1d", label: "24h" },
 ];
+const RANGE_LABEL: Record<LeaderboardRange, string> = {
+  all: "Return",
+  "30d": "Return · 30d",
+  "7d": "Return · 7d",
+  "1d": "Return · 24h",
+};
 
 export default async function LeaderboardPage({
   searchParams,
@@ -26,7 +33,7 @@ export default async function LeaderboardPage({
 }) {
   const { range: rangeParam, humans: humansParam } = await searchParams;
   const range: LeaderboardRange =
-    rangeParam === "7d" || rangeParam === "30d" ? rangeParam : "all";
+    rangeParam === "7d" || rangeParam === "30d" || rangeParam === "1d" ? rangeParam : "all";
   // the AI traders rank by default, labeled; ?humans=1 hides them
   const humansOnly = humansParam === "1";
   const href = (r: LeaderboardRange, h: boolean) => {
@@ -95,7 +102,7 @@ export default async function LeaderboardPage({
                 Total value
               </th>
               <th className="microlabel px-3 py-2.5 text-right font-normal">
-                {range === "all" ? "Return" : `Return · ${range}`}
+                {RANGE_LABEL[range]}
               </th>
             </tr>
           </thead>
@@ -134,7 +141,9 @@ export default async function LeaderboardPage({
                         v.profile.display_name
                       )}
                       <AiChip username={v.profile.username} bot={v.profile.is_bot} />
-                      <TierBadge xp={xpMap.get(v.profile.id) ?? 0} />
+                      {!isBotProfile(v.profile) && (
+                        <TierBadge xp={xpMap.get(v.profile.id) ?? 0} />
+                      )}
                       {isMe && (
                         <span className="text-[10px] text-terminal-accent">
                           you
