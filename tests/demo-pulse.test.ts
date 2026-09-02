@@ -48,22 +48,22 @@ describe("the demo pulse", () => {
   });
 
   it("a launch brings a wave of customers, and a wave never empties the book", () => {
-    // roll → new, size 0.5, wave roll 0.1 (< WAVE_CHANCE), count roll 0.5 → 2 + 3
+    // roll → new, size 0.5, wave roll 0.1 (< WAVE_CHANCE), count roll 0.5 → 2 + 2
     const ev = nextDemoEvent({ mrr: 10_000, subs: 100, reportedMrr: 10_000 }, seq(0.9, 0.5, 0.1, 0.5));
     expect(ev?.kind).toBe("new");
-    expect(ev?.subs).toBe(105);
-    expect(ev?.mrr).toBeCloseTo(10_600, 5);
+    expect(ev?.subs).toBe(104);
+    expect(ev?.mrr).toBeCloseTo(10_480, 5);
     // a churn wave on three customers takes one — the last two stay
     const thin = nextDemoEvent({ mrr: 300, subs: 3, reportedMrr: 300 }, seq(0.1, 0.5, 0.1, 0.9));
     expect(thin?.kind).toBe("churn");
     expect(thin?.subs).toBe(2);
   });
 
-  it("caps a single event at a fifth of MRR", () => {
+  it("caps a single event at an eighth of MRR", () => {
     const big: FlowRandom = { unit: seq(0.9, 0.9, 0.1, 0.99).unit, gauss: () => 4 };
     const ev = nextDemoEvent({ mrr: 10_000, subs: 20, reportedMrr: 10_000 }, big);
     expect(ev?.kind).toBe("new");
-    expect(ev?.mrr).toBeCloseTo(12_000, 5);
+    expect(ev?.mrr).toBeCloseTo(11_200, 5);
   });
 
   it("expansion and contraction move money, not the count", () => {

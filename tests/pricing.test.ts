@@ -641,9 +641,21 @@ describe("revenue events between reports", () => {
     const spike = Math.abs(revenueShock([churn], T + 1000));
     const later = Math.abs(revenueShock([churn], T + SHOCK_HALFLIFE_MS));
     const gone = Math.abs(revenueShock([churn], T + SHOCK_HALFLIFE_MS * 9));
-    expect(spike).toBeGreaterThan(0.1); // a 10% churn is a real candle
+    // a 10% churn gaps about 7% past the step — a real candle, not a needle
+    expect(spike).toBeGreaterThan(0.05);
+    expect(spike).toBeLessThan(0.1);
     expect(later).toBeCloseTo(spike / 2, 2);
     expect(gone).toBe(0);
+  });
+
+  it("saturates: big news overshoots by less of itself than small news", () => {
+    const small: RevenueEvent = { at: T, prevMrr: 10_000, mrr: 10_030 };
+    const big: RevenueEvent = { at: T, prevMrr: 10_000, mrr: 12_000 };
+    const smallRatio = revenueShock([small], T + 1) / 0.003;
+    const bigRatio = revenueShock([big], T + 1) / 0.2;
+    expect(smallRatio).toBeGreaterThan(2); // near the full 2.4x
+    expect(bigRatio).toBeLessThan(0.5); // a +20% wave gaps well under +30% in all
+    expect(revenueShock([big], T + 1)).toBeLessThan(0.1);
   });
 
   it("caps a burst of news so nothing gaps to zero", () => {
@@ -697,6 +709,6 @@ describe("the first reading after connecting", () => {
       { at: T, prevMrr: 635.5, mrr: 570, catchUp: true },
       { at: T + 3_600_000, prevMrr: 570, mrr: 500 },
     ];
-    expect(revenueShock(events, T + 3_600_000 + 1000)).toBeLessThan(-0.1);
+    expect(revenueShock(events, T + 3_600_000 + 1000)).toBeLessThan(-0.05);
   });
 });

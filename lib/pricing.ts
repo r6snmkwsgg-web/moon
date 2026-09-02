@@ -521,10 +521,19 @@ export interface RevenueEvent {
  * does not visibly react to a churn is not reacting. 2.4x gaps it.
  */
 export const SHOCK_OVERSHOOT = 2.4;
-/** The overshoot halves every 35 minutes, then the step is all that's left. */
-export const SHOCK_HALFLIFE_MS = 35 * 60_000;
+/**
+ * The overshoot is for SMALL news. It saturates: a move of this size gets
+ * half the multiple, a move three times it a quarter. A +20% wave used to
+ * gap the tape +74% — the fundamental step plus a 45% needle — and then
+ * bleed the needle away in an hour of red candles, which read as "a payment
+ * sent the stock plummeting". Now it gaps about +28% and gives back 8% over
+ * the afternoon.
+ */
+export const SHOCK_SATURATION = 0.04;
+/** The overshoot halves every 90 minutes — post-news drift, not a spike. */
+export const SHOCK_HALFLIFE_MS = 90 * 60_000;
 /** No single burst of news may move a price more than this on its own. */
-export const SHOCK_CAP = 0.45;
+export const SHOCK_CAP = 0.2;
 
 /**
  * MRR as Stripe knew it at instant t. Revenue steps — a customer signs up or
@@ -558,7 +567,8 @@ export function revenueShock(events: RevenueEvent[], t: number): number {
     const age = t - e.at;
     if (age > SHOCK_HALFLIFE_MS * 8) continue; // decayed to nothing
     const move = (e.mrr - e.prevMrr) / e.prevMrr;
-    shock += move * SHOCK_OVERSHOOT * Math.pow(0.5, age / SHOCK_HALFLIFE_MS);
+    const overshoot = SHOCK_OVERSHOOT / (1 + Math.abs(move) / SHOCK_SATURATION);
+    shock += move * overshoot * Math.pow(0.5, age / SHOCK_HALFLIFE_MS);
   }
   return Math.max(-SHOCK_CAP, Math.min(SHOCK_CAP, shock));
 }

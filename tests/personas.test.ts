@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   actChance,
   WAKE_SCALE,
+  HOLD_TEMPO,
   generatePersona,
   generatePopulation,
   seededRng,
@@ -100,7 +101,7 @@ describe("the clock", () => {
     const p = generatePersona("x", 1);
     const noon = Date.parse("2026-09-02T16:30:00Z");
     const c = actChance({ ...p, activityPerDay: 2.88 }, noon);
-    expect(c).toBeCloseTo((2.88 / 288) * WAKE_SCALE * timeOfDayFactor(noon), 10);
+    expect(c).toBeCloseTo((2.88 / 288) * WAKE_SCALE * HOLD_TEMPO[p.hold] * timeOfDayFactor(noon), 10);
     expect(actChance({ ...p, activityPerDay: 100_000 }, noon)).toBeLessThanOrEqual(0.95);
   });
 });

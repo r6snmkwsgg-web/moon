@@ -237,10 +237,13 @@ export function timeOfDayFactor(t: number): number {
  * times more often than their activity says.
  */
 export const WAKE_SCALE = 3;
+/** Paper hands check the chart more often than diamond hands do. */
+export const HOLD_TEMPO: Record<Hold, number> = { paper: 1.4, swing: 1, diamond: 0.7 };
 
 export function actChance(p: Persona, t: number, intervalMs = 5 * 60_000): number {
   return Math.min(
     0.95,
-    (p.activityPerDay * WAKE_SCALE * intervalMs * timeOfDayFactor(t)) / 86_400_000
+    (p.activityPerDay * WAKE_SCALE * HOLD_TEMPO[p.hold] * intervalMs * timeOfDayFactor(t)) /
+      86_400_000
   );
 }

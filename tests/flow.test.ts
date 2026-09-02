@@ -550,7 +550,7 @@ describe("advanceMarketFlow", () => {
     );
     // and it really is under the no-news price by exactly the shock
     const quiet = settledPrice(4_000, 0.2, now, mult, 10_000, [], tick.drift);
-    expect(revenueShock(news, now)).toBeLessThan(-0.2);
+    expect(revenueShock(news, now)).toBeLessThan(-0.05); // a -20% churn gaps ~8% past the step
     expect(tick.price / quiet - 1).toBeCloseTo(revenueShock(news, now), 10);
   });
 

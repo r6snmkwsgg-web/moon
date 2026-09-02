@@ -14,12 +14,14 @@ import type { Persona, Voice } from "@/lib/personas";
 export interface Situation {
   symbol: string;
   side: "buy" | "sell" | null;
-  /** The style that carried the decision, or "take" for a standalone post. */
-  reason: BotStyle | "take";
+  /** The style or reflex that carried the decision, or "take" for a standalone post. */
+  reason: BotStyle | "panic" | "dip" | "take";
   /** fair / price − 1, as a percentage. */
   edgePct: number;
   change1hPct: number;
   change24hPct: number;
+  /** The last quarter hour — what a panic is about. */
+  change15mPct?: number;
   newsKind?: "new" | "churn" | "expansion" | "contraction" | null;
   price: number;
   fair: number;
@@ -97,6 +99,24 @@ const T: Record<string, string[]> = {
     "distribution in {sym}. {edge}% over fair is a gift, and i give gifts back.",
     "sized out of {sym}. the multiple got silly.",
   ],
+  "panic/sell": [
+    "{sym} down {m15}% in fifteen minutes and i am not finding out why. out.",
+    "nope. sold {sym}. whatever that was i want no part of it.",
+    "cut {sym}. {m15}% in a quarter hour is not a dip, it is a trend.",
+    "someone just dumped {sym} and i am not the bag holder today.",
+    "{sym} just lost {m15}% and i was up on it an hour ago. gone.",
+    "paper hands and proud. {sym} out before it gets worse.",
+    "sold {sym} into the crash. i will buy it back lower or not at all.",
+    "if you know why {sym} is falling say so. i did not wait to find out.",
+    "{sym} rugged. selling what is left and going for a walk.",
+  ],
+  "dip/buy": [
+    "{sym} down {m15}% in a quarter hour with revenue unchanged. buying the panic.",
+    "somebody sold {sym} into no news at all. thank you, filled at {price}.",
+    "{sym} is {edge}% under fair after that dump. this is what the cash was for.",
+    "bought {sym} from whoever just panicked. mrr is still {mrr} a month.",
+    "the dip in {sym} is one seller, not a churn. adding.",
+  ],
   "take/bull": [
     "{sym} is the cleanest revenue on the board and it trades like nobody noticed.",
     "watching {sym}. fair value {fair}, price {price}. patience.",
@@ -137,6 +157,7 @@ function fill(line: string, s: Situation): string {
     .replace(/\{sym\}/g, `$${s.symbol}`)
     .replace(/\{edge\}/g, Math.abs(s.edgePct).toFixed(0))
     .replace(/\{h1\}/g, Math.abs(s.change1hPct).toFixed(1))
+    .replace(/\{m15\}/g, Math.abs(s.change15mPct ?? s.change1hPct).toFixed(1))
     .replace(/\{d1\}/g, Math.abs(s.change24hPct).toFixed(1))
     .replace(/\{price\}/g, money(s.price))
     .replace(/\{fair\}/g, money(s.fair))

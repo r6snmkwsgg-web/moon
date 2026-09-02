@@ -38,6 +38,7 @@ const view = (over: Partial<TickerView> = {}): TickerView => ({
   float: 25_000,
   floatHeld: 1_000,
   change1h: 0,
+  change15m: 0,
   change24h: 0,
   news: [],
   held: 0,
@@ -169,5 +170,50 @@ describe("decide", () => {
     const o = decide({ ...p, styles: { value: 1 } }, p.cash, [view({ price: 20, fair: 25 })], fixed(0.0));
     if (o) expect(o.shares * 20).toBeLessThanOrEqual(p.cash);
     expect(MAX_TRADES_PER_ROUND).toBeLessThanOrEqual(60);
+  });
+});
+
+describe("the reflexes", () => {
+  it("paper hands dump a name that just fell a tenth, and say so", () => {
+    const p = pure("value", { hold: "paper", thesisRate: 0 });
+    // fair still says hold — the reflex overrides the model
+    const v = view({ price: 22, fair: 25, change15m: -0.12, change1h: -0.12, held: 400 });
+    const o = decide(p, 1_000, [v], seeded(7));
+    expect(o?.side).toBe("sell");
+    expect(o?.reason).toBe("panic");
+    expect(o?.shares).toBe(400); // the whole position
+    // a panic is worth saying out loud even for a quiet account
+    expect(typeof o?.note).toBe("string");
+    expect(o?.note?.length).toBeGreaterThan(10);
+  });
+
+  it("diamond hands look away from the same drop", () => {
+    const p = pure("value", { hold: "diamond" });
+    const v = view({ price: 22, fair: 25, change15m: -0.12, change1h: -0.12, held: 400 });
+    const o = decide(p, 1_000, [v], seeded(7));
+    // value says buy (edge +13.6%), the reflex is a tenth — no sale
+    expect(o?.side ?? "hold").not.toBe("sell");
+  });
+
+  it("a value account with cash buys the dip when the revenue did not move", () => {
+    const p = pure("value", { hold: "swing" });
+    const v = view({ price: 22, fair: 25, change15m: -0.12, change1h: -0.12, held: 0 });
+    const o = decide(p, 5_000, [v], seeded(3));
+    expect(o?.side).toBe("buy");
+    expect(o?.reason).toBe("dip");
+  });
+
+  it("but not when the drop is a churn", () => {
+    const p = pure("value", { hold: "swing" });
+    const churned = view({
+      price: 22,
+      fair: 25,
+      change15m: -0.12,
+      change1h: -0.12,
+      held: 0,
+      news: [{ move: -0.08, ageMs: 10 * 60_000 }],
+    });
+    const o = decide(p, 5_000, [churned], seeded(3));
+    expect(o?.reason).not.toBe("dip");
   });
 });

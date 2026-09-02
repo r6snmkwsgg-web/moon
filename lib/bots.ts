@@ -47,6 +47,8 @@ export interface TickerView {
   floatHeld: number;
   change1h: number;
   change24h: number;
+  /** The last quarter hour — a dump shows up here first. */
+  change15m: number;
   /** Revenue news of the last few hours: signed fraction of MRR, and age. */
   news: { move: number; ageMs: number }[];
   /** This bot's own position. */
@@ -56,12 +58,15 @@ export interface TickerView {
   mrr: number;
 }
 
+/** What carried a decision: a style, or one of the two reflexes. */
+export type Reason = BotStyle | "panic" | "dip";
+
 export interface BotOrder {
   symbol: string;
   side: TradeSide;
   shares: number;
   note: string | null;
-  reason: BotStyle;
+  reason: Reason;
 }
 
 /** Hard ceiling on prints per round, board-wide — a heartbeat, not a flood. */
@@ -82,6 +87,20 @@ const STAKE_PER_ORDER = 0.35;
 
 /** How readily each holding habit lets go. */
 const SELL_APPETITE = { paper: 1.5, swing: 1, diamond: 0.4 } as const;
+
+/**
+ * A quarter-hour move this big shakes a ticker's holders awake and they
+ * decide with the panic reflex in the blend. A 6.5%-of-float dump is -12%.
+ */
+export const SHAKE_MOVE = 0.05;
+/** Chance a holder wakes when their ticker is shaken, by grip, at a full-size move. */
+export const SHAKE_WAKE = { paper: 0.8, swing: 0.4, diamond: 0.1 } as const;
+/** Chance a value or whale account wakes to buy a shaken ticker it does not hold. */
+export const DIP_WAKE = 0.12;
+/** How hard the drop pushes a holder toward selling, by grip. */
+const PANIC = { paper: 1.2, swing: 0.6, diamond: 0.1 } as const;
+/** How many extra accounts a shake may wake in one round. */
+export const MAX_SHAKEN = 60;
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
@@ -119,10 +138,10 @@ export function conviction(style: BotStyle, v: TickerView, rng: FlowRandom): num
 /** A persona's conviction: its style mix, plus the crowd it follows. */
 export function personaConviction(p: Persona, v: TickerView, rng: FlowRandom): {
   c: number;
-  reason: BotStyle;
+  reason: Reason;
 } {
   let total = 0;
-  let best: BotStyle = "noise";
+  let best: Reason = "noise";
   let bestAbs = -1;
   for (const [style, w] of Object.entries(p.styles) as [BotStyle, number][]) {
     const c = conviction(style, v, rng) * w;
@@ -135,6 +154,32 @@ export function personaConviction(p: Persona, v: TickerView, rng: FlowRandom): {
   // herding: a buy by someone you follow is worth a bit of conviction on its
   // own, capped so a crowd cannot talk you into more than a half-size order
   total += clamp(v.herd * 0.2, -0.5, 0.5);
+
+  // The reflexes. A holder watching their name drop a tenth in a quarter
+  // hour does not consult a model: paper hands are out, swing hands trim,
+  // diamond hands look away. And a value account with cash watching the
+  // same drop on NO bad news sees a seller, not a churn — and buys it.
+  const drop = Math.max(0, -v.change15m, -v.change1h * 0.5);
+  if (v.held > 0 && drop >= 0.03) {
+    const panic = PANIC[p.hold] * clamp(drop / 0.08, 0, 1);
+    total -= panic;
+    if (panic > bestAbs) {
+      bestAbs = panic;
+      best = "panic";
+    }
+  } else if (drop >= SHAKE_MOVE && v.held === 0) {
+    const badNews = v.news.some((n) => n.move < 0 && n.ageMs < 2 * 3_600_000);
+    const edge = v.price > 0 && v.fair > 0 ? v.fair / v.price - 1 : 0;
+    const eye = (p.styles.value ?? 0) + (p.styles.whale ?? 0);
+    if (!badNews && edge > 0.05 && eye > 0) {
+      const dip = eye * clamp(drop / 0.1, 0, 1) * 0.8;
+      total += dip;
+      if (dip > bestAbs) {
+        bestAbs = dip;
+        best = "dip";
+      }
+    }
+  }
   return { c: clamp(total, -1, 1), reason: best };
 }
 
@@ -194,12 +239,16 @@ export function decide(
     shares = Math.min(want, room, left, affordable);
   } else {
     const appetite = SELL_APPETITE[p.hold];
-    shares = Math.min(v.held, Math.max(1, Math.round(v.held * clamp(Math.abs(c) * appetite, 0.1, 1))));
+    const frac = clamp(Math.abs(c) * appetite, 0.1, 1);
+    // a near-full sell is a full sell — nobody leaves seven shares behind
+    shares = frac >= 0.9 ? v.held : Math.min(v.held, Math.max(1, Math.round(v.held * frac)));
   }
   if (!(shares >= 1)) return null;
 
   let note: string | null = null;
-  if (rng.unit() < p.thesisRate) {
+  // a panic or a dip buy is worth saying out loud more often than a routine print
+  const rate = reason === "panic" || reason === "dip" ? Math.max(p.thesisRate, 0.6) : p.thesisRate;
+  if (rng.unit() < rate) {
     note = composeThesis(p, situationFor(v, side, reason), rng);
   }
   return { symbol: v.symbol, side, shares, note, reason };
@@ -208,7 +257,7 @@ export function decide(
 function situationFor(
   v: TickerView,
   side: "buy" | "sell" | null,
-  reason: BotStyle | "take"
+  reason: Reason | "take"
 ): Situation {
   const freshest = [...v.news].sort((a, b) => a.ageMs - b.ageMs)[0];
   return {
@@ -218,6 +267,7 @@ function situationFor(
     edgePct: v.price > 0 ? (v.fair / v.price - 1) * 100 : 0,
     change1hPct: v.change1h * 100,
     change24hPct: v.change24h * 100,
+    change15mPct: v.change15m * 100,
     newsKind: freshest ? (freshest.move >= 0 ? "new" : "churn") : null,
     price: v.price,
     fair: v.fair,
@@ -228,6 +278,8 @@ function situationFor(
 export interface BotRoundResult {
   bots: number;
   awake: number;
+  /** Of the awake, how many a price shake woke. */
+  shaken?: number;
   attempted: number;
   filled: number;
   posted: number;
@@ -308,10 +360,9 @@ export async function runBotRound(
   // who wakes up this round — decided before the board is read, since most
   // rounds most of a thousand accounts are asleep and the board is not free
   const awake = population.filter((a) => rng.unit() < actChance(a.persona, now));
-  out.awake = awake.length;
-  if (awake.length === 0) return out;
 
   const hourAgo = new Date(now - 3_600_000).toISOString();
+  const quarterAgo = new Date(now - 15 * 60_000).toISOString();
   const dayAgo = new Date(now - 86_400_000).toISOString().slice(0, 10);
   const newsSince = new Date(now - 4 * 3_600_000).toISOString();
   const herdSince = new Date(now - 15 * 60_000).toISOString();
@@ -325,6 +376,7 @@ export async function runBotRound(
     { data: newsRows },
     { data: holdings },
     { data: ticksAgo },
+    { data: ticksQuarterAgo },
     { data: snaps },
     { data: recentPrints },
   ] = await Promise.all([
@@ -350,6 +402,12 @@ export async function runBotRound(
       .from("flow_ticks")
       .select("ticker_id, at, price")
       .lte("at", hourAgo)
+      .order("at", { ascending: false })
+      .limit(1000),
+    admin
+      .from("flow_ticks")
+      .select("ticker_id, at, price")
+      .lte("at", quarterAgo)
       .order("at", { ascending: false })
       .limit(1000),
     admin.from("price_snapshots").select("ticker_id, price").eq("day", dayAgo),
@@ -393,6 +451,10 @@ export async function runBotRound(
   for (const k of (ticksAgo ?? []) as { ticker_id: string; price: number }[]) {
     if (!priceHourAgo.has(k.ticker_id)) priceHourAgo.set(k.ticker_id, Number(k.price));
   }
+  const priceQuarterAgo = new Map<string, number>();
+  for (const k of (ticksQuarterAgo ?? []) as { ticker_id: string; price: number }[]) {
+    if (!priceQuarterAgo.has(k.ticker_id)) priceQuarterAgo.set(k.ticker_id, Number(k.price));
+  }
   const priceDayAgo = new Map<string, number>();
   for (const s of (snaps ?? []) as { ticker_id: string; price: number }[]) {
     priceDayAgo.set(s.ticker_id, Number(s.price));
@@ -419,6 +481,7 @@ export async function runBotRound(
       const events = news.get(id) ?? [];
       const price = settledPrice(mrr, Number(t.sentiment ?? 0), now, multiple, float, events, Number(t.drift ?? 0));
       const ago1h = priceHourAgo.get(id);
+      const ago15m = priceQuarterAgo.get(id);
       const ago24h = priceDayAgo.get(id);
       return {
         id,
@@ -428,6 +491,7 @@ export async function runBotRound(
         float,
         floatHeld: floatHeld.get(id) ?? 0,
         change1h: ago1h && ago1h > 0 ? price / ago1h - 1 : 0,
+        change15m: ago15m && ago15m > 0 ? price / ago15m - 1 : 0,
         change24h: ago24h && ago24h > 0 ? price / ago24h - 1 : 0,
         news: events
           .filter((e) => !e.catchUp && e.prevMrr > 0)
@@ -452,6 +516,7 @@ export async function runBotRound(
         float: v.float,
         floatHeld: v.floatHeld,
         change1h: v.change1h,
+        change15m: v.change15m,
         change24h: v.change24h,
         news: v.news,
         held: mine.get(`${a.id}/${v.id}`) ?? 0,
@@ -466,7 +531,36 @@ export async function runBotRound(
   // together. Filled one after another, forty prints took a minute — the
   // whole cron's budget. Shuffled so the same bot is not always first to
   // the trough, and stopped at the deadline whatever is left.
-  const roster = [...awake].sort(() => rng.unit() - 0.5);
+  // A shake wakes people who were not going to look. Holders of a ticker
+  // that just moved a twentieth in a quarter hour roll to wake by grip —
+  // paper hands nearly always, diamond hands rarely — and a few value or
+  // whale accounts wake to a drop in a name they do not own, to buy it.
+  // This is the cascade: one dump, a round of panic prints, then the bids.
+  const shaken = board.filter(
+    (v) => Math.abs(v.change15m) >= SHAKE_MOVE || Math.abs(v.change1h) >= SHAKE_MOVE * 1.6
+  );
+  const awakeIds = new Set(awake.map((a) => a.id));
+  const extras: Account[] = [];
+  if (shaken.length > 0) {
+    for (const a of population) {
+      if (extras.length >= MAX_SHAKEN) break;
+      if (awakeIds.has(a.id)) continue;
+      let chance = 0;
+      for (const v of shaken) {
+        const move = Math.max(Math.abs(v.change15m), Math.abs(v.change1h) / 1.6);
+        const held = mine.get(`${a.id}/${v.id}`) ?? 0;
+        if (held > 0) {
+          chance = Math.max(chance, SHAKE_WAKE[a.persona.hold] * Math.min(1, move / 0.12));
+        } else if (v.change15m < 0 && ((a.persona.styles.value ?? 0) + (a.persona.styles.whale ?? 0)) > 0) {
+          chance = Math.max(chance, DIP_WAKE * Math.min(1, move / 0.12));
+        }
+      }
+      if (chance > 0 && rng.unit() < chance) extras.push(a);
+    }
+  }
+  out.awake = awake.length + extras.length;
+  out.shaken = extras.length;
+  const roster = [...awake, ...extras].sort(() => rng.unit() - 0.5);
   const orders: { account: Account; o: NonNullable<ReturnType<typeof decide>> }[] = [];
   for (const account of roster) {
     if (orders.length >= maxTrades) break;

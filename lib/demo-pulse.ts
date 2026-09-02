@@ -58,12 +58,12 @@ export const DEMO_BAND = { floor: 0.55, ceil: 1.75 };
 export const WHALE_SIGMA = 1.1;
 /**
  * Signups and churn cluster: a launch, a newsletter feature, a price hike
- * bring several at once. About one event in four is a wave of 2–7.
+ * bring several at once. About one event in four is a wave of 2–5.
  */
 export const WAVE_CHANCE = 0.28;
-export const WAVE_MAX = 7;
+export const WAVE_MAX = 5;
 /** No single event moves MRR more than this share of it. */
-export const EVENT_CAP = 0.2;
+export const EVENT_CAP = 0.12;
 
 /**
  * One more month-of-a-small-SaaS step, forward this time. A customer is worth
