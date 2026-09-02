@@ -17,7 +17,7 @@ import { mergeAnchors } from "@/lib/candles";
 import { anchorRevenue } from "@/lib/revenue";
 import { summariseHolderTrades } from "@/lib/holders";
 import { latestEventMrr } from "@/lib/pulse";
-import { isBotUsername } from "@/lib/bot-roster";
+import { startingCashFor } from "@/lib/bot-roster";
 import type { DailyRevenue } from "@/lib/surprise";
 import { STARTING_CASH } from "@/lib/config";
 import { getRevenueEvents } from "@/lib/pulse";
@@ -713,7 +713,7 @@ export interface PortfolioValuation {
   }[];
   holdingsValue: number;
   totalValue: number; // cash + holdings
-  totalPnl: number; // vs. STARTING_CASH
+  totalPnl: number; // vs. the account's starting stake
 }
 
 function valuePortfolio(
@@ -743,7 +743,7 @@ function valuePortfolio(
     positions,
     holdingsValue,
     totalValue,
-    totalPnl: totalValue - STARTING_CASH,
+    totalPnl: totalValue - startingCashFor(profile.username, STARTING_CASH),
   };
 }
 
@@ -780,8 +780,7 @@ export async function getAllValuations(): Promise<PortfolioValuation[]> {
   }
 
   return ((profilesRes.data ?? []) as Profile[])
-    // the AI traders are furniture, not contestants
-    .filter((p) => !isBotUsername(p.username))
+    // the AI traders rank too — labeled, and measured from their own stake
     .map((p) => valuePortfolio(p, holdingsByUser.get(p.id) ?? [], quotesById))
     .sort((a, b) => b.totalValue - a.totalValue);
 }
@@ -1250,7 +1249,9 @@ export async function getLeaderboard(
     .map((v) => ({
       valuation: v,
       rangePnl:
-        v.totalValue - (baseline.get(v.profile.id) ?? STARTING_CASH),
+        v.totalValue -
+        (baseline.get(v.profile.id) ??
+          startingCashFor(v.profile.username, STARTING_CASH)),
     }))
     .sort((a, b) => b.rangePnl - a.rangePnl);
 }

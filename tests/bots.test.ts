@@ -7,6 +7,7 @@ import {
   isBotUsername,
   type TickerView,
 } from "@/lib/bots";
+import { startingCashFor } from "@/lib/bot-roster";
 import type { FlowRandom } from "@/lib/flow";
 import { positionLimit } from "@/lib/pricing";
 
@@ -51,6 +52,13 @@ describe("the roster", () => {
     const names = BOTS.map((b) => b.username);
     expect(new Set(names).size).toBe(names.length);
     for (const n of names) expect(n).toMatch(/^[a-z0-9_]+$/);
+  });
+
+  it("measures P&L from the right zero: a whale is not up $140k at birth", () => {
+    expect(startingCashFor("whale_wendy", 10_000)).toBe(150_000);
+    expect(startingCashFor("quantfox", 10_000)).toBe(50_000);
+    expect(startingCashFor("hello", 10_000)).toBe(10_000);
+    expect(startingCashFor(null, 10_000)).toBe(10_000);
   });
 });
 

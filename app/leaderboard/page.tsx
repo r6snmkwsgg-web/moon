@@ -4,6 +4,8 @@ import { getUser } from "@/lib/supabase/server";
 import { fmtMoney } from "@/lib/format";
 import { STARTING_CASH } from "@/lib/config";
 import TierBadge from "@/components/TierBadge";
+import AiChip from "@/components/AiChip";
+import { isBotUsername } from "@/lib/bot-roster";
 
 export const dynamic = "force-dynamic";
 
@@ -20,18 +22,29 @@ const RANGES: { key: LeaderboardRange; label: string }[] = [
 export default async function LeaderboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; humans?: string }>;
 }) {
-  const { range: rangeParam } = await searchParams;
+  const { range: rangeParam, humans: humansParam } = await searchParams;
   const range: LeaderboardRange =
     rangeParam === "7d" || rangeParam === "30d" ? rangeParam : "all";
+  // the AI traders rank by default, labeled; ?humans=1 hides them
+  const humansOnly = humansParam === "1";
+  const href = (r: LeaderboardRange, h: boolean) => {
+    const q = new URLSearchParams();
+    if (r !== "all") q.set("range", r);
+    if (h) q.set("humans", "1");
+    const qs = q.toString();
+    return qs ? `/leaderboard?${qs}` : "/leaderboard";
+  };
 
   const [rows, user, xpMap] = await Promise.all([
     getLeaderboard(range),
     getUser(),
     getXpMap(),
   ]);
-  const top = rows.slice(0, 25);
+  const top = rows
+    .filter((row) => !humansOnly || !isBotUsername(row.valuation.profile.username))
+    .slice(0, 25);
 
   return (
     <div className="space-y-6">
@@ -39,15 +52,16 @@ export default async function LeaderboardPage({
         <div>
           <h1 className="font-mono text-lg font-bold">Leaderboard</h1>
           <p className="text-sm text-terminal-muted">
-            Top portfolios by play-money PnL. Everyone starts with{" "}
-            {fmtMoney(STARTING_CASH, 0)}.
+            Top portfolios by play-money PnL. People start with{" "}
+            {fmtMoney(STARTING_CASH, 0)}; the AI traders are measured from
+            their own stake.
           </p>
         </div>
         <nav className="flex gap-1">
           {RANGES.map((r) => (
             <Link
               key={r.key}
-              href={r.key === "all" ? "/leaderboard" : `/leaderboard?range=${r.key}`}
+              href={href(r.key, humansOnly)}
               className={`rounded-md border px-2.5 py-1 font-mono text-xs ${
                 range === r.key
                   ? "border-terminal-up/50 bg-terminal-up/10 text-terminal-up"
@@ -57,6 +71,17 @@ export default async function LeaderboardPage({
               {r.label}
             </Link>
           ))}
+          <Link
+            href={href(range, !humansOnly)}
+            className={`ml-2 rounded-md border px-2.5 py-1 font-mono text-xs ${
+              humansOnly
+                ? "border-terminal-accent/50 bg-terminal-accent/10 text-terminal-accent"
+                : "border-terminal-line text-terminal-muted hover:border-terminal-muted hover:text-terminal-text"
+            }`}
+            title="Hide the AI traders"
+          >
+            humans only
+          </Link>
         </nav>
       </div>
 
@@ -108,6 +133,7 @@ export default async function LeaderboardPage({
                       ) : (
                         v.profile.display_name
                       )}
+                      <AiChip username={v.profile.username} />
                       <TierBadge xp={xpMap.get(v.profile.id) ?? 0} />
                       {isMe && (
                         <span className="text-[10px] text-terminal-accent">

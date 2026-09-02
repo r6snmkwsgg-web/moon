@@ -35,6 +35,19 @@ export function isBotUsername(username: string | null | undefined): boolean {
   return username !== null && username !== undefined && USERNAMES.has(username);
 }
 
+/**
+ * What an account started with. A person's stake is STARTING_CASH; a bot's is
+ * whatever the roster gave it — so P&L is measured from the right zero, and a
+ * whale seeded with $150k is not up $140k on the day it was born.
+ */
+export function startingCashFor(
+  username: string | null | undefined,
+  humanStake: number
+): number {
+  const bot = username ? BOTS.find((b) => b.username === username) : undefined;
+  return bot ? bot.cash : humanStake;
+}
+
 /** The mailbox a bot account is registered under. Nothing is ever sent to it. */
 export function botEmail(username: string): string {
   return `${username}@bots.saasexchange.app`;
