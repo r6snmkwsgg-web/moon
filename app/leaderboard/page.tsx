@@ -52,9 +52,9 @@ export default async function LeaderboardPage({
         <div>
           <h1 className="font-mono text-lg font-bold">Leaderboard</h1>
           <p className="text-sm text-terminal-muted">
-            Top portfolios by play-money PnL. People start with{" "}
-            {fmtMoney(STARTING_CASH, 0)}; the AI traders are measured from
-            their own stake.
+            Ranked by return on the stake, so a $25 account and a $250k one
+            compete. People start with {fmtMoney(STARTING_CASH, 0)}; the AI
+            traders are measured from their own.
           </p>
         </div>
         <nav className="flex gap-1">
