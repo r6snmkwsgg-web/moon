@@ -252,6 +252,12 @@ export default function TradePanel({
   const unrealized = value - cost;
   const unrealizedPct = cost > 0 ? unrealized / cost : 0;
   const todayMove = dayBasePrice > 0 ? shownHeld * (mark - dayBasePrice) : 0;
+  // What selling the whole position RIGHT NOW would actually return: the
+  // sell fill for every share, walked down the hype curve. The mark above
+  // includes your own impact — a fresh 10%-of-float buy reads +10% before
+  // anyone else has traded — and this is the number that does not.
+  const exit = shownHeld > 0 ? est("sell", shownHeld) : null;
+  const exitPnl = exit ? exit.total - cost : 0;
 
   // the next step of the walk: one tick after the last recorded one
   const nextTickAt = driftAt ? Date.parse(driftAt) + FLOW_TICK_MS : null;
@@ -535,6 +541,17 @@ export default function TradePanel({
               </span>
             )}
           </div>
+          {exit && (
+            <div
+              className="num mt-1 flex flex-wrap items-baseline justify-between gap-x-3 border-t border-terminal-line/60 pt-1 font-mono text-[11px] text-terminal-muted"
+              title="The sell fill for every share you hold, walked down the hype curve — the mark above includes your own buying"
+            >
+              <span>sell all now → {fmtMoney(exit.total)}</span>
+              <span className={tone(exitPnl)}>
+                {fmtSigned(exitPnl)} ({fmtPct(cost > 0 ? exitPnl / cost : 0)})
+              </span>
+            </div>
+          )}
         </div>
       )}
 
