@@ -34,6 +34,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   FLOW_CAP,
+  FLOW_TICK_MS,
   SHOCK_HALFLIFE_MS,
   floatOf,
   settledPrice,
@@ -43,9 +44,11 @@ import {
   type RevenuePoint,
 } from "@/lib/pricing";
 import type { MrrUpdate, Ticker } from "@/lib/types";
+import { latestEventMrr } from "@/lib/pulse";
 
-/** One tick of the walk. Matches the five-minute poller. */
-export const FLOW_TICK_MS = 5 * 60_000;
+/** One tick of the walk. Matches the five-minute poller. Lives in
+ *  lib/pricing so the browser can read it without this module. */
+export { FLOW_TICK_MS };
 
 const TICKS_PER_DAY = 86_400_000 / FLOW_TICK_MS; // 288
 
@@ -313,6 +316,14 @@ export async function advanceMarketFlow(
   } catch {
     // pre-migration or no connections — reported MRR is the whole story
   }
+  // a listing without a connection trades on its newest revenue event — the
+  // demo pulse's number — exactly as the quote does (lib/data getLiveRevenue)
+  let latest = new Map<string, { mrr: number }>();
+  try {
+    latest = await latestEventMrr(admin);
+  } catch {
+    // no revenue_events table — reported it is
+  }
 
   // The news the tape is reacting to right now. A print's overshoot lives
   // for a few hours (revenueShock), and the recorded price has to carry it:
@@ -370,7 +381,8 @@ export async function advanceMarketFlow(
 
     const record = history.get(ticker.id) ?? [];
     const reported = record.length ? record[record.length - 1].mrr : 0;
-    const mrr = liveMrr.get(ticker.id) ?? reported;
+    const mrr =
+      liveMrr.get(ticker.id) ?? latest.get(ticker.id)?.mrr ?? reported;
 
     const next = advanceFlow(
       { drift: Number(ticker.drift ?? 0), vol: Number(ticker.vol_state ?? 0) },

@@ -16,6 +16,8 @@ import {
 import { mergeAnchors } from "@/lib/candles";
 import { anchorRevenue } from "@/lib/revenue";
 import { summariseHolderTrades } from "@/lib/holders";
+import { latestEventMrr } from "@/lib/pulse";
+import { isBotUsername } from "@/lib/bot-roster";
 import type { DailyRevenue } from "@/lib/surprise";
 import { STARTING_CASH } from "@/lib/config";
 import { getRevenueEvents } from "@/lib/pulse";
@@ -55,7 +57,7 @@ export async function getLiveRevenue(
 ): Promise<Map<string, LiveRevenue>> {
   const admin = createSupabaseAdminClient();
   const out = new Map<string, LiveRevenue>();
-  const [connsRes, eventsRes, dailyRes] = await Promise.all([
+  const [connsRes, eventsRes, dailyRes, latest] = await Promise.all([
     admin.from("stripe_connections").select("*").eq("status", "active"),
     // NEWEST first. Ordered ascending, the row cap silently kept the OLDEST
     // events and dropped everything recent — so once the board carried a few
@@ -78,6 +80,9 @@ export async function getLiveRevenue(
       )
       .order("day", { ascending: true })
       .limit(5000),
+    // the newest event per listing: a demo ticker's live number, since its
+    // pulse (lib/demo-pulse) writes events the way a Stripe reading does
+    latestEventMrr(admin),
   ]);
 
   for (const c of (connsRes.data ?? []) as {
@@ -109,6 +114,12 @@ export async function getLiveRevenue(
   }
   // the fetch came back newest-first; everything downstream walks time forward
   for (const entry of out.values()) entry.events.sort((a, b) => a.at - b.at);
+  // no connection speaking for a ticker → its newest event is the live number
+  for (const [tickerId, ev] of latest) {
+    const entry = out.get(tickerId) ?? { liveMrr: null, events: [], daily: [] };
+    if (entry.liveMrr === null && ev.mrr > 0) entry.liveMrr = ev.mrr;
+    out.set(tickerId, entry);
+  }
   // absent until 0008 is applied and the poller has run once, in which case
   // the anchor falls back to subscriptions exactly as before
   for (const r of (dailyRes.data ?? []) as {

@@ -334,6 +334,14 @@ export interface Fill {
 // fabricated. Only the weather is simulated, and /how says so.
 
 /**
+ * One tick of the drift walk — the five-minute poller's beat. Defined here,
+ * in the module that ships to the browser, because the trade ticket counts
+ * down to the next one; lib/flow re-exports it. (Importing lib/flow from a
+ * client component drags the Stripe reader and node:crypto into the bundle.)
+ */
+export const FLOW_TICK_MS = 5 * 60_000;
+
+/**
  * Bound on the weather, in LOG space: e^±0.9 is 0.4x to 2.5x fair value.
  *
  * This is a hard wall, not the working range — the walk's own spread is
@@ -506,8 +514,13 @@ export interface RevenueEvent {
   catchUp?: boolean;
 }
 
-/** How far past the fundamental move the tape overshoots on fresh news. */
-export const SHOCK_OVERSHOOT = 1.6;
+/**
+ * How far past the fundamental move the tape overshoots on fresh news. A
+ * single customer on a three-hundred-customer book is a third of a percent
+ * of MRR; at 1.6x the print was invisible on the chart, and a market that
+ * does not visibly react to a churn is not reacting. 2.4x gaps it.
+ */
+export const SHOCK_OVERSHOOT = 2.4;
 /** The overshoot halves every 35 minutes, then the step is all that's left. */
 export const SHOCK_HALFLIFE_MS = 35 * 60_000;
 /** No single burst of news may move a price more than this on its own. */

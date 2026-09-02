@@ -291,6 +291,47 @@ export async function pollRevenuePulse(
   return out;
 }
 
+/** The newest revenue event a ticker has on record — its live number when
+ *  no Stripe connection is speaking for it (demo listings, or a disconnected
+ *  one trading on its last known reading). */
+export interface LatestEvent {
+  mrr: number;
+  subscriptions: number | null;
+  at: number;
+}
+
+/**
+ * Latest event per ticker. One ticker: an exact query. The whole board: the
+ * newest thousand events, which at the demo cadence is weeks of history for
+ * every listing, and the first row seen per ticker is its latest.
+ */
+export async function latestEventMrr(
+  admin: SupabaseClient,
+  tickerId?: string
+): Promise<Map<string, LatestEvent>> {
+  const out = new Map<string, LatestEvent>();
+  let query = admin
+    .from("revenue_events")
+    .select("ticker_id, at, mrr, subscriptions")
+    .order("at", { ascending: false });
+  query = tickerId ? query.eq("ticker_id", tickerId).limit(1) : query.limit(1000);
+  const { data } = await query;
+  for (const r of (data ?? []) as {
+    ticker_id: string;
+    at: string;
+    mrr: number;
+    subscriptions: number | null;
+  }[]) {
+    if (out.has(r.ticker_id)) continue;
+    out.set(r.ticker_id, {
+      mrr: Number(r.mrr),
+      subscriptions: r.subscriptions === null ? null : Number(r.subscriptions),
+      at: Date.parse(r.at),
+    });
+  }
+  return out;
+}
+
 /** Recent revenue changes for one ticker, oldest first — chart + fill input. */
 export async function getRevenueEvents(
   admin: SupabaseClient,

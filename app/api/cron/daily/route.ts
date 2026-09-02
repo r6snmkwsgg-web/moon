@@ -15,6 +15,7 @@ import {
 } from "@/lib/stripe";
 import { audienceForTicker, notifyUsers } from "@/lib/notify";
 import { pruneFlowTicks } from "@/lib/flow";
+import { latestEventMrr } from "@/lib/pulse";
 import { getAllValuations } from "@/lib/data";
 import { fmtCompact, fmtPct, currentMonthISO } from "@/lib/format";
 import type { MrrUpdate, Ticker } from "@/lib/types";
@@ -127,9 +128,47 @@ export async function GET(request: Request) {
     }
   }
 
+  // ── 4b. demo listings report their month ──────────────────────────────────
+  // A fixture's live number is its newest revenue event (the demo pulse); on
+  // the first of the month that becomes its report, so its track record — and
+  // the multiple the market pays for it — moves the way a real one does.
+  let demoReported = 0;
+  let latestEvents = new Map<string, { mrr: number }>();
+  try {
+    latestEvents = await latestEventMrr(admin);
+    if (new Date().getUTCDate() === 1) {
+      for (const ticker of tickers) {
+        const live = latestEvents.get(ticker.id)?.mrr;
+        if (!(ticker as { fixture?: boolean }).fixture || !live || live <= 0) continue;
+        const { error } = await admin.from("mrr_updates").upsert(
+          {
+            ticker_id: ticker.id,
+            month: currentMonthISO(),
+            mrr: Math.round(live),
+            source: "curated",
+          },
+          { onConflict: "ticker_id,month" }
+        );
+        if (!error) {
+          latestMrr.set(ticker.id, Math.round(live));
+          const list = revenueHistory.get(ticker.id) ?? [];
+          list.push({ month: currentMonthISO(), mrr: Math.round(live) });
+          revenueHistory.set(ticker.id, list);
+          demoReported++;
+        }
+      }
+    }
+  } catch {
+    // no revenue_events table — nothing to report
+  }
+
   // ── 1–3. decay, snapshot, move alerts ─────────────────────────────────────
   for (const ticker of tickers) {
-    const mrr = latestMrr.get(ticker.id) ?? 0;
+    // the snapshot carries the LIVE anchor: the newest event for a listing
+    // without a connection, the last report otherwise (Stripe-connected
+    // tickers already had their monthly number written above)
+    const mrr =
+      latestEvents.get(ticker.id)?.mrr ?? latestMrr.get(ticker.id) ?? 0;
     const sentiment = decaySentiment(Number(ticker.sentiment));
 
     const { error: updateErr } = await admin
@@ -210,6 +249,7 @@ export async function GET(request: Request) {
     snapshotted,
     moveAlerts,
     stripeSynced,
+    demoReported,
     portfoliosSnapshotted,
   });
 }
