@@ -23,7 +23,8 @@ export default async function Nav() {
   return (
     <header className="sticky top-0 z-20 border-b border-terminal-line bg-terminal-bg/85 backdrop-blur">
       <div className="shell relative flex items-center gap-3 py-3">
-        <Link href="/">
+        {/* signed in, home is your book; signed out, it is the market */}
+        <Link href={user ? "/portfolio" : "/"}>
           <Wordmark />
         </Link>
 
