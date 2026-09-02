@@ -37,11 +37,13 @@ function timeAgo(iso: string): string {
 export default async function ExchangePage() {
   const [market, user] = await Promise.all([getMarket(), getUser()]);
 
-  const [wire, tapeTrades, missed, tradeCount] = await Promise.all([
+  const [wire, tapeTrades, missed, tradeCount, liveRevenue] = await Promise.all([
     getEarningsWire(3),
     user ? getRecentTrades(6) : Promise.resolve([]),
     user ? getMissedToday(market, user.id) : Promise.resolve(null),
     user ? getTradeCountFor(user.id) : Promise.resolve(0),
+    // the hero's news, fetched alongside the rest rather than after it
+    user ? Promise.resolve(null) : getLiveRevenue(30 * 86_400_000),
   ]);
 
   // The landing hero leads with the top GAINER so first impressions aren't a
@@ -62,7 +64,7 @@ export default async function ExchangePage() {
         // pass the last monthly REPORT and no drift, so the hero quoted the
         // un-weathered price of a ticker the board, two scrolls down, had 25%
         // lower — two prices for one stock on one page.
-        const live = await getLiveRevenue(30 * 86_400_000);
+        const live = liveRevenue ?? new Map();
         const series = await getPriceSeries(
           featured.ticker.id,
           featured.ticker.symbol,

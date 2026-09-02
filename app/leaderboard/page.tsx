@@ -29,17 +29,20 @@ const RANGE_LABEL: Record<LeaderboardRange, string> = {
 export default async function LeaderboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; humans?: string }>;
+  searchParams: Promise<{ range?: string; humans?: string; sort?: string }>;
 }) {
-  const { range: rangeParam, humans: humansParam } = await searchParams;
+  const { range: rangeParam, humans: humansParam, sort: sortParam } = await searchParams;
+  // return is the rank by default; total value is the other way to read it
+  const sort: "return" | "value" = sortParam === "value" ? "value" : "return";
   const range: LeaderboardRange =
     rangeParam === "7d" || rangeParam === "30d" || rangeParam === "1d" ? rangeParam : "all";
   // the AI traders rank by default, labeled; ?humans=1 hides them
   const humansOnly = humansParam === "1";
-  const href = (r: LeaderboardRange, h: boolean) => {
+  const href = (r: LeaderboardRange, h: boolean, s: "return" | "value" = sort) => {
     const q = new URLSearchParams();
     if (r !== "all") q.set("range", r);
     if (h) q.set("humans", "1");
+    if (s !== "return") q.set("sort", s);
     const qs = q.toString();
     return qs ? `/leaderboard?${qs}` : "/leaderboard";
   };
@@ -51,7 +54,24 @@ export default async function LeaderboardPage({
   ]);
   const top = rows
     .filter((row) => !humansOnly || !isBotProfile(row.valuation.profile))
+    .sort((a, b) =>
+      sort === "value" ? b.valuation.totalValue - a.valuation.totalValue : b.rangePct - a.rangePct
+    )
     .slice(0, 25);
+  const sortHeader = (key: "return" | "value", label: string) => (
+    <Link
+      href={href(range, humansOnly, key)}
+      className={`inline-flex items-center gap-1 ${
+        sort === key ? "text-terminal-text" : "hover:text-terminal-text"
+      }`}
+      title={`Sort by ${label.toLowerCase()}`}
+    >
+      {label}
+      <span aria-hidden="true" className={sort === key ? "" : "opacity-0"}>
+        ▾
+      </span>
+    </Link>
+  );
 
   return (
     <div className="space-y-6">
@@ -99,10 +119,10 @@ export default async function LeaderboardPage({
               <th className="microlabel px-3 py-2.5 font-normal">#</th>
               <th className="microlabel px-3 py-2.5 font-normal">Trader</th>
               <th className="microlabel px-3 py-2.5 text-right font-normal">
-                Total value
+                {sortHeader("value", "Total value")}
               </th>
               <th className="microlabel px-3 py-2.5 text-right font-normal">
-                {RANGE_LABEL[range]}
+                {sortHeader("return", RANGE_LABEL[range])}
               </th>
             </tr>
           </thead>

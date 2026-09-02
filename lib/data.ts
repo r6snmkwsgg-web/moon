@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { marketDayStart } from "@/lib/market-time";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -242,7 +243,7 @@ function buildQuote(
 }
 
 /** Everything the exchange front page needs, sorted by market cap desc. */
-export async function getMarket(): Promise<TickerQuote[]> {
+export const getMarket = cache(async (): Promise<TickerQuote[]> => {
   const supabase = await createSupabaseServerClient();
 
   const [tickersRes, mrrRes, snapsRes, live] = await Promise.all([
@@ -276,7 +277,7 @@ export async function getMarket(): Promise<TickerQuote[]> {
       )
     )
     .sort((a, b) => b.marketCap - a.marketCap);
-}
+});
 
 /**
  * The price series a chart deserves. Every anchor is a RECORD — daily
@@ -1430,14 +1431,13 @@ export async function getPublicProfile(
   username: string
 ): Promise<PublicProfileData | null> {
   const admin = createSupabaseAdminClient();
-  const { data: profile } = await admin
-    .from("profiles")
-    .select("*")
-    .ilike("username", username)
-    .maybeSingle();
+  // the lookup and the whole board's valuations (for the rank) do not need
+  // each other — one round trip, not two
+  const [{ data: profile }, all] = await Promise.all([
+    admin.from("profiles").select("*").ilike("username", username).maybeSingle(),
+    getAllValuations(),
+  ]);
   if (!profile) return null;
-
-  const all = await getAllValuations();
   const idx = all.findIndex((v) => v.profile.id === profile.id);
   if (idx === -1) return null;
 
@@ -1706,7 +1706,8 @@ export async function getXpMap(): Promise<Map<string, number>> {
 }
 
 /** Unread alert count for the nav badges. */
-export async function getUnreadCount(userId: string): Promise<number> {
+/** Unread alerts for the badge. Once per request, however many badges ask. */
+export const getUnreadCount = cache(async (userId: string): Promise<number> => {
   try {
     const admin = createSupabaseAdminClient();
     const { count } = await admin
@@ -1718,7 +1719,7 @@ export async function getUnreadCount(userId: string): Promise<number> {
   } catch {
     return 0;
   }
-}
+});
 
 /** Lifetime trade count — zero means the welcome mat is still out. */
 export async function getTradeCountFor(userId: string): Promise<number> {

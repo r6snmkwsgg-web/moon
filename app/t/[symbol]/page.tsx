@@ -72,7 +72,8 @@ function nextReportLabel(latestMonth: string): string {
 
 export default async function TickerPage({ params, searchParams }: Props) {
   const [{ symbol }, { ipo }] = await Promise.all([params, searchParams]);
-  const data = await getTickerPage(symbol);
+  // the viewer and the ticker load together — one round trip, not two
+  const [data, user] = await Promise.all([getTickerPage(symbol), getUser()]);
   if (!data) notFound();
   // one instant for every time-dependent number this render produces
   const renderedAt = Date.now();
@@ -89,7 +90,6 @@ export default async function TickerPage({ params, searchParams }: Props) {
     flow24h,
   } = data;
   const t = quote.ticker;
-  const user = await getUser();
   const isFounder = user !== null && t.claimed_by === user.id;
 
   const [gauge, recentTrades, posts, theses, holders, followedIds] =

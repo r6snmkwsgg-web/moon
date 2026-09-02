@@ -42,7 +42,7 @@ export default async function ProfilePage({ params }: Props) {
   if (!data) notFound();
 
   const { profile, valuation, rank, playerCount } = data;
-  const [viewer, xpMap, followStats, theirTrades, equity] = await Promise.all([
+  const [viewer, xpMap, followStats, theirTrades, equity, following] = await Promise.all([
     getUser(),
     getXpMap(),
     getFollowStats(profile.id),
@@ -50,11 +50,10 @@ export default async function ProfilePage({ params }: Props) {
     // the same inputs the owner's own page uses — a public curve is
     // reconstructed from prices and the trade log, not from daily dots
     getEquityInputs(profile.id),
+    // getUser is deduplicated per request, so this rides the same lookup
+    getUser().then((v) => (v ? getIsFollowing(v.id, profile.id) : false)),
   ]);
   const isMe = viewer?.id === profile.id;
-  const following = viewer
-    ? await getIsFollowing(viewer.id, profile.id)
-    : false;
   // one instant for every time-dependent number this render produces
   const renderedAt = Date.now();
 

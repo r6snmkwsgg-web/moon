@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Bell, TrendingUp, UserPlus, Zap } from "lucide-react";
 import { createSupabaseServerClient, getUser } from "@/lib/supabase/server";
 import type { AppNotification } from "@/lib/types";
+import MarkRead from "@/components/MarkRead";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,8 @@ async function markAllRead() {
     .update({ read: true })
     .eq("user_id", user.id)
     .eq("read", false);
-  revalidatePath("/notifications");
+  // the badge lives in the layout — every page carries it
+  revalidatePath("/", "layout");
 }
 
 function timeAgo(iso: string): string {
@@ -70,13 +72,11 @@ export default async function NotificationsPage() {
       <div className="flex items-center justify-between">
         <h1 className="font-mono text-lg font-bold">Alerts</h1>
         {unread > 0 && (
-          <form action={markAllRead}>
-            <button className="btn-ghost px-2 py-1 text-xs">
-              Mark all read ({unread})
-            </button>
-          </form>
+          <span className="font-mono text-[11px] text-terminal-muted">{unread} new</span>
         )}
       </div>
+      {/* opening the page is reading them — the badge clears on its own */}
+      <MarkRead unread={unread} action={markAllRead} />
 
       <section className="panel">
         {notifications.length === 0 ? (

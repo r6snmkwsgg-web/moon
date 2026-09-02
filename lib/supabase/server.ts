@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
@@ -37,11 +38,15 @@ export async function createSupabaseServerClient() {
   );
 }
 
-/** The signed-in user, or null. */
-export async function getUser() {
+/**
+ * The signed-in user, or null. Deduplicated per request: the layout, the
+ * nav and the page each ask, and each ask used to be its own round trip to
+ * the auth server — three before a page could start.
+ */
+export const getUser = cache(async () => {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   return user;
-}
+});
