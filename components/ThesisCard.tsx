@@ -55,20 +55,20 @@ export default function ThesisCard({
   const initial = (author?.name ?? "?").trim().charAt(0).toUpperCase() || "?";
 
   return (
-    <form onSubmit={submit} className="panel space-y-2 p-3">
+    <form onSubmit={submit} className="panel space-y-1 px-3 py-2">
       <div className="flex items-center gap-2">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-terminal-raise font-mono text-[11px] font-bold text-terminal-text">
+        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-terminal-raise font-mono text-[10px] font-bold text-terminal-text">
           {initial}
         </span>
         {author?.username ? (
           <Link
             href={`/u/${author.username}`}
-            className="font-mono text-sm font-bold text-terminal-text hover:text-terminal-accent"
+            className="font-mono text-xs font-bold text-terminal-text hover:text-terminal-accent"
           >
             {author.name}
           </Link>
         ) : (
-          <span className="font-mono text-sm font-bold text-terminal-text">
+          <span className="font-mono text-xs font-bold text-terminal-text">
             {author?.name ?? "you"}
           </span>
         )}
@@ -82,11 +82,11 @@ export default function ThesisCard({
         onFocus={() => {
           if (!signedIn) router.push(`/login?next=/t/${symbol}`);
         }}
-        rows={2}
+        rows={1}
         placeholder={
           signedIn ? `Write a thesis on $${symbol}...` : `Sign in to write a thesis on $${symbol}`
         }
-        className="w-full resize-none bg-transparent text-sm text-terminal-text outline-none placeholder:text-terminal-muted/60"
+        className="w-full resize-none bg-transparent text-[13px] leading-snug text-terminal-text outline-none placeholder:text-terminal-muted/60"
       />
       <div className="flex items-center gap-2 text-[11px] text-terminal-muted">
         <Globe size={11} />
@@ -100,7 +100,7 @@ export default function ThesisCard({
           <button
             type="submit"
             disabled={pending || body.trim().length === 0}
-            className="btn-ghost px-3 py-1 text-xs"
+            className="btn-ghost px-2.5 py-0.5 text-[11px]"
           >
             {pending ? "…" : done ? "Posted" : "Post"}
           </button>

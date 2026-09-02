@@ -77,6 +77,22 @@ function makePriceFmt(span: number): (v: number) => string {
   return (v: number) => `$${v.toFixed(decimals)}`;
 }
 
+/**
+ * Market cap on the same axis: $1.234M rather than $12.34. The decimals
+ * come from the visible span so neighbouring grid lines never print the
+ * same label.
+ */
+function makeMcFmt(spanMc: number): (v: number) => string {
+  const step = Math.max(spanMc / 4, 1e-9);
+  return (v: number) => {
+    const abs = Math.abs(v);
+    const unit = abs >= 1e9 ? 1e9 : abs >= 1e6 ? 1e6 : abs >= 1e3 ? 1e3 : 1;
+    const suffix = unit === 1e9 ? "B" : unit === 1e6 ? "M" : unit === 1e3 ? "k" : "";
+    const decimals = Math.min(3, Math.max(0, Math.ceil(Math.log10(unit / step))));
+    return `$${(v / unit).toFixed(decimals)}${suffix}`;
+  };
+}
+
 function smoothPath(pts: { x: number; y: number }[]): string {
   if (pts.length === 0) return "";
   let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)}`;
@@ -135,6 +151,8 @@ export default function TradingChart({
   const hour12 = clock === "12h";
   const [tfOpen, setTfOpen] = useState(false);
   const [mode, setMode] = useState<"candle" | "line">("candle");
+  // the y-axis reads in price or in market cap — same bars, one multiply
+  const [scale, setScale] = useState<"price" | "mc">("price");
   const [now, setNow] = useState<number | null>(null); // null until mounted
   const [scrub, setScrub] = useState<number | null>(null);
   // the visible window: how many bars (zoom) and how many bars back from the
@@ -310,10 +328,19 @@ export default function TradingChart({
     };
   }, [dims, candles, fairPrice, hasVolume, viewBars]);
 
-  const pf = useMemo(
-    () => makePriceFmt(geo ? geo.vMax - geo.vMin : 1),
-    [geo]
-  );
+  // two formatters: `pf` labels the axis at grid-line precision, `pfx` is
+  // the readout (header, OHLC, tooltip) and carries two more digits so a
+  // bar's open and close don't round to the same market cap
+  const [pf, pfx] = useMemo(() => {
+    const span = geo ? geo.vMax - geo.vMin : 1;
+    if (scale === "mc") {
+      const axis = makeMcFmt(span * shares);
+      const detail = makeMcFmt((span * shares) / 100);
+      return [(v: number) => axis(v * shares), (v: number) => detail(v * shares)];
+    }
+    const price = makePriceFmt(span);
+    return [price, price];
+  }, [geo, scale, shares]);
 
   // The toggle is a preference, not an instruction to draw something illegible:
   // zoomed far out we draw the line and put the mode back when you zoom in.
@@ -559,7 +586,7 @@ export default function TradingChart({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-terminal-line px-3 py-2">
         <span className="font-mono text-sm font-bold">${symbol}</span>
         <span className="num font-mono text-xl font-bold">
-          {active ? pf(active.c) : "—"}
+          {active ? pfx(active.c) : "—"}
         </span>
         <span
           className="num flex items-center gap-1 font-mono text-xs font-semibold"
@@ -572,7 +599,7 @@ export default function TradingChart({
           <span
             className="num flex items-center gap-1 rounded bg-terminal-raise px-1.5 py-0.5 font-mono text-[10px] font-semibold"
             style={{ color: barUp ? UP : DOWN }}
-            title={`This ${tf.label} bar: open ${pf(active.o)} → close ${pf(active.c)}`}
+            title={`This ${tf.label} bar: open ${pfx(active.o)} → close ${pfx(active.c)}`}
           >
             <Tri dir={barUp ? "up" : "down"} size={6} />
             {fmtBarPct(barChange)}
@@ -582,16 +609,16 @@ export default function TradingChart({
         {active && (
           <span className="hidden gap-2.5 font-mono text-[10px] text-terminal-muted sm:flex">
             <span>
-              O <span className="num text-terminal-text">{pf(active.o)}</span>
+              O <span className="num text-terminal-text">{pfx(active.o)}</span>
             </span>
             <span>
-              H <span className="num text-terminal-up">{pf(active.h)}</span>
+              H <span className="num text-terminal-up">{pfx(active.h)}</span>
             </span>
             <span>
-              L <span className="num text-terminal-down">{pf(active.l)}</span>
+              L <span className="num text-terminal-down">{pfx(active.l)}</span>
             </span>
             <span>
-              C <span className="num text-terminal-text">{pf(active.c)}</span>
+              C <span className="num text-terminal-text">{pfx(active.c)}</span>
             </span>
             {active.v > 0 && (
               <span>
@@ -603,6 +630,28 @@ export default function TradingChart({
             )}
           </span>
         )}
+        {/* Price / MC: the axis, the readout and the big number all follow */}
+        <span
+          role="group"
+          aria-label="Chart scale"
+          className="flex items-center rounded border border-terminal-line font-mono text-[10px] font-semibold"
+        >
+          {(["price", "mc"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setScale(k)}
+              aria-pressed={scale === k}
+              className={`px-1.5 py-0.5 transition-colors first:rounded-l last:rounded-r ${
+                scale === k
+                  ? "bg-terminal-raise text-terminal-text"
+                  : "text-terminal-muted hover:text-terminal-text"
+              }`}
+            >
+              {k === "price" ? "Price" : "MC"}
+            </button>
+          ))}
+        </span>
         <div className="relative ml-auto flex items-center gap-1">
           {/* zoom: the wheel and pinch do this too, these are the visible way */}
           <button

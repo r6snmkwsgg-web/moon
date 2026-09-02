@@ -903,13 +903,28 @@ export async function getHolders(
   if (held.length === 0) return { rows: [], total: count ?? 0 };
 
   const ids = held.map((h) => String(h.user_id));
-  const { data: tradeRows } = await admin
-    .from("trades")
-    .select("user_id, side, shares, created_at, note")
-    .eq("ticker_id", tickerId)
-    .in("user_id", ids)
-    .order("created_at", { ascending: true })
-    .limit(5000);
+  const [{ data: tradeRows }, postsRes] = await Promise.all([
+    admin
+      .from("trades")
+      .select("user_id, side, shares, created_at, note")
+      .eq("ticker_id", tickerId)
+      .in("user_id", ids)
+      .order("created_at", { ascending: true })
+      .limit(5000),
+    // a thesis posted straight to the floor counts too — the newest of
+    // either kind is the one the row shows
+    admin
+      .from("posts")
+      .select("user_id, body, created_at")
+      .eq("ticker_id", tickerId)
+      .in("user_id", ids)
+      .order("created_at", { ascending: false })
+      .limit(2000),
+  ]);
+  const latestPost = new Map<string, { body: string; at: number }>();
+  for (const r of (postsRes.data ?? []) as { user_id: string; body: string; created_at: string }[]) {
+    if (!latestPost.has(r.user_id)) latestPost.set(r.user_id, { body: r.body, at: Date.parse(r.created_at) });
+  }
   const activity = summariseHolderTrades(
     ((tradeRows ?? []) as {
       user_id: string;
@@ -934,6 +949,13 @@ export async function getHolders(
       const value = shares * price;
       const cost = shares * avgCost;
       const a = activity.get(String(h.user_id));
+      const post = latestPost.get(String(h.user_id));
+      const thesis =
+        post && (a?.thesisAt === null || a?.thesisAt === undefined || post.at > a.thesisAt)
+          ? { text: post.body, at: post.at }
+          : a?.thesis
+            ? { text: a.thesis, at: a.thesisAt ?? null }
+            : null;
       return {
         userId: String(h.user_id),
         trader: String(profile.display_name ?? "trader"),
@@ -945,8 +967,8 @@ export async function getHolders(
         pnlPct: cost > 0 ? (value - cost) / cost : 0,
         entryMarketCap: avgCost * float,
         heldSince: a?.heldSince ?? null,
-        thesis: a?.thesis ?? null,
-        thesisAt: a?.thesisAt ?? null,
+        thesis: thesis?.text ?? null,
+        thesisAt: thesis?.at ?? null,
         lastTradeAt: a?.lastTradeAt ?? null,
         bot: isBotProfile(profile as { username?: string | null; is_bot?: boolean | null }),
       };

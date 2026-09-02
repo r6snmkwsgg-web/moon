@@ -80,10 +80,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const {
     quote,
     mrrHistory,
-    holdersCount,
     watchersCount,
     series,
-    dayStats,
     floatHeld,
     tradePoints,
     earliest,
@@ -346,7 +344,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
           />
 
           {/* the floor: who holds it, and the tape, right under the chart */}
-          <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid items-start gap-3 2xl:grid-cols-[minmax(0,1fr)_380px]">
             <HoldersTable
               rows={holders.rows}
               total={holders.total}
@@ -439,7 +437,6 @@ export default async function TickerPage({ params, searchParams }: Props) {
             multiple={quote.multiple}
             shares={quote.shares}
             drift={quote.drift}
-            price={quote.price}
             arr={quote.arr}
             revenueSource={quote.revenueSource}
             latestReport={
@@ -452,10 +449,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 : null
             }
             mom={mom}
-            dayStats={dayStats}
             flow={flow24h}
             floatHeld={floatHeld}
-            holders={holdersCount}
             earliest={earliest}
             renderedAt={renderedAt}
             nextEarningsAt={t.stripe_verified ? nextEarningsDate().toISOString() : null}

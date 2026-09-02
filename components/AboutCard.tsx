@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Zap } from "lucide-react";
 import type { ChartPoint, Ticker } from "@/lib/types";
-import type { DayStats } from "@/lib/data";
 import type { RevenueEvent } from "@/lib/pricing";
 import { makePriceAt } from "@/lib/candles";
 import { fmtCompact, fmtMoney, fmtPct } from "@/lib/format";
@@ -32,7 +31,7 @@ export function windowChanges(
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-[3px] text-[12px]">
+    <div className="flex items-baseline justify-between gap-3 py-[2px] text-[12px]">
       <span className="shrink-0 text-terminal-muted">{label}</span>
       <span className="flex-1 border-b border-dotted border-terminal-line/70" />
       <span className="num shrink-0 text-right font-mono text-terminal-text">
@@ -56,15 +55,12 @@ export default function AboutCard({
   multiple,
   shares,
   drift,
-  price,
   arr,
   revenueSource,
   latestReport,
   mom,
-  dayStats,
   flow,
   floatHeld,
-  holders,
   earliest,
   renderedAt,
   nextEarningsAt,
@@ -77,16 +73,13 @@ export default function AboutCard({
   multiple: number;
   shares: number;
   drift: number;
-  price: number;
   arr: number;
   revenueSource: "payments" | "subscriptions" | "reported";
   latestReport: { month: string; mrr: number; source: string } | null;
   mom: number | null;
-  dayStats: DayStats;
   /** Every print of the last day. */
   flow: FlowPrint[];
   floatHeld: number;
-  holders: number;
   earliest: number;
   renderedAt: number;
   /** ISO instant of the next Stripe re-sync, or null for a manual reporter. */
@@ -115,7 +108,6 @@ export default function AboutCard({
   const listed = new Date(ticker.listed_at).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    year: "numeric",
   });
   const nextMonth = latestReport
     ? new Date(
@@ -126,26 +118,24 @@ export default function AboutCard({
     : null;
 
   return (
-    <section className="panel space-y-2.5 p-3">
-      <div>
+    <section className="panel space-y-2 px-3 py-2.5">
+      <div className="flex flex-wrap items-baseline gap-x-2">
         <h2 className="font-mono text-sm font-bold">About ${ticker.symbol}</h2>
-        <p className="text-xs leading-snug text-terminal-muted">{ticker.pitch}</p>
         {ticker.founder_handle && (
           <a
             href={`https://x.com/${ticker.founder_handle.replace(/^@/, "")}`}
             target="_blank"
             rel="noreferrer"
-            className="mt-0.5 inline-block font-mono text-[11px] text-terminal-accent hover:underline"
+            className="font-mono text-[11px] text-terminal-accent hover:underline"
           >
-            @{ticker.founder_handle.replace(/^@/, "")} on X ↗
+            @{ticker.founder_handle.replace(/^@/, "")} ↗
           </a>
         )}
       </div>
 
       <WindowStats changes={changes} flow={flow} now={renderedAt} />
 
-      <div className="border-t border-terminal-line pt-1.5">
-        <Row label="Market cap">{fmtCompact(price * shares)}</Row>
+      <div className="border-t border-terminal-line pt-1">
         <Row label={revenueLabel}>
           {liveMrr > 0 ? fmtMoney(liveMrr, liveMrr < 10_000 ? 2 : 0) : "—"}
           {ticker.stripe_verified && (
@@ -173,10 +163,9 @@ export default function AboutCard({
           <Row label="Last report">
             {new Date(latestReport.month).toLocaleDateString("en-US", {
               month: "short",
-              year: "numeric",
               timeZone: "UTC",
             })}{" "}
-            · {fmtCompact(Number(latestReport.mrr))}{" "}
+            {fmtCompact(Number(latestReport.mrr))}{" "}
             <span className="text-terminal-muted">
               {latestReport.source === "stripe"
                 ? "Stripe"
@@ -190,13 +179,6 @@ export default function AboutCard({
           {shares.toLocaleString("en-US")} shs ·{" "}
           {Math.min(100, Math.round((floatHeld / shares) * 100))}% held
         </Row>
-        <Row label="Volume today">
-          {dayStats.volumeShares > 0
-            ? `${dayStats.volumeShares.toLocaleString("en-US")} shs · ${fmtCompact(dayStats.volumeNotional)}`
-            : "0"}
-        </Row>
-        <Row label="Holders">{holders.toLocaleString("en-US")}</Row>
-        <Row label="Listed">{listed}</Row>
         <Row label="Next earnings">
           {nextEarningsAt ? (
             <CountdownChip target={nextEarningsAt} prefix="" />
@@ -205,17 +187,17 @@ export default function AboutCard({
           ) : (
             "—"
           )}
+          <span className="ml-2 text-terminal-muted">listed {listed}</span>
         </Row>
       </div>
-      {isDemo && (
-        <p className="text-[10px] leading-snug text-terminal-muted/70">
-          A demo listing: its revenue pulse and the AI traders on it are
-          simulated. Prices, prints and positions are real play money.
-        </p>
-      )}
-      <Link href="/how" className="block font-mono text-[11px] text-terminal-accent hover:underline">
-        how the price is built →
-      </Link>
+      <p className="flex items-baseline justify-between gap-2 font-mono text-[10px] text-terminal-muted/70">
+        <span>
+          {isDemo ? "demo listing · simulated revenue pulse and AI traders" : "play money · real revenue"}
+        </span>
+        <Link href="/how" className="shrink-0 text-terminal-accent hover:underline">
+          how the price is built →
+        </Link>
+      </p>
     </section>
   );
 }
