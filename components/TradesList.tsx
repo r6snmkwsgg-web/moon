@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { FeedTrade } from "@/lib/data";
 import { fmtPrice } from "@/lib/format";
 import CopyTradeButton from "@/components/CopyTradeButton";
+import AiChip from "@/components/AiChip";
 
 function timeAgo(iso: string): string {
   const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -62,6 +63,7 @@ export default function TradesList({
               ) : (
                 <span className="font-mono text-terminal-text">{t.trader}</span>
               ))}
+            {showTrader && <AiChip username={t.username} />}
             {showTrader && (
               <span className="text-terminal-muted">
                 {t.side === "buy" ? "bought" : "sold"}

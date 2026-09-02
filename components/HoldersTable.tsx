@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Users } from "lucide-react";
 import type { HolderRow } from "@/lib/data";
+import AiChip from "@/components/AiChip";
 import {
   fmtCompact,
   fmtDuration,
@@ -149,6 +150,7 @@ export default function HoldersTable({
                         ) : (
                           <span className="font-mono font-bold">{r.trader}</span>
                         )}
+                        <AiChip username={r.username} />
                         {mine && (
                           <span className="rounded bg-terminal-accent/15 px-1 font-mono text-[10px] text-terminal-accent">
                             you

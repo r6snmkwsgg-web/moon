@@ -763,6 +763,8 @@ export async function getAllValuations(): Promise<PortfolioValuation[]> {
   }
 
   return ((profilesRes.data ?? []) as Profile[])
+    // the AI traders are furniture, not contestants
+    .filter((p) => !isBotUsername(p.username))
     .map((p) => valuePortfolio(p, holdingsByUser.get(p.id) ?? [], quotesById))
     .sort((a, b) => b.totalValue - a.totalValue);
 }

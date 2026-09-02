@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ScrollText } from "lucide-react";
 import type { FeedTrade } from "@/lib/data";
 import { fmtPrice } from "@/lib/format";
+import AiChip from "@/components/AiChip";
 
 function timeAgo(iso: string): string {
   const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -54,6 +55,7 @@ export default function ThesisFeed({
                 ) : (
                   <span className="font-mono font-bold">{t.trader}</span>
                 )}
+                <AiChip username={t.username} />
                 <span
                   className={`num rounded px-1.5 py-0.5 font-mono font-semibold ${
                     t.side === "buy"

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { pollRevenuePulse } from "@/lib/pulse";
 import { advanceMarketFlow } from "@/lib/flow";
+import { runDemoPulse } from "@/lib/demo-pulse";
+import { runBotRound } from "@/lib/bots";
 import { stripeVerificationConfigured } from "@/lib/stripe";
 
 export const dynamic = "force-dynamic";
@@ -37,5 +39,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, flow, skipped: "stripe not configured" });
   }
   const result = await pollRevenuePulse(admin, { force: true });
-  return NextResponse.json({ ok: true, flow, ...result });
+
+  // The market playing out: demo listings get their revenue pulse, then the
+  // AI traders read the board and trade. Neither may take the heartbeat down
+  // with it. MARKET_BOTS=off pauses both without a deploy.
+  let demo: unknown = null;
+  let bots: unknown = null;
+  if (process.env.MARKET_BOTS !== "off") {
+    try {
+      demo = await runDemoPulse(admin);
+    } catch (e) {
+      demo = { error: e instanceof Error ? e.message : String(e) };
+    }
+    try {
+      bots = await runBotRound(admin);
+    } catch (e) {
+      bots = { error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+  return NextResponse.json({ ok: true, flow, ...result, demo, bots });
 }
