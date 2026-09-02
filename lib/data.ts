@@ -822,6 +822,44 @@ export interface FeedTrade {
   note: string | null; // the public "why" (0003)
   /** An AI trader's print. */
   bot: boolean;
+  /** Hearts on the note (0010). */
+  likes: number;
+  likedByMe: boolean;
+}
+
+/**
+ * Hearts on a batch of theses: how many, and whether the viewer is one of
+ * them. Pre-0010 the table is missing and everything reads as zero.
+ */
+async function likesFor(
+  admin: SupabaseClient,
+  kind: "post" | "trade",
+  ids: string[],
+  viewerId?: string | null
+): Promise<Map<string, { likes: number; mine: boolean }>> {
+  const out = new Map<string, { likes: number; mine: boolean }>();
+  if (ids.length === 0) return out;
+  try {
+    const rows = await pageAll<{ target_id: string; user_id: string }>((f, t) =>
+      admin
+        .from("thesis_likes")
+        .select("target_id, user_id")
+        .eq("kind", kind)
+        .in("target_id", ids)
+        .order("target_id")
+        .order("user_id")
+        .range(f, t)
+    );
+    for (const r of rows) {
+      const cur = out.get(r.target_id) ?? { likes: 0, mine: false };
+      cur.likes++;
+      if (viewerId && r.user_id === viewerId) cur.mine = true;
+      out.set(r.target_id, cur);
+    }
+  } catch {
+    // no likes table yet
+  }
+  return out;
 }
 
 /**
@@ -832,7 +870,8 @@ export async function getRecentTrades(
   limit = 40,
   tickerId?: string,
   userIds?: string[],
-  thesesOnly = false
+  thesesOnly = false,
+  viewerId?: string | null
 ): Promise<FeedTrade[]> {
   if (userIds && userIds.length === 0) return [];
   const admin = createSupabaseAdminClient();
@@ -847,9 +886,15 @@ export async function getRecentTrades(
   // result pre-migration since the column is missing)
   if (thesesOnly) query = query.not("note", "is", null);
   const { data } = await query;
-  return ((data ?? []) as Array<Record<string, unknown>>).map((t) => {
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  // hearts only matter on the notes — the plain tape carries none
+  const hearts = thesesOnly
+    ? await likesFor(admin, "trade", rows.map((t) => String(t.id)), viewerId)
+    : new Map<string, { likes: number; mine: boolean }>();
+  return rows.map((t) => {
     const profile = (t.profiles ?? {}) as Record<string, unknown>;
     const ticker = (t.tickers ?? {}) as Record<string, unknown>;
+    const h = hearts.get(String(t.id));
     return {
       id: String(t.id),
       side: t.side as "buy" | "sell",
@@ -862,6 +907,8 @@ export async function getRecentTrades(
       symbol: String(ticker.symbol ?? "?"),
       note: (t.note as string) ?? null,
       bot: isBotProfile(profile as { username?: string | null; is_bot?: boolean | null }),
+      likes: h?.likes ?? 0,
+      likedByMe: h?.mine ?? false,
     };
   });
 }
@@ -1003,15 +1050,23 @@ export interface TickerPost {
   /** The poster's REAL position, joined live — never stored, can't be faked. */
   positionShares: number;
   positionPnl: number | null; // vs avg cost at the live price
+  /** shares × the live price — what the take is backed with, and the size filter's key */
+  positionValue: number;
+  /** positionPnl over cost, as a fraction; null without a position */
+  positionPnlPct: number | null;
   /** An AI trader's take. */
   bot: boolean;
+  /** Hearts (0010). */
+  likes: number;
+  likedByMe: boolean;
 }
 
 /** Discussion thread for one ticker, each post carrying its author's live position. */
 export async function getTickerPosts(
   tickerId: string,
   livePrice: number,
-  limit = 30
+  limit = 30,
+  viewerId?: string | null
 ): Promise<TickerPost[]> {
   try {
     const admin = createSupabaseAdminClient();
@@ -1025,11 +1080,14 @@ export async function getTickerPosts(
     if (rows.length === 0) return [];
 
     const userIds = [...new Set(rows.map((r) => String(r.user_id)))];
-    const { data: holdings } = await admin
-      .from("holdings")
-      .select("user_id, shares, avg_cost")
-      .eq("ticker_id", tickerId)
-      .in("user_id", userIds);
+    const [{ data: holdings }, hearts] = await Promise.all([
+      admin
+        .from("holdings")
+        .select("user_id, shares, avg_cost")
+        .eq("ticker_id", tickerId)
+        .in("user_id", userIds),
+      likesFor(admin, "post", rows.map((r) => String(r.id)), viewerId),
+    ]);
     const position = new Map(
       ((holdings ?? []) as { user_id: string; shares: number; avg_cost: number }[]).map(
         (h) => [h.user_id, h]
@@ -1040,6 +1098,8 @@ export async function getTickerPosts(
       const profile = (r.profiles ?? {}) as Record<string, unknown>;
       const pos = position.get(String(r.user_id));
       const shares = pos ? Number(pos.shares) : 0;
+      const cost = pos && shares > 0 ? shares * Number(pos.avg_cost) : 0;
+      const h = hearts.get(String(r.id));
       return {
         id: String(r.id),
         body: String(r.body),
@@ -1049,11 +1109,12 @@ export async function getTickerPosts(
         username: (profile.username as string) ?? null,
         userId: String(r.user_id),
         positionShares: shares,
-        positionPnl:
-          pos && shares > 0
-            ? shares * livePrice - shares * Number(pos.avg_cost)
-            : null,
+        positionPnl: pos && shares > 0 ? shares * livePrice - cost : null,
+        positionValue: shares * livePrice,
+        positionPnlPct: cost > 0 ? (shares * livePrice - cost) / cost : null,
         bot: isBotProfile(profile as { username?: string | null; is_bot?: boolean | null }),
+        likes: h?.likes ?? 0,
+        likedByMe: h?.mine ?? false,
       };
     });
   } catch {

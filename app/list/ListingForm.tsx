@@ -61,6 +61,7 @@ export default function ListingForm({
   const [pitch, setPitch] = useState("");
   const [handle, setHandle] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
+  const [website, setWebsite] = useState("");
   const [logoState, setLogoState] = useState<
     "idle" | "uploading" | "done" | "error"
   >("idle");
@@ -97,6 +98,7 @@ export default function ListingForm({
         if (d.pitch) setPitch(d.pitch);
         if (d.handle) setHandle(d.handle);
         if (d.logoUrl) setLogoUrl(d.logoUrl);
+        if (d.website) setWebsite(d.website);
         sessionStorage.removeItem(DRAFT);
       }
     } catch {
@@ -150,7 +152,7 @@ export default function ListingForm({
     try {
       sessionStorage.setItem(
         DRAFT,
-        JSON.stringify({ symbol: sym, name, pitch, handle, logoUrl })
+        JSON.stringify({ symbol: sym, name, pitch, handle, logoUrl, website })
       );
     } catch {
       // private mode — they will just re-enter the fields
@@ -402,6 +404,17 @@ export default function ListingForm({
               />
             </label>
             <label className="text-xs text-terminal-muted">
+              Website (optional — linked from your ticker page, where every
+              visitor lands)
+              <input
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://yourproduct.com"
+                inputMode="url"
+                className="input mt-1 font-mono"
+              />
+            </label>
+            <label className="text-xs text-terminal-muted">
               Logo (optional — PNG/JPG/WebP, under 1MB)
               <input
                 type="file"
@@ -592,6 +605,7 @@ export default function ListingForm({
           <input type="hidden" name="pitch" value={pitch.trim()} />
           <input type="hidden" name="handle" value={handle.trim()} />
           <input type="hidden" name="logo_url" value={logoUrl.trim()} />
+          <input type="hidden" name="website" value={website.trim()} />
           <input type="hidden" name="stripe_key" value={stripeKey.trim()} />
 
           <dl className="space-y-1.5 text-sm">

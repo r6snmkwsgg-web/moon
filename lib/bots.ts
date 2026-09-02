@@ -105,6 +105,8 @@ const PANIC = { paper: 1.2, swing: 0.6, diamond: 0.1 } as const;
  * ticker's holders used it up before the next ticker's were even rolled.
  */
 export const MAX_SHAKEN = 200;
+/** Hearts the population leaves on the floor per round, at most. */
+export const MAX_LIKES_PER_ROUND = 6;
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
@@ -284,6 +286,8 @@ export interface BotRoundResult {
   awake: number;
   /** Of the awake, how many a price shake woke. */
   shaken?: number;
+  /** Hearts left on the floor this round. */
+  liked?: number;
   attempted: number;
   filled: number;
   posted: number;
@@ -625,6 +629,52 @@ export async function runBotRound(
     const stance = edge > 0.08 ? 1 : edge < -0.08 ? -1 : null;
     const { error } = await admin.from("posts").insert({ ticker_id: tickerId, user_id: account.id, body, stance });
     if (!error) out.posted++;
+  }
+  // A few hearts. Awake accounts that hold a name read its last day of
+  // theses and like one — a take on something you own is the one you
+  // notice. Pre-0010 the table is missing and this is a no-op.
+  try {
+    const dayAgoIso = new Date(now - 86_400_000).toISOString();
+    const [{ data: recentPosts }, { data: recentNotes }] = await Promise.all([
+      admin
+        .from("posts")
+        .select("id, ticker_id, user_id")
+        .gte("created_at", dayAgoIso)
+        .order("created_at", { ascending: false })
+        .limit(300),
+      admin
+        .from("trades")
+        .select("id, ticker_id, user_id")
+        .not("note", "is", null)
+        .gte("created_at", dayAgoIso)
+        .order("created_at", { ascending: false })
+        .limit(300),
+    ]);
+    type Thesis = { id: string; ticker_id: string; user_id: string };
+    const theses = [
+      ...((recentPosts ?? []) as Thesis[]).map((r) => ({ kind: "post" as const, ...r })),
+      ...((recentNotes ?? []) as Thesis[]).map((r) => ({ kind: "trade" as const, ...r })),
+    ];
+    let liked = 0;
+    for (const account of roster) {
+      if (liked >= MAX_LIKES_PER_ROUND) break;
+      if (rng.unit() > 0.35) continue;
+      const own = theses.filter(
+        (t) => t.user_id !== account.id && (mine.get(`${account.id}/${t.ticker_id}`) ?? 0) > 0
+      );
+      const pick = own[Math.floor(rng.unit() * own.length)];
+      if (!pick) continue;
+      const { error } = await admin
+        .from("thesis_likes")
+        .upsert(
+          { kind: pick.kind, target_id: pick.id, user_id: account.id },
+          { onConflict: "kind,target_id,user_id", ignoreDuplicates: true }
+        );
+      if (!error) liked++;
+    }
+    out.liked = liked;
+  } catch {
+    // no likes table yet
   }
   return out;
 }

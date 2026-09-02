@@ -20,10 +20,9 @@ import { nextEarningsDate } from "@/lib/xp";
 import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import PulseKeeper from "@/components/PulseKeeper";
 import ThesisCard from "@/components/ThesisCard";
-import ThesesPane from "@/components/ThesesPane";
 import TradingChart from "@/components/TradingChart";
 import HoldersTable from "@/components/HoldersTable";
-import Tabs from "@/components/Tabs";
+import FloorTabs from "@/components/FloorTabs";
 import LiveQuote from "@/components/LiveQuote";
 import TradePanel, { type OwnPrint } from "@/components/TradePanel";
 import AboutCard from "@/components/AboutCard";
@@ -33,7 +32,6 @@ import LogoTile from "@/components/LogoTile";
 import TickerBadges from "@/components/TickerBadges";
 import WatchStar from "@/components/WatchStar";
 import VoteBar from "@/components/VoteBar";
-import TradesList from "@/components/TradesList";
 import {
   connectStripe,
   disconnectStripe,
@@ -41,6 +39,7 @@ import {
   submitHandleProof,
   submitMrr,
   updateLogo,
+  updateWebsite,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -95,9 +94,10 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const [gauge, recentTrades, posts, theses, holders, followedIds] =
     await Promise.all([
       getVoteGauge(t.id),
-      getRecentTrades(10, t.id),
-      getTickerPosts(t.id, quote.price),
-      getRecentTrades(15, t.id, undefined, true),
+      // enough of the floor that a size filter still leaves something to read
+      getRecentTrades(60, t.id),
+      getTickerPosts(t.id, quote.price, 40, user?.id ?? null),
+      getRecentTrades(60, t.id, undefined, true, user?.id ?? null),
       getHolders(t.id, quote.price, quote.shares),
       user ? getFollowedIds(user.id) : Promise.resolve([] as string[]),
     ]);
@@ -362,41 +362,13 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 drift: quote.drift,
               }}
             />
-            <Tabs
-              tabs={[
-                {
-                  key: "trades",
-                  label: `Trades · ${recentTrades.length}`,
-                  pane: (
-                    <>
-                      <TradesList
-                        trades={recentTrades}
-                        showSymbol={false}
-                        signedIn={user !== null}
-                        showNotes={false}
-                      />
-                      <Link
-                        href="/tape"
-                        className="block border-t border-terminal-line px-3 py-1.5 font-mono text-[11px] text-terminal-accent hover:underline"
-                      >
-                        full tape →
-                      </Link>
-                    </>
-                  ),
-                },
-                {
-                  key: "theses",
-                  label: `Theses · ${posts.length + theses.length}`,
-                  pane: (
-                    <ThesesPane
-                      posts={posts}
-                      theses={theses}
-                      symbol={t.symbol}
-                      viewerId={user?.id ?? null}
-                    />
-                  ),
-                },
-              ]}
+            <FloorTabs
+              trades={recentTrades}
+              posts={posts}
+              theses={theses}
+              symbol={t.symbol}
+              signedIn={user !== null}
+              viewerId={user?.id ?? null}
             />
           </div>
         </div>
@@ -581,6 +553,24 @@ export default async function TickerPage({ params, searchParams }: Props) {
               )}
             </div>
           )}
+
+          <form
+            action={updateWebsite}
+            className="flex flex-wrap items-end gap-2 border-t border-terminal-line pt-3"
+          >
+            <input type="hidden" name="ticker_id" value={t.id} />
+            <label className="min-w-0 flex-1 text-xs text-terminal-muted">
+              Website — shown on the About card, where every visitor lands
+              <input
+                type="text"
+                name="website"
+                defaultValue={t.website ?? ""}
+                placeholder="https://yourproduct.com"
+                className="input mt-1"
+              />
+            </label>
+            <button className="btn-ghost text-xs">Save</button>
+          </form>
 
           <form
             action={updateLogo}

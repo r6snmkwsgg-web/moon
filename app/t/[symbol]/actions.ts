@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { normaliseWebsite } from "@/lib/website";
 import { createSupabaseServerClient, getUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { recordTickerSnapshot } from "@/lib/snapshot";
@@ -116,6 +117,75 @@ export async function addPost(
   });
   if (error) throw new Error("Could not post.");
   revalidatePath(`/t/${symbol}`);
+}
+
+export type LikeKind = "post" | "trade";
+
+/**
+ * Like or unlike a thesis — a post on the floor or a note on a print. One
+ * row per person per thesis; a second tap removes it. Returns the state the
+ * server now holds so the button can snap to it.
+ */
+export async function toggleLike(
+  kind: LikeKind,
+  targetId: string,
+  symbol: string
+): Promise<{ liked: boolean; likes: number }> {
+  const user = await getUser();
+  if (!user) throw new Error("Sign in first.");
+  if (kind !== "post" && kind !== "trade") throw new Error("Invalid kind.");
+  if (!/^[0-9a-f-]{36}$/i.test(targetId)) throw new Error("Invalid thesis.");
+
+  const admin = createSupabaseAdminClient();
+  const { data: mine } = await admin
+    .from("thesis_likes")
+    .select("user_id")
+    .eq("kind", kind)
+    .eq("target_id", targetId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (mine) {
+    await admin
+      .from("thesis_likes")
+      .delete()
+      .eq("kind", kind)
+      .eq("target_id", targetId)
+      .eq("user_id", user.id);
+  } else {
+    const { error } = await admin
+      .from("thesis_likes")
+      .insert({ kind, target_id: targetId, user_id: user.id });
+    if (error) throw new Error("Could not like that.");
+  }
+  const { count } = await admin
+    .from("thesis_likes")
+    .select("*", { count: "exact", head: true })
+    .eq("kind", kind)
+    .eq("target_id", targetId);
+  revalidatePath(`/t/${symbol}`);
+  return { liked: !mine, likes: count ?? 0 };
+}
+
+/** The founder sets the company's website — the listing is a promotion. */
+export async function updateWebsite(formData: FormData) {
+  const user = await getUser();
+  if (!user) throw new Error("Sign in first.");
+
+  const tickerId = String(formData.get("ticker_id") ?? "");
+  const website = normaliseWebsite(String(formData.get("website") ?? ""));
+
+  const admin = createSupabaseAdminClient();
+  const { data: ticker } = await admin
+    .from("tickers")
+    .select("id, symbol, claimed_by")
+    .eq("id", tickerId)
+    .maybeSingle();
+  if (!ticker || ticker.claimed_by !== user.id) {
+    throw new Error("Only the claimed founder can set the website.");
+  }
+  const { error } = await admin.from("tickers").update({ website }).eq("id", ticker.id);
+  if (error) throw new Error("Could not save the website — has migration 0010 been run?");
+  revalidatePath(`/t/${ticker.symbol}`);
 }
 
 /** Delete your own post (RLS scoped). */

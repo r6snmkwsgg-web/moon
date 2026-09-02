@@ -9,6 +9,7 @@ import { deletePost } from "@/app/t/[symbol]/actions";
 import { fmtMoney, fmtPrice } from "@/lib/format";
 import AiChip from "@/components/AiChip";
 import Tri from "@/components/Tri";
+import LikeButton from "@/components/LikeButton";
 
 function timeAgo(iso: string): string {
   const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -34,11 +35,16 @@ export default function ThesesPane({
   theses,
   symbol,
   viewerId,
+  signedIn = viewerId !== null,
+  filtered = false,
 }: {
   posts: TickerPost[];
   theses: FeedTrade[];
   symbol: string;
   viewerId: string | null;
+  signedIn?: boolean;
+  /** A size filter emptied the list — say so rather than "no theses yet". */
+  filtered?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -50,7 +56,9 @@ export default function ThesesPane({
   if (items.length === 0) {
     return (
       <p className="px-3 py-6 text-center text-sm text-terminal-muted">
-        No theses yet. Add one above, or attach one to your next trade.
+        {filtered
+          ? "Nothing backed by that much yet — lower the filter."
+          : "No theses yet. Add one above, or attach one to your next trade."}
       </p>
     );
   }
@@ -85,18 +93,23 @@ export default function ThesesPane({
                   {it.post.stance === 1 ? "bull" : "bear"}
                 </span>
               )}
-              {/* the live position badge — the whole point */}
+              {/* the live position badge — the whole point: what the take is backed with */}
               {it.post.positionShares > 0 ? (
                 <span
-                  className="num rounded bg-terminal-raise px-1.5 py-0.5 font-mono text-[10px] text-terminal-muted"
-                  title="Real position, read live from holdings"
+                  className="num flex items-center gap-1 rounded bg-terminal-raise px-1.5 py-0.5 font-mono text-[10px]"
+                  title={`Real position, read live from holdings — ${it.post.positionShares.toLocaleString("en-US")} shs`}
                 >
-                  holds {it.post.positionShares.toLocaleString("en-US")} shs
-                  {it.post.positionPnl !== null && (
-                    <span className={it.post.positionPnl >= 0 ? " text-terminal-up" : " text-terminal-down"}>
-                      {" "}
-                      {it.post.positionPnl >= 0 ? "+" : "−"}
-                      {fmtMoney(Math.abs(it.post.positionPnl), 0)}
+                  <span className="font-semibold text-terminal-text">
+                    {fmtMoney(it.post.positionValue, it.post.positionValue >= 1000 ? 0 : 2)}
+                  </span>
+                  {it.post.positionPnlPct !== null && (
+                    <span
+                      className={`flex items-center gap-0.5 ${
+                        it.post.positionPnlPct >= 0 ? "text-terminal-up" : "text-terminal-down"
+                      }`}
+                    >
+                      <Tri dir={it.post.positionPnlPct >= 0 ? "up" : "down"} size={5} />
+                      {Math.abs(it.post.positionPnlPct * 100).toFixed(1)}%
                     </span>
                   )}
                 </span>
@@ -105,8 +118,18 @@ export default function ThesesPane({
                   no position
                 </span>
               )}
-              <span className="ml-auto font-mono text-[10px] text-terminal-muted">
-                {timeAgo(it.post.created_at)}
+              <span className="ml-auto flex items-center gap-1">
+                <LikeButton
+                  kind="post"
+                  targetId={it.post.id}
+                  symbol={symbol}
+                  likes={it.post.likes}
+                  liked={it.post.likedByMe}
+                  signedIn={signedIn}
+                />
+                <span className="font-mono text-[10px] text-terminal-muted">
+                  {timeAgo(it.post.created_at)}
+                </span>
               </span>
               {viewerId === it.post.userId && (
                 <button
@@ -151,8 +174,18 @@ export default function ThesesPane({
                 {it.trade.side === "buy" ? "bought" : "sold"}{" "}
                 {fmtMoney(it.trade.total, it.trade.total >= 1000 ? 0 : 2)}
               </span>
-              <span className="ml-auto font-mono text-terminal-muted">
-                {timeAgo(it.trade.created_at)}
+              <span className="ml-auto flex items-center gap-1">
+                <LikeButton
+                  kind="trade"
+                  targetId={it.trade.id}
+                  symbol={symbol}
+                  likes={it.trade.likes}
+                  liked={it.trade.likedByMe}
+                  signedIn={signedIn}
+                />
+                <span className="font-mono text-[10px] text-terminal-muted">
+                  {timeAgo(it.trade.created_at)}
+                </span>
               </span>
             </div>
           </li>

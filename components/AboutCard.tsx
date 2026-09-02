@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Zap } from "lucide-react";
+import { AtSign, Globe, Search, Zap } from "lucide-react";
 import type { ChartPoint, Ticker } from "@/lib/types";
 import type { RevenueEvent } from "@/lib/pricing";
 import { makePriceAt } from "@/lib/candles";
@@ -134,6 +134,30 @@ export default function AboutCard({
       </div>
 
       <WindowStats changes={changes} flow={flow} now={renderedAt} />
+
+      {/* where to go next — the point of listing is being found */}
+      <div className="flex flex-wrap gap-1.5">
+        {ticker.website && (
+          <a
+            href={ticker.website}
+            target="_blank"
+            rel="noreferrer nofollow"
+            className="btn-ghost flex items-center gap-1 px-2 py-1 text-[11px]"
+          >
+            <Globe size={11} />
+            {ticker.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+          </a>
+        )}
+        <a
+          href={`https://x.com/search?q=%24${encodeURIComponent(ticker.symbol)}&src=typed_query&f=live`}
+          target="_blank"
+          rel="noreferrer"
+          className="btn-ghost flex items-center gap-1 px-2 py-1 text-[11px]"
+        >
+          <Search size={11} />
+          Search on X
+        </a>
+      </div>
 
       <div className="border-t border-terminal-line pt-1">
         <Row label={revenueLabel}>

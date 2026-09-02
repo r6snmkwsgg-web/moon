@@ -25,6 +25,8 @@ export interface Ticker {
   drift?: number | null;
   vol_state?: number | null;
   drift_at?: string | null;
+  // 0010_social_proof — the company's site, shown on the About card
+  website?: string | null;
 }
 
 export interface MrrUpdate {

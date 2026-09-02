@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { normaliseWebsite } from "@/lib/website";
 import { getUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -70,6 +71,12 @@ export async function listStartup(
     .slice(0, 50);
   const logoUrl = String(formData.get("logo_url") ?? "").trim() || null;
   const stripeKey = String(formData.get("stripe_key") ?? "").trim();
+  let website: string | null = null;
+  try {
+    website = normaliseWebsite(String(formData.get("website") ?? ""));
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
 
   /*
    * Revenue comes from one of two places, and the rest of this action does
@@ -147,6 +154,7 @@ export async function listStartup(
     pitch,
     logo_url: logoUrl,
     founder_handle: handle,
+    website,
     claimed: true,
     claimed_by: user.id,
     listed_by: user.id,
