@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { FeedTrade } from "@/lib/data";
-import { fmtPrice } from "@/lib/format";
+import { fmtMoney, fmtPrice } from "@/lib/format";
 import CopyTradeButton from "@/components/CopyTradeButton";
 import AiChip from "@/components/AiChip";
 
@@ -69,20 +69,25 @@ export default function TradesList({
                 {t.side === "buy" ? "bought" : "sold"}
               </span>
             )}
-            <span className="num font-mono">
-              {t.shares.toLocaleString("en-US")}
+            {/* the size in money — the shares and the price sit in the tooltip */}
+            <span
+              className="num font-mono font-semibold"
+              title={`${t.shares.toLocaleString("en-US")} shs @ ${fmtPrice(t.price)}`}
+            >
+              {fmtMoney(t.total, t.total >= 1000 ? 0 : 2)}
             </span>
             {showSymbol && (
-              <Link
-                href={`/t/${t.symbol}`}
-                aria-label={`$${t.symbol}`}
-                className="row-link font-mono font-bold"
-              >
-                ${t.symbol}
-              </Link>
+              <>
+                <span className="text-terminal-muted">of</span>
+                <Link
+                  href={`/t/${t.symbol}`}
+                  aria-label={`$${t.symbol}`}
+                  className="row-link font-mono font-bold"
+                >
+                  ${t.symbol}
+                </Link>
+              </>
             )}
-            <span className="text-terminal-muted">@</span>
-            <span className="num font-mono">{fmtPrice(t.price)}</span>
             <span className="relative z-[2] ml-auto flex items-center gap-2">
               <CopyTradeButton
                 symbol={t.symbol}

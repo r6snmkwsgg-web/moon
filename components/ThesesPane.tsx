@@ -1,0 +1,163 @@
+"use client";
+
+import { useTransition } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { X } from "lucide-react";
+import type { FeedTrade, TickerPost } from "@/lib/data";
+import { deletePost } from "@/app/t/[symbol]/actions";
+import { fmtMoney, fmtPrice } from "@/lib/format";
+import AiChip from "@/components/AiChip";
+import Tri from "@/components/Tri";
+
+function timeAgo(iso: string): string {
+  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+type Item =
+  | { kind: "post"; at: number; post: TickerPost }
+  | { kind: "print"; at: number; trade: FeedTrade };
+
+/**
+ * Every thesis on the name, newest first: the ones posted straight to the
+ * floor, each with the author's real position beside it, and the ones
+ * written on a print, each with the trade it rode in on.
+ */
+export default function ThesesPane({
+  posts,
+  theses,
+  symbol,
+  viewerId,
+}: {
+  posts: TickerPost[];
+  theses: FeedTrade[];
+  symbol: string;
+  viewerId: string | null;
+}) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+  const items: Item[] = [
+    ...posts.map((post) => ({ kind: "post" as const, at: Date.parse(post.created_at), post })),
+    ...theses.map((trade) => ({ kind: "print" as const, at: Date.parse(trade.created_at), trade })),
+  ].sort((a, b) => b.at - a.at);
+
+  if (items.length === 0) {
+    return (
+      <p className="px-3 py-6 text-center text-sm text-terminal-muted">
+        No theses yet. Add one above, or attach one to your next trade.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="divide-y divide-terminal-line/40">
+      {items.map((it) =>
+        it.kind === "post" ? (
+          <li key={`p${it.post.id}`} className="space-y-1 px-3 py-2">
+            <p className="text-[13px] leading-snug text-terminal-text">{it.post.body}</p>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+              {it.post.username ? (
+                <Link
+                  href={`/u/${it.post.username}`}
+                  className="font-mono font-bold text-terminal-text hover:text-terminal-accent"
+                >
+                  {it.post.author}
+                </Link>
+              ) : (
+                <span className="font-mono font-bold">{it.post.author}</span>
+              )}
+              <AiChip username={it.post.username} />
+              {it.post.stance !== null && (
+                <span
+                  className={`flex items-center gap-0.5 rounded px-1 py-0.5 font-mono text-[10px] font-bold ${
+                    it.post.stance === 1
+                      ? "bg-terminal-up/10 text-terminal-up"
+                      : "bg-terminal-down/10 text-terminal-down"
+                  }`}
+                >
+                  <Tri dir={it.post.stance === 1 ? "up" : "down"} size={6} />
+                  {it.post.stance === 1 ? "bull" : "bear"}
+                </span>
+              )}
+              {/* the live position badge — the whole point */}
+              {it.post.positionShares > 0 ? (
+                <span
+                  className="num rounded bg-terminal-raise px-1.5 py-0.5 font-mono text-[10px] text-terminal-muted"
+                  title="Real position, read live from holdings"
+                >
+                  holds {it.post.positionShares.toLocaleString("en-US")} shs
+                  {it.post.positionPnl !== null && (
+                    <span className={it.post.positionPnl >= 0 ? " text-terminal-up" : " text-terminal-down"}>
+                      {" "}
+                      {it.post.positionPnl >= 0 ? "+" : "−"}
+                      {fmtMoney(Math.abs(it.post.positionPnl), 0)}
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span className="rounded bg-terminal-raise px-1.5 py-0.5 font-mono text-[10px] text-terminal-muted/70">
+                  no position
+                </span>
+              )}
+              <span className="ml-auto font-mono text-[10px] text-terminal-muted">
+                {timeAgo(it.post.created_at)}
+              </span>
+              {viewerId === it.post.userId && (
+                <button
+                  type="button"
+                  title="Delete"
+                  onClick={() =>
+                    startTransition(async () => {
+                      await deletePost(it.post.id, symbol);
+                      router.refresh();
+                    })
+                  }
+                  className="text-terminal-muted transition-colors hover:text-terminal-down"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          </li>
+        ) : (
+          <li key={`t${it.trade.id}`} className="space-y-1 px-3 py-2">
+            <p className="text-[13px] leading-snug text-terminal-text">“{it.trade.note}”</p>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px]">
+              {it.trade.username ? (
+                <Link
+                  href={`/u/${it.trade.username}`}
+                  className="font-mono font-bold text-terminal-text hover:text-terminal-accent"
+                >
+                  {it.trade.trader}
+                </Link>
+              ) : (
+                <span className="font-mono font-bold">{it.trade.trader}</span>
+              )}
+              <AiChip username={it.trade.username} />
+              <span
+                className={`num rounded px-1.5 py-0.5 font-mono font-semibold ${
+                  it.trade.side === "buy"
+                    ? "bg-terminal-up/10 text-terminal-up"
+                    : "bg-terminal-down/10 text-terminal-down"
+                }`}
+                title={`The trade behind this thesis — ${it.trade.shares.toLocaleString("en-US")} shs @ ${fmtPrice(it.trade.price)}, on record`}
+              >
+                {it.trade.side === "buy" ? "bought" : "sold"}{" "}
+                {fmtMoney(it.trade.total, it.trade.total >= 1000 ? 0 : 2)}
+              </span>
+              <span className="ml-auto font-mono text-terminal-muted">
+                {timeAgo(it.trade.created_at)}
+              </span>
+            </div>
+          </li>
+        )
+      )}
+    </ul>
+  );
+}

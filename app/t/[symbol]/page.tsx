@@ -19,9 +19,9 @@ import { realizedPnl } from "@/lib/equity";
 import { nextEarningsDate } from "@/lib/xp";
 import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import PulseKeeper from "@/components/PulseKeeper";
-import Discussion from "@/components/Discussion";
+import ThesisBox from "@/components/ThesisBox";
+import ThesesPane from "@/components/ThesesPane";
 import TradingChart from "@/components/TradingChart";
-import ThesisFeed from "@/components/ThesisFeed";
 import HoldersTable from "@/components/HoldersTable";
 import Tabs from "@/components/Tabs";
 import LiveQuote from "@/components/LiveQuote";
@@ -353,6 +353,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 drift: quote.drift,
               }}
             />
+            <div className="min-w-0 space-y-3">
+            <ThesisBox tickerId={t.id} symbol={t.symbol} signedIn={user !== null} />
             <Tabs
               tabs={[
                 {
@@ -377,20 +379,20 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 },
                 {
                   key: "theses",
-                  label: `Theses · ${theses.length}`,
-                  pane: <ThesisFeed theses={theses} bare />,
+                  label: `Theses · ${posts.length + theses.length}`,
+                  pane: (
+                    <ThesesPane
+                      posts={posts}
+                      theses={theses}
+                      symbol={t.symbol}
+                      viewerId={user?.id ?? null}
+                    />
+                  ),
                 },
               ]}
             />
+            </div>
           </div>
-
-          <Discussion
-            posts={posts}
-            tickerId={t.id}
-            symbol={t.symbol}
-            signedIn={user !== null}
-            viewerId={user?.id ?? null}
-          />
         </div>
 
         {/* the rail — trading is always in reach */}
