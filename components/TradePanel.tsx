@@ -3,17 +3,17 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Check } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import type { RevenueEvent } from "@/lib/pricing";
 import {
   executionFillAt,
+  FLOW_TICK_MS,
   MAX_POSITION_FRACTION,
   positionLimit,
   settledPrice,
   SHARES_OUTSTANDING,
 } from "@/lib/pricing";
 import { fmtCountdown, fmtMoney, fmtPct, fmtPrice } from "@/lib/format";
-import { FLOW_TICK_MS } from "@/lib/flow";
 import LivePrice from "@/components/LivePrice";
 
 /** Signed money — on a P&L line the sign is the whole point. */
@@ -30,24 +30,43 @@ function tone(value: number): string {
   return "text-terminal-muted";
 }
 
+function timeAgo(ms: number, now: number): string {
+  const s = Math.max(1, Math.floor((now - ms) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+export interface OwnPrint {
+  side: "buy" | "sell";
+  shares: number;
+  price: number;
+  total: number;
+  at: number;
+}
+
+const USD_CHIPS = [10, 100, 500, 1000];
+const SHARE_CHIPS = [10, 100, 1000];
+const PCT_CHIPS = [25, 50, 75, 100];
+
 /**
- * Buy/sell panel. Estimates use the same executionFillAt the server fills
- * with — anchor × hype × weather × news, walked share by share along the hype
- * curve — so the quote already includes slippage, and BUY AT is a price you
- * actually get. The server re-computes at execution time.
+ * The ticket. One tab for each side, one number, one button.
  *
- * Above the order ticket sits the book: cash, and if you hold the name, the
- * position marked to the settled price with its P&L against your average
- * cost. Same price function as the ticket, same instant, so the two can
- * never disagree.
+ * A buy is entered in dollars and turned into whole shares by walking the
+ * same fill curve the server fills with — so the shares you see are the
+ * shares you get, slippage included. A sell is entered in shares, or as a
+ * slice of what you hold. Under the button: your position marked to the
+ * settled price with its P&L, and your own prints on this name.
  *
  * Why the quote holds still while the header moves: the header rides the
  * shimmer, a sub-percent texture that is a function of the clock. Anything a
  * client can compute ahead of time cannot be a fill price — timing it would
  * be free money — so the ticket prices off the settled tape, which steps
- * when the walk does, every five minutes, and on every print and every
- * revenue event. The countdown under the spread says so, and the numbers
- * flash when they actually move.
+ * when the walk does, every five minutes, and on every print and revenue
+ * event. The footer counts down to the next step.
  */
 export default function TradePanel({
   symbol,
@@ -66,6 +85,7 @@ export default function TradePanel({
   sharesHeld,
   avgCost = 0,
   realized = 0,
+  history = [],
 }: {
   symbol: string;
   /** The server's price at render; unused for maths, kept for callers. */
@@ -77,7 +97,7 @@ export default function TradePanel({
   outstanding?: number;
   /** Shares of it already held across every account. */
   floatHeld?: number;
-  /** Live Stripe revenue changes — quotes and fills price off these too. */
+  /** Live revenue changes — quotes and fills price off these too. */
   events?: RevenueEvent[];
   /** The recorded weather the fill prices off. */
   drift?: number;
@@ -94,27 +114,29 @@ export default function TradePanel({
   avgCost?: number;
   /** Booked P&L on this name from shares already sold. */
   realized?: number;
+  /** Your own prints on this name, newest first. */
+  history?: OwnPrint[];
 }) {
   const router = useRouter();
-  // stored as text so the field can be cleared and retyped freely —
-  // forcing it back to a number on every keystroke is what makes inputs
-  // "impossible to edit"
-  const [sharesText, setSharesText] = useState("10");
+  const [tab, setTab] = useState<"buy" | "sell">("buy");
+  // buys are entered in dollars by default; the toggle switches to shares
+  const [unit, setUnit] = useState<"usd" | "shares">("usd");
+  // stored as text so the field can be cleared and retyped freely
+  const [amountText, setAmountText] = useState("100");
   const [note, setNote] = useState("");
-  const [pending, setPending] = useState<"buy" | "sell" | null>(null);
+  const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [filled, setFilled] = useState(false);
+  const [showPrints, setShowPrints] = useState(false);
   // A fill is instant; the server re-render behind it is not (~2.5s). Without
-  // this the panel still reads "Cash $10,000 · Held 0" after a successful buy,
-  // which is exactly what makes people click Buy a second time.
+  // this the panel still reads the old cash after a successful buy, which is
+  // exactly what makes people click Buy a second time.
   const [fill, setFill] = useState<{
     cash: number;
     held: number;
     avg: number;
     realized: number;
   } | null>(null);
-  // a short lock after a fill: the accidental second click is how one order
-  // became two identical prints
   const [cooling, setCooling] = useState(false);
   const [refreshing, startRefresh] = useTransition();
   useEffect(() => {
@@ -125,8 +147,7 @@ export default function TradePanel({
   const shownHeld = fill ? fill.held : sharesHeld;
   const shownAvg = fill ? fill.avg : avgCost;
   const shownRealized = fill ? fill.realized : realized;
-  // the quote re-prices every second, like the chart — a stale buy price is
-  // the fastest way to make a market feel fake
+  // the quote re-prices every second, like the chart
   const [nowT, setNowT] = useState<number | null>(null);
   useEffect(() => {
     setNowT(Date.now());
@@ -135,8 +156,6 @@ export default function TradePanel({
     }, 1000);
     return () => clearInterval(id);
   }, []);
-
-  const shares = Math.floor(Number(sharesText) || 0);
 
   if (!signedIn) {
     return (
@@ -166,7 +185,6 @@ export default function TradePanel({
       events,
       drift
     );
-  // the mark: the settled price this instant — what the ticket is built on
   const mark = settledPrice(
     mrr,
     sentiment,
@@ -176,19 +194,6 @@ export default function TradePanel({
     events,
     drift
   );
-  const buyEst = shares >= 1 ? est("buy", shares) : null;
-  const sellEst = shares >= 1 ? est("sell", shares) : null;
-  const buyImpact = buyEst && mark > 0 ? buyEst.avgPrice / mark - 1 : 0;
-  const sellImpact = sellEst && mark > 0 ? sellEst.avgPrice / mark - 1 : 0;
-  const floatShare = outstanding > 0 ? shares / outstanding : 0;
-  // the next step of the walk: one tick after the last recorded one
-  const nextTickAt = driftAt ? Date.parse(driftAt) + FLOW_TICK_MS : null;
-  const untilTick = nextTickAt !== null ? nextTickAt - quoteT : null;
-  // quote the spread for the SIZE being traded — a 1-share spread rounds to
-  // the same cent on both sides and reads as broken
-  const quoteSize = Math.max(1, shares);
-  const unitBuy = est("buy", quoteSize);
-  const unitSell = est("sell", quoteSize);
 
   // Two limits, both enforced server-side too: the float is finite, and no
   // single account may hold more than MAX_POSITION_FRACTION of it.
@@ -196,9 +201,31 @@ export default function TradePanel({
   const roomInLimit = Math.max(0, limit - shownHeld);
   const roomInFloat = Math.max(0, outstanding - floatHeld);
   const buyCeiling = Math.min(roomInLimit, roomInFloat);
-  // what the buttons will actually send — the label says the same number
-  const buyQty = Math.min(shares, buyCeiling);
-  const sellQty = Math.min(shares, shownHeld);
+
+  /** The most shares a sum of money buys, walking the fill curve. */
+  function sharesFor(dollars: number): number {
+    if (!(dollars > 0) || mrr <= 0 || buyCeiling < 1) return 0;
+    let lo = 0;
+    let hi = buyCeiling;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (est("buy", mid).total <= dollars) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  }
+
+  const amount = Number(amountText) || 0;
+  const purse = shownCash ?? 0;
+  const shares =
+    tab === "sell"
+      ? Math.min(Math.floor(amount), shownHeld)
+      : unit === "usd"
+        ? sharesFor(Math.min(amount, purse))
+        : Math.min(Math.floor(amount), buyCeiling, sharesFor(purse));
+  const quote = shares >= 1 ? est(tab, shares) : null;
+  const impact = quote && mark > 0 ? quote.avgPrice / mark - 1 : 0;
+  const overCash = tab === "buy" && unit === "usd" && amount > purse + 0.005;
 
   // the position, marked
   const value = shownHeld * mark;
@@ -206,49 +233,37 @@ export default function TradePanel({
   const unrealized = value - cost;
   const unrealizedPct = cost > 0 ? unrealized / cost : 0;
   const todayMove = dayBasePrice > 0 ? shownHeld * (mark - dayBasePrice) : 0;
-  const todayPct = dayBasePrice > 0 ? mark / dayBasePrice - 1 : 0;
 
-  function maxAffordable(): number {
-    const purse = shownCash;
-    if (purse === null || purse <= 0 || mrr <= 0 || buyCeiling < 1) return 0;
-    let lo = 0;
-    let hi = buyCeiling;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      if (est("buy", mid).total <= purse) lo = mid;
-      else hi = mid - 1;
-    }
-    return lo;
-  }
+  // the next step of the walk: one tick after the last recorded one
+  const nextTickAt = driftAt ? Date.parse(driftAt) + FLOW_TICK_MS : null;
+  const untilTick = nextTickAt !== null ? nextTickAt - quoteT : null;
 
-  async function trade(side: "buy" | "sell") {
-    // both sides clamp to what's actually possible — matching the labels
-    const qty = side === "sell" ? sellQty : buyQty;
-    if (qty < 1) return;
-    setPending(side);
+  async function trade() {
+    if (shares < 1) return;
+    const side = tab;
+    setPending(true);
     setMessage(null);
     try {
       const res = await fetch("/api/trade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, side, shares: qty, note: note.trim() }),
+        body: JSON.stringify({ symbol, side, shares, note: note.trim() }),
       });
       const json = await res.json();
       if (!res.ok) {
         setMessage(json.error ?? "Trade failed.");
       } else {
         setMessage(
-          `${side === "buy" ? "Bought" : "Sold"} ${qty.toLocaleString("en-US")} × $${symbol} @ avg ${fmtPrice(json.price)}`
+          `${side === "buy" ? "Bought" : "Sold"} ${shares.toLocaleString("en-US")} × $${symbol} @ avg ${fmtPrice(json.price)}`
         );
         setNote("");
         setFilled(true);
         setTimeout(() => setFilled(false), 1200);
         setCooling(true);
         setTimeout(() => setCooling(false), 1200);
-        // show the new position immediately, then let the server confirm it.
-        // The ledger's own rule: a buy blends into the average cost, a sell
-        // books the difference against it and leaves the average alone.
-        const nextHeld = shownHeld + (side === "buy" ? qty : -qty);
+        // the ledger's own rule: a buy blends into the average cost, a sell
+        // books the difference against it and leaves the average alone
+        const nextHeld = shownHeld + (side === "buy" ? shares : -shares);
         const nextAvg =
           side === "buy"
             ? (shownHeld * shownAvg + Number(json.total)) / Math.max(1, nextHeld)
@@ -256,241 +271,199 @@ export default function TradePanel({
               ? shownAvg
               : 0;
         setFill({
-          cash:
-            (shownCash ?? 0) +
-            (side === "buy" ? -Number(json.total) : Number(json.total)),
+          cash: purse + (side === "buy" ? -Number(json.total) : Number(json.total)),
           held: nextHeld,
           avg: nextAvg,
           realized:
             shownRealized +
-            (side === "sell" ? Number(json.total) - qty * shownAvg : 0),
+            (side === "sell" ? Number(json.total) - shares * shownAvg : 0),
         });
         startRefresh(() => router.refresh());
       }
     } catch {
       setMessage("Network error — try again.");
     } finally {
-      setPending(null);
+      setPending(false);
     }
   }
 
-  const busy = pending !== null || refreshing || cooling;
-  const buyLabel =
-    pending === "buy" || (refreshing && filled)
-      ? "…"
-      : buyCeiling < 1
+  const busy = pending || refreshing || cooling;
+  const label = pending
+    ? "…"
+    : tab === "buy"
+      ? buyCeiling < 1
         ? roomInLimit < 1
-          ? "At limit"
-          : "Float held"
-        : shares >= 1
-          ? `Buy ${buyQty.toLocaleString("en-US")}`
-          : "Buy";
-  const sellLabel =
-    pending === "sell"
-      ? "…"
-      : shares >= 1 && shownHeld >= 1
-        ? `Sell ${sellQty.toLocaleString("en-US")}`
-        : "Sell";
+          ? "At the position limit"
+          : "Float fully held"
+        : `Buy $${symbol}`
+      : shownHeld < 1
+        ? "Nothing to sell"
+        : `Sell $${symbol}`;
+
+  const chipClass = (active: boolean) =>
+    `rounded-md border px-2 py-1 font-mono text-[11px] transition-colors ${
+      active
+        ? "border-terminal-accent/60 bg-terminal-accent/10 text-terminal-accent"
+        : "border-terminal-line bg-terminal-bg text-terminal-muted hover:border-terminal-muted hover:text-terminal-text"
+    }`;
 
   return (
     <div
-      className={`panel space-y-3 p-4 transition-shadow duration-500 ${
+      className={`panel space-y-3 p-3 transition-shadow duration-500 ${
         filled ? "shadow-[0_0_0_1.5px_rgba(34,197,94,0.6)]" : ""
       }`}
     >
-      {/* ── the book ─────────────────────────────────────────────────── */}
-      <div className="flex items-baseline justify-between">
-        <span className="microlabel">Cash</span>
-        <span className="num font-mono text-sm font-semibold">
-          {shownCash !== null ? fmtMoney(shownCash) : "—"}
-        </span>
-      </div>
-
-      {shownHeld > 0 ? (
-        <div
-          className={`rounded-md border border-terminal-line border-l-2 bg-terminal-raise/40 px-3 py-2.5 ${
-            unrealized >= 0 ? "border-l-terminal-up" : "border-l-terminal-down"
-          }`}
-        >
-          <div className="flex items-baseline justify-between">
-            <span className="microlabel !text-terminal-text">Your position</span>
-            <span className="num font-mono text-[11px] text-terminal-muted">
-              {shownHeld.toLocaleString("en-US")} shs · avg {fmtPrice(shownAvg)}
-            </span>
-          </div>
-          <div className="mt-1.5 grid grid-cols-2 gap-x-3">
-            <div>
-              <div className="microlabel">Value</div>
-              <div className="num font-mono text-base font-bold">
-                {fmtMoney(value)}
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="microlabel">P&amp;L</div>
-              <div
-                className={`num font-mono text-base font-bold ${tone(unrealized)}`}
-              >
-                {fmtSigned(unrealized)}
-              </div>
-              <div className={`num font-mono text-[11px] ${tone(unrealized)}`}>
-                {fmtPct(unrealizedPct)} on cost
-              </div>
-            </div>
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 font-mono text-[11px] text-terminal-muted">
-            <span className="num">mark {fmtPrice(mark)}</span>
-            {dayBasePrice > 0 && (
-              <span className="num">
-                today{" "}
-                <span className={tone(todayMove)}>
-                  {fmtSigned(todayMove)} ({fmtPct(todayPct)})
-                </span>
-              </span>
-            )}
-          </div>
-          {Math.abs(shownRealized) > 0.005 && (
-            <div className="num mt-0.5 font-mono text-[11px] text-terminal-muted">
-              realized{" "}
-              <span className={tone(shownRealized)}>
-                {fmtSigned(shownRealized)}
-              </span>{" "}
-              on shares already sold
-            </div>
-          )}
-        </div>
-      ) : Math.abs(shownRealized) > 0.005 ? (
-        <p className="num font-mono text-[11px] text-terminal-muted">
-          No position · realized{" "}
-          <span className={tone(shownRealized)}>{fmtSigned(shownRealized)}</span>{" "}
-          on ${symbol} so far
-        </p>
-      ) : null}
-
-      {/* ── the ticket ───────────────────────────────────────────────── */}
-      {/* the spread — straight out of the fill curve, no market-maker theater */}
-      <div className="grid grid-cols-3 overflow-hidden rounded-md border border-terminal-line font-mono text-xs">
-        <div className="border-r border-terminal-line bg-terminal-down/[0.06] px-2.5 py-1.5">
-          <div className="microlabel !tracking-[0.12em]">Sell at</div>
-          <div className="num mt-0.5 font-semibold text-terminal-down">
-            <LivePrice
-              value={unitSell.avgPrice}
-              formatted={fmtPrice(unitSell.avgPrice)}
-            />
-          </div>
-        </div>
-        <div className="border-r border-terminal-line px-2.5 py-1.5 text-center">
-          <div className="microlabel !tracking-[0.12em]">Mark</div>
-          <div className="num mt-0.5 font-semibold text-terminal-text">
-            <LivePrice value={mark} formatted={fmtPrice(mark)} />
-          </div>
-        </div>
-        <div className="bg-terminal-up/[0.06] px-2.5 py-1.5 text-right">
-          <div className="microlabel !tracking-[0.12em]">Buy at</div>
-          <div className="num mt-0.5 font-semibold text-terminal-up">
-            <LivePrice
-              value={unitBuy.avgPrice}
-              formatted={fmtPrice(unitBuy.avgPrice)}
-            />
-          </div>
-        </div>
-      </div>
-      {/* the quote steps with the walk, not with the shimmer — say when */}
-      <p className="-mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 font-mono text-[10px] text-terminal-muted">
-        <span>
-          {quoteSize > 1
-            ? `avg fill for ${quoteSize.toLocaleString("en-US")} shs · settled`
-            : "settled price · steps every 5 min"}
-        </span>
-        {untilTick !== null && (
-          <span className="num">
-            {untilTick > 0
-              ? `next tick ${fmtCountdown(untilTick)}`
-              : "next tick any second"}
-          </span>
-        )}
-      </p>
-
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          inputMode="numeric"
-          value={sharesText}
-          onChange={(e) =>
-            setSharesText(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))
-          }
-          placeholder="shares"
-          className="input num w-24 font-mono"
-          aria-label="Shares"
-        />
-        <span className="text-xs leading-snug text-terminal-muted">
-          <span className="num block font-mono">
-            buy ≈ {buyEst ? fmtMoney(buyEst.total) : "—"}
-          </span>
-          <span className="num block font-mono">
-            sell ≈ {sellEst ? fmtMoney(sellEst.total) : "—"}
-          </span>
-        </span>
-      </div>
-
-      {/* size chips — nobody should be arrow-clicking share counts */}
-      <div className="flex flex-wrap gap-1.5">
-        {[10, 100, 1000].map((n) => (
-          <button
-            key={n}
-            type="button"
-            onClick={() => setSharesText(String(n))}
-            className={`rounded border px-2 py-0.5 font-mono text-[11px] transition-colors ${
-              shares === n
-                ? "border-terminal-accent/60 bg-terminal-accent/10 text-terminal-accent"
-                : "border-terminal-line text-terminal-muted hover:border-terminal-muted hover:text-terminal-text"
-            }`}
-          >
-            {n >= 1000 ? `${n / 1000}k` : n}
-          </button>
-        ))}
+      {/* ── side ─────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-1 rounded-md bg-terminal-bg p-1">
         <button
           type="button"
-          onClick={() => {
-            const max = maxAffordable();
-            if (max > 0) setSharesText(String(max));
-          }}
-          title="The most your cash covers, slippage included"
-          className="rounded border border-terminal-line px-2 py-0.5 font-mono text-[11px] text-terminal-muted transition-colors hover:border-terminal-up/60 hover:text-terminal-up"
+          onClick={() => setTab("buy")}
+          className={`rounded py-1.5 text-sm font-semibold transition-colors ${
+            tab === "buy"
+              ? "bg-terminal-up/20 text-terminal-up"
+              : "text-terminal-muted hover:text-terminal-text"
+          }`}
         >
-          max buy
+          Buy
         </button>
-        {shownHeld > 0 && (
+        <button
+          type="button"
+          onClick={() => setTab("sell")}
+          className={`rounded py-1.5 text-sm font-semibold transition-colors ${
+            tab === "sell"
+              ? "bg-terminal-down/20 text-terminal-down"
+              : "text-terminal-muted hover:text-terminal-text"
+          }`}
+        >
+          Sell
+        </button>
+      </div>
+
+      {/* ── amount ───────────────────────────────────────────────────── */}
+      <div
+        className={`rounded-md border bg-terminal-bg px-3 py-2 ${
+          overCash ? "border-terminal-amber/60" : "border-terminal-line focus-within:border-terminal-accent"
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          {tab === "buy" && unit === "usd" && (
+            <span className="font-mono text-xl text-terminal-muted">$</span>
+          )}
+          <input
+            type="text"
+            inputMode="decimal"
+            value={amountText}
+            onChange={(e) =>
+              setAmountText(
+                e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1").slice(0, 9)
+              )
+            }
+            placeholder="0"
+            aria-label={tab === "sell" || unit === "shares" ? "Shares" : "Amount"}
+            className="num w-full bg-transparent font-mono text-2xl font-semibold text-terminal-text outline-none placeholder:text-terminal-muted/50"
+          />
+          {tab === "buy" ? (
+            <button
+              type="button"
+              onClick={() => {
+                setUnit((u) => (u === "usd" ? "shares" : "usd"));
+                setAmountText("");
+              }}
+              className="shrink-0 rounded border border-terminal-line px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-terminal-muted hover:text-terminal-text"
+              title="Enter the order in dollars or in shares"
+            >
+              {unit === "usd" ? "usd ⇄ shs" : "shs ⇄ usd"}
+            </button>
+          ) : (
+            <span className="shrink-0 font-mono text-[11px] uppercase tracking-wider text-terminal-muted">
+              shs
+            </span>
+          )}
+        </div>
+        <div className="num mt-0.5 flex items-baseline justify-between font-mono text-[11px] text-terminal-muted">
+          <span>
+            {tab === "buy" && unit === "usd"
+              ? shares >= 1
+                ? `≈ ${shares.toLocaleString("en-US")} shs @ ${fmtPrice(quote!.avgPrice)} avg`
+                : "—"
+              : quote
+                ? `≈ ${fmtMoney(quote.total)} @ ${fmtPrice(quote.avgPrice)} avg`
+                : "—"}
+          </span>
+          {quote && Math.abs(impact) > 0.005 && (
+            <span className={tab === "buy" ? "text-terminal-amber" : "text-terminal-amber"}>
+              {(Math.abs(impact) * 100).toFixed(1)}% {impact > 0 ? "above" : "below"} mark
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── quick sizes ──────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-1.5">
+        {tab === "sell"
+          ? PCT_CHIPS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                disabled={shownHeld < 1}
+                onClick={() =>
+                  setAmountText(String(Math.max(1, Math.floor((shownHeld * p) / 100))))
+                }
+                className={chipClass(shownHeld > 0 && shares === Math.max(1, Math.floor((shownHeld * p) / 100)))}
+              >
+                {p}%
+              </button>
+            ))
+          : unit === "usd"
+            ? USD_CHIPS.map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setAmountText(String(d))}
+                  className={chipClass(amount === d)}
+                >
+                  ${d.toLocaleString("en-US")}
+                </button>
+              ))
+            : SHARE_CHIPS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setAmountText(String(n))}
+                  className={chipClass(amount === n)}
+                >
+                  {n >= 1000 ? `${n / 1000}k` : n}
+                </button>
+              ))}
+        {tab === "buy" && (
           <button
             type="button"
-            onClick={() => setSharesText(String(shownHeld))}
-            title="Everything you hold"
-            className="rounded border border-terminal-line px-2 py-0.5 font-mono text-[11px] text-terminal-muted transition-colors hover:border-terminal-down/60 hover:text-terminal-down"
+            onClick={() =>
+              setAmountText(
+                unit === "usd" ? String(Math.floor(purse)) : String(sharesFor(purse))
+              )
+            }
+            title="The most your cash covers, slippage included"
+            className={chipClass(false)}
           >
-            all {shownHeld.toLocaleString("en-US")}
+            max
           </button>
         )}
       </div>
 
-      {shares >= 1 && (buyImpact > 0.005 || sellImpact < -0.005) && (
-        <p className="font-mono text-[11px] leading-snug text-terminal-muted">
-          size: {shares.toLocaleString("en-US")} shs is{" "}
-          {(floatShare * 100).toFixed(floatShare >= 0.1 ? 0 : 1)}% of the
-          float. A buy this big fills{" "}
-          <span className="text-terminal-up">
-            {(buyImpact * 100).toFixed(1)}% above
-          </span>{" "}
-          the mark on average, a sell{" "}
-          <span className="text-terminal-down">
-            {(-sellImpact * 100).toFixed(1)}% below
-          </span>{" "}
-          — the price moves under the order, and a round trip washes.
-        </p>
-      )}
-      {shares >= 1 && buyCeiling >= 1 && shares > buyCeiling && (
+      <div className="num flex items-baseline justify-between font-mono text-[11px] text-terminal-muted">
+        <span>
+          {tab === "buy"
+            ? `${shownCash !== null ? fmtMoney(shownCash) : "—"} available`
+            : `${shownHeld.toLocaleString("en-US")} shs · ${fmtMoney(value)} available`}
+        </span>
+        <span>
+          mark <LivePrice value={mark} formatted={fmtPrice(mark)} />
+        </span>
+      </div>
+      {overCash && (
         <p className="font-mono text-[11px] text-terminal-amber">
-          {roomInLimit < roomInFloat
-            ? `position limit: ${buyCeiling.toLocaleString("en-US")} more is all this account may hold`
-            : `float: only ${buyCeiling.toLocaleString("en-US")} shares are left to buy`}
+          that is more than your cash — sized to {fmtMoney(purse)}
         </p>
       )}
 
@@ -499,37 +472,17 @@ export default function TradePanel({
         value={note}
         onChange={(e) => setNote(e.target.value)}
         maxLength={140}
-        placeholder="your thesis (optional — goes on the record)"
+        placeholder="thesis (optional — goes on the record)"
         className="input text-xs"
       />
 
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          onClick={() => trade("buy")}
-          disabled={busy || buyQty < 1}
-          className="btn-buy"
-        >
-          {buyLabel}
-        </button>
-        <button
-          onClick={() => trade("sell")}
-          disabled={busy || sellQty < 1}
-          className="btn-sell"
-        >
-          {sellLabel}
-        </button>
-      </div>
-
-      <p className="font-mono text-[11px] text-terminal-muted">
-        Float {outstanding.toLocaleString("en-US")} shs · one account may hold{" "}
-        {Math.round(MAX_POSITION_FRACTION * 100)}% of it (
-        {limit.toLocaleString("en-US")} shs)
-        {shownHeld > 0
-          ? roomInLimit < 1
-            ? " — you are at the limit"
-            : ` — you hold ${shownHeld.toLocaleString("en-US")}, room for ${roomInLimit.toLocaleString("en-US")} more`
-          : ""}
-      </p>
+      <button
+        onClick={trade}
+        disabled={busy || shares < 1}
+        className={`${tab === "buy" ? "btn-buy" : "btn-sell"} w-full py-2.5 text-base`}
+      >
+        {label}
+      </button>
 
       {message && (
         <p className="flex items-center gap-1 font-mono text-xs text-terminal-muted">
@@ -537,10 +490,95 @@ export default function TradePanel({
           {message}
         </p>
       )}
-      <p className="text-[11px] leading-snug text-terminal-muted/70">
-        Play money only. Orders fill along the hype curve (no cap — hype decays
-        daily) — revenue is the anchor, and pumping your own bag round-trips to
-        zero.
+
+      {/* ── the book ─────────────────────────────────────────────────── */}
+      {shownHeld > 0 && (
+        <div
+          className={`rounded-md border border-terminal-line border-l-2 bg-terminal-raise/40 px-3 py-2 ${
+            unrealized >= 0 ? "border-l-terminal-up" : "border-l-terminal-down"
+          }`}
+        >
+          <div className="flex items-baseline justify-between">
+            <span className="microlabel !text-terminal-text">Your position</span>
+            <span className={`num font-mono text-sm font-bold ${tone(unrealized)}`}>
+              {fmtSigned(unrealized)}{" "}
+              <span className="text-[11px] font-semibold">({fmtPct(unrealizedPct)})</span>
+            </span>
+          </div>
+          <div className="num mt-0.5 flex flex-wrap items-baseline justify-between gap-x-3 font-mono text-[11px] text-terminal-muted">
+            <span>
+              {shownHeld.toLocaleString("en-US")} shs · {fmtMoney(value)} · avg{" "}
+              {fmtPrice(shownAvg)}
+            </span>
+            {dayBasePrice > 0 && (
+              <span>
+                today <span className={tone(todayMove)}>{fmtSigned(todayMove)}</span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {(history.length > 0 || Math.abs(shownRealized) > 0.005) && (
+        <div className="rounded-md border border-terminal-line">
+          <button
+            type="button"
+            onClick={() => setShowPrints((v) => !v)}
+            className="flex w-full items-center justify-between px-3 py-1.5 text-left font-mono text-[11px] text-terminal-muted hover:text-terminal-text"
+          >
+            <span>
+              Your trades ({history.length}) · realized{" "}
+              <span className={tone(shownRealized)}>{fmtSigned(shownRealized)}</span>
+            </span>
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${showPrints ? "rotate-180" : ""}`}
+            />
+          </button>
+          {showPrints && history.length > 0 && (
+            <ul className="max-h-40 divide-y divide-terminal-line/40 overflow-y-auto border-t border-terminal-line">
+              {history.map((h, i) => (
+                <li
+                  key={`${h.at}-${i}`}
+                  className="num flex items-baseline justify-between px-3 py-1 font-mono text-[11px]"
+                >
+                  <span>
+                    <span
+                      className={`font-bold uppercase ${
+                        h.side === "buy" ? "text-terminal-up" : "text-terminal-down"
+                      }`}
+                    >
+                      {h.side}
+                    </span>{" "}
+                    {h.shares.toLocaleString("en-US")} @ {fmtPrice(h.price)}
+                  </span>
+                  <span className="text-terminal-muted">
+                    {fmtMoney(h.total)} · {timeAgo(h.at, quoteT)} ago
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* ── footer ───────────────────────────────────────────────────── */}
+      <p className="num flex flex-wrap items-baseline justify-between gap-x-3 font-mono text-[10px] text-terminal-muted">
+        <span>settled price · steps every 5 min</span>
+        {untilTick !== null && (
+          <span>
+            {untilTick > 0
+              ? `next tick ${fmtCountdown(untilTick)}`
+              : "next tick any second"}
+          </span>
+        )}
+      </p>
+      <p className="text-[10px] leading-snug text-terminal-muted/70">
+        Play money. Float {outstanding.toLocaleString("en-US")} shs, one account
+        may hold {Math.round(MAX_POSITION_FRACTION * 100)}% of it
+        {shownHeld > 0 && roomInLimit < 1 ? " — you are at the limit" : ""}.
+        Orders fill along the hype curve, so size moves the price under you and a
+        round trip washes.
       </p>
     </div>
   );

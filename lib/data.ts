@@ -506,6 +506,13 @@ export interface DayStats {
   volumeShares: number;
   volumeNotional: number;
   trades: number;
+  /** Today's order flow, split by side. */
+  buys: number;
+  sells: number;
+  buyNotional: number;
+  sellNotional: number;
+  buyers: number;
+  sellers: number;
 }
 
 /** One ticker page's worth of data. */
@@ -596,7 +603,7 @@ export async function getTickerPage(symbol: string): Promise<{
     admin.from("holdings").select("shares").eq("ticker_id", ticker.id),
     admin
       .from("trades")
-      .select("price, shares, total")
+      .select("price, shares, total, side, user_id")
       .eq("ticker_id", ticker.id)
       .gte("created_at", todayStart),
     // every print, for the chart's volume histogram at any granularity
@@ -632,7 +639,11 @@ export async function getTickerPage(symbol: string): Promise<{
     price: number;
     shares: number;
     total: number;
+    side: "buy" | "sell";
+    user_id: string;
   }[];
+  const buysToday = todayTrades.filter((t) => t.side === "buy");
+  const sellsToday = todayTrades.filter((t) => t.side === "sell");
   const prevSnap = [...snapshots]
     .reverse()
     .find((s) => s.day < todayStart.slice(0, 10));
@@ -654,6 +665,12 @@ export async function getTickerPage(symbol: string): Promise<{
     volumeShares: todayTrades.reduce((s, t) => s + Number(t.shares), 0),
     volumeNotional: todayTrades.reduce((s, t) => s + Number(t.total), 0),
     trades: todayTrades.length,
+    buys: buysToday.length,
+    sells: sellsToday.length,
+    buyNotional: buysToday.reduce((s, t) => s + Number(t.total), 0),
+    sellNotional: sellsToday.reduce((s, t) => s + Number(t.total), 0),
+    buyers: new Set(buysToday.map((t) => t.user_id)).size,
+    sellers: new Set(sellsToday.map((t) => t.user_id)).size,
   };
 
   // same rule as the price series: today's row is rewritten all day, so its

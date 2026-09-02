@@ -11,22 +11,21 @@ import {
   tickerExists,
 } from "@/lib/data";
 import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
-import { fmtCompact, fmtMonth, fmtPct, currentMonthISO } from "@/lib/format";
+import { fmtCompact, fmtMonth, currentMonthISO } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import { changeFraction } from "@/lib/pricing";
 import { openingTimeframe } from "@/lib/candles";
 import { realizedPnl } from "@/lib/equity";
 import { nextEarningsDate } from "@/lib/xp";
 import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
-import CountdownChip from "@/components/CountdownChip";
 import PulseKeeper from "@/components/PulseKeeper";
 import Discussion from "@/components/Discussion";
 import TradingChart from "@/components/TradingChart";
 import ThesisFeed from "@/components/ThesisFeed";
 import HoldersTable from "@/components/HoldersTable";
 import LiveQuote from "@/components/LiveQuote";
-import LiveMarketCap from "@/components/LiveMarketCap";
-import TradePanel from "@/components/TradePanel";
+import TradePanel, { type OwnPrint } from "@/components/TradePanel";
+import AboutCard from "@/components/AboutCard";
 import ShareButton from "@/components/ShareButton";
 import ChangePct from "@/components/ChangePct";
 import LogoTile from "@/components/LogoTile";
@@ -108,6 +107,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
   let sharesHeld = 0;
   let avgCost = 0;
   let realized = 0;
+  let history: OwnPrint[] = [];
   let delistRequested = false;
   let watching = false;
   let myVote: 1 | -1 | null = null;
@@ -154,6 +154,23 @@ export default async function TickerPage({ params, searchParams }: Props) {
     cash = profileRes.data ? Number(profileRes.data.cash) : null;
     sharesHeld = holdingRes.data ? Number(holdingRes.data.shares) : 0;
     avgCost = holdingRes.data ? Number(holdingRes.data.avg_cost) : 0;
+    history = (
+      (myTradesRes.data ?? []) as {
+        side: "buy" | "sell";
+        shares: number;
+        price: number;
+        total: number;
+        created_at: string;
+      }[]
+    )
+      .map((tr) => ({
+        side: tr.side,
+        shares: Number(tr.shares),
+        price: Number(tr.price),
+        total: Number(tr.total),
+        at: Date.parse(tr.created_at),
+      }))
+      .reverse();
     realized = realizedPnl(
       (
         (myTradesRes.data ?? []) as {
@@ -282,113 +299,6 @@ export default async function TickerPage({ params, searchParams }: Props) {
             initialTimeframe={openingTimeframe(renderedAt - earliest)}
           />
 
-          {/* the microstructure block — all of it real, none of it decorative */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            {([
-              [
-                "Mkt cap",
-                <LiveMarketCap
-                  symbol={t.symbol}
-                  mrr={quote.liveMrr}
-                  sentiment={Number(t.sentiment)}
-                  series={series}
-                  multiple={quote.multiple}
-                  shares={quote.shares}
-                  events={revenueEvents}
-                  drift={quote.drift}
-                  renderedAt={renderedAt}
-                />,
-              ],
-              [
-                // "MRR" was only ever true for subscription businesses, and
-                // the anchor is every payment now — a renewal, a first
-                // charge, a one-time licence all count the same
-                quote.revenueSource === "payments"
-                  ? "Revenue / mo"
-                  : quote.revenueSource === "subscriptions"
-                    ? "MRR (live)"
-                    : "MRR (reported)",
-                quote.liveMrr > 0 ? fmtCompact(quote.liveMrr) : "—",
-              ],
-              [
-                quote.revenueSource === "payments" ? "Revenue / yr" : "ARR",
-                fmtCompact(quote.arr),
-              ],
-              [
-                "Multiple",
-                `${quote.multiple.toFixed(1)}× ${quote.revenueSource === "payments" ? "rev" : "ARR"}`,
-              ],
-              ["Float", `${quote.shares.toLocaleString("en-US")} shs`],
-              [
-                "Volume today",
-                dayStats.volumeShares > 0
-                  ? `${dayStats.volumeShares.toLocaleString("en-US")} shs`
-                  : "0",
-              ],
-              [
-                "Float held",
-                `${Math.min(100, Math.round((floatHeld / quote.shares) * 100))}%`,
-              ],
-            ] as [string, React.ReactNode][]).map(([label, value]) => (
-              <div key={label} className="panel px-3 py-2">
-                <div className="microlabel">{label}</div>
-                <div className="num mt-0.5 font-mono text-sm font-semibold">
-                  {value}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {Math.abs(quote.unreported) > 0.0005 && latestUpdate && (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-terminal-line bg-terminal-panel px-3 py-2 text-xs">
-              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-terminal-up" />
-              <span className="microlabel !text-terminal-text">
-                Unreported revenue
-              </span>
-              <span className="text-terminal-muted">
-                Stripe says{" "}
-                <b className="num font-mono text-terminal-amber">
-                  {fmtCompact(quote.liveMrr)}
-                </b>{" "}
-                right now — {fmtPct(quote.unreported)} against the{" "}
-                {fmtMonth(latestUpdate.month)} report of{" "}
-                {fmtCompact(Number(latestUpdate.mrr))}. The price already
-                trades on it; the report is the record.
-              </span>
-            </div>
-          )}
-
-          {latestUpdate && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-terminal-muted">
-              <span>
-                Latest MRR ({fmtMonth(latestUpdate.month)}):{" "}
-                {latestUpdate.source === "stripe" ? (
-                  <span className="inline-flex items-center gap-1 font-semibold text-terminal-amber">
-                    <Zap size={11} fill="currentColor" strokeWidth={0} />
-                    Stripe-verified — computed from active subscriptions,
-                    re-read every 5 minutes
-                  </span>
-                ) : latestUpdate.source === "self-reported" ? (
-                  <span className="text-terminal-amber">
-                    self-reported by the founder (honor system)
-                  </span>
-                ) : (
-                  <span>
-                    curated from public build-in-public posts — founder
-                    hasn&apos;t claimed this ticker yet
-                  </span>
-                )}
-              </span>
-              {mom !== null && (
-                <span
-                  className={`num font-mono ${mom >= 0 ? "text-terminal-up" : "text-terminal-down"}`}
-                >
-                  {fmtPct(mom)} MoM {mom >= 0 ? "beat" : "miss"}
-                </span>
-              )}
-            </div>
-          )}
-
         </div>
 
         {/* the rail — trading is always in reach */}
@@ -410,6 +320,36 @@ export default async function TickerPage({ params, searchParams }: Props) {
             sharesHeld={sharesHeld}
             avgCost={avgCost}
             realized={realized}
+            history={history}
+          />
+          <AboutCard
+            ticker={t}
+            series={series}
+            events={revenueEvents}
+            liveMrr={quote.liveMrr}
+            sentiment={Number(t.sentiment)}
+            multiple={quote.multiple}
+            shares={quote.shares}
+            drift={quote.drift}
+            price={quote.price}
+            arr={quote.arr}
+            revenueSource={quote.revenueSource}
+            latestReport={
+              latestUpdate
+                ? {
+                    month: latestUpdate.month,
+                    mrr: Number(latestUpdate.mrr),
+                    source: latestUpdate.source,
+                  }
+                : null
+            }
+            mom={mom}
+            dayStats={dayStats}
+            floatHeld={floatHeld}
+            holders={holdersCount}
+            earliest={earliest}
+            renderedAt={renderedAt}
+            nextEarningsAt={t.stripe_verified ? nextEarningsDate().toISOString() : null}
           />
           <VoteBar
             tickerId={t.id}
@@ -419,27 +359,6 @@ export default async function TickerPage({ params, searchParams }: Props) {
             myVote={myVote}
             signedIn={user !== null}
           />
-          {latestUpdate && (
-            <div className="panel space-y-1 p-3">
-              <div className="microlabel">Next earnings</div>
-              {t.stripe_verified ? (
-                <>
-                  <CountdownChip
-                    target={nextEarningsDate().toISOString()}
-                    prefix=""
-                  />
-                  <p className="text-[11px] leading-snug text-terminal-muted">
-                    Stripe re-syncs automatically — the anchor moves the moment
-                    it lands.
-                  </p>
-                </>
-              ) : (
-                <p className="font-mono text-sm">
-                  ~{nextReportLabel(latestUpdate.month)}
-                </p>
-              )}
-            </div>
-          )}
           <section className="panel">
             <div className="flex items-baseline justify-between border-b border-terminal-line px-3 py-2">
               <h2 className="microlabel">Recent trades</h2>
