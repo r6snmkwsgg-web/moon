@@ -60,3 +60,51 @@ describe("composeThesis", () => {
     expect(bull.length).toBeLessThanOrEqual(280);
   });
 });
+
+describe("naming the rugger", () => {
+  const analyst = { ...generatePersona("v", 3), voice: "analyst" as Voice };
+  const seeded = (n: number) => seededRng(`rug${n}`);
+  const rugged: Situation = {
+    symbol: "NTFY",
+    side: "sell",
+    reason: "panic",
+    edgePct: 12,
+    change1hPct: -11.1,
+    change24hPct: 40,
+    change15mPct: -11.1,
+    shaken: "down",
+    culprit: "@hello",
+    culpritAmt: 28_200,
+    culpritPct: 6.5,
+    price: 41.8,
+    fair: 46.8,
+    mrr: 5_483,
+  };
+
+  it("a panic sell names who did it, with the size", () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 40; i++) {
+      seen.add(composeThesis(analyst, rugged, seeded(100 + i)));
+    }
+    const named = [...seen].filter((l) => l.includes("@hello"));
+    expect(named.length).toBeGreaterThan(seen.size * 0.6);
+    expect([...seen].some((l) => l.includes("$28,200") || l.includes("6.5%"))).toBe(true);
+  });
+
+  it("a standalone take on a rugged name vents instead of reciting the multiple", () => {
+    const take = composeThesis(analyst, { ...rugged, side: null, reason: "take" }, seeded(5));
+    expect(take).toMatch(/hello/);
+    expect(take).not.toMatch(/fair value|multiple/i);
+  });
+
+  it("a shout stays a shout in the degen voice", () => {
+    const line = inVoice("WHO ELSE JUST GOT RUGGED BY @hello ON $NTFY", "degen", "sell", seeded(9));
+    expect(line).toMatch(/RUGGED/);
+  });
+
+  it("without a name the reaction is still a reaction", () => {
+    const line = composeThesis(analyst, { ...rugged, culprit: null }, seeded(3));
+    expect(line).not.toMatch(/someone rugged|@/);
+    expect(line.length).toBeGreaterThan(10);
+  });
+});

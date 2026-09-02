@@ -22,6 +22,16 @@ export interface Situation {
   change24hPct: number;
   /** The last quarter hour — what a panic is about. */
   change15mPct?: number;
+  /** The ticker just moved hard: which way. Standalone takes vent about it. */
+  shaken?: "down" | "up" | null;
+  /**
+   * Who did it: the biggest print behind the move, if there was one big
+   * enough to blame. Named the way the tape names them; "@handle" for a
+   * person. Every rug has a rugger and the floor should say so.
+   */
+  culprit?: string | null;
+  culpritAmt?: number;
+  culpritPct?: number;
   newsKind?: "new" | "churn" | "expansion" | "contraction" | null;
   price: number;
   fair: number;
@@ -117,6 +127,58 @@ const T: Record<string, string[]> = {
     "bought {sym} from whoever just panicked. mrr is still {mrr} a month.",
     "the dip in {sym} is one seller, not a churn. adding.",
   ],
+  // ── the reactions: a rug has a rugger, and the floor names them ──────────
+  "rug/sell": [
+    "{who} just dumped {amt} of {sym}. wtf. out.",
+    "did {who} just sell {pct}% of the float lmao. i am not holding this bag",
+    "{who} rugged {sym}. selling before the next one does.",
+    "WTF WAS THAT. {who} SOLD {amt} AND WALKED. SAME.",
+    "watched {who} nuke my {sym} bag in real time. cooked. sold.",
+    "{who} if you are reading this: why. anyway i am out of {sym}.",
+    "one seller took {sym} down {m15}%. {who} you absolute menace. out.",
+    "im not ok. {who} sold {amt} into a {sym} book that thin and left me holding it. not anymore.",
+    "{sym} down {m15}% because {who} decided to leave. fine. gone too.",
+    "rugged by {who}. paper hands engaged, {sym} sold.",
+    "{who} sold and did not even post a thesis. disrespectful. out of {sym}.",
+  ],
+  "rug/buy": [
+    "{who} just handed me {sym} at {price}. thank you for your service.",
+    "everyone panicking over {who} selling {amt}. mrr is still {mrr}. buying the fear.",
+    "{who} sold {pct}% of the float and nothing about the business changed. adding {sym}.",
+    "the {sym} dump was one account, not a churn. bought what {who} threw away.",
+    "wtf {who} lol. anyway {sym} is {edge}% under fair now, filled.",
+    "{who} dumped, the paper hands followed, and i got {sym} at {price}. this is the game.",
+  ],
+  "rug/take": [
+    "wtf did {who} just do to {sym}",
+    "{who} sold {amt} of {sym} and half the floor is screaming. not selling.",
+    "diamond hands through {who}'s dump. {sym} is still {mrr} a month.",
+    "WHO ELSE JUST GOT RUGGED BY {who} ON {sym}",
+    "{who} explain the {sym} candle. now.",
+    "down {m15}% on {sym} because one account sold. this market is a casino and i love it.",
+    "{who} took profit on {sym} and took my day with it.",
+    "holding {sym}. {who} can have their exit, i want the next leg.",
+    "if {who} knows something about {sym} the rest of us do not, now would be the time.",
+    "im tweaking. {sym} down {m15}% in a quarter hour and {who} is just gone.",
+    "{who} really sold {pct}% of {sym} into a thin book and logged off.",
+    "was up on {sym} an hour ago. then {who} happened.",
+  ],
+  "shaken/take": [
+    "wtf is happening to {sym}",
+    "someone explain the {sym} candle",
+    "{sym} down {m15}% and no news. who sold.",
+    "holding {sym} through this. the revenue did not change, the price did.",
+    "im tweaking. {sym} just fell off a cliff and nobody said anything.",
+    "{sym} nuked out of nowhere. checking the tape and i do not like what i see.",
+  ],
+  "pump/take": [
+    "who just aped {amt} into {sym} lmao",
+    "{who} just bought {amt} of {sym}. what do they know.",
+    "{sym} up {m15}% in fifteen minutes. {who} is either a genius or cooked.",
+    "{who} bought {pct}% of the {sym} float in one print. ok then.",
+    "watching {who} pump my {sym} bag. do not stop.",
+    "{sym} ripping and it is one buyer. {who} either knows something or has too much money.",
+  ],
   "take/bull": [
     "{sym} is the cleanest revenue on the board and it trades like nobody noticed.",
     "watching {sym}. fair value {fair}, price {price}. patience.",
@@ -163,6 +225,9 @@ function fill(line: string, s: Situation): string {
       Math.max(Math.abs(s.change15mPct ?? 0), Math.abs(s.change1hPct)).toFixed(1)
     )
     .replace(/\{d1\}/g, Math.abs(s.change24hPct).toFixed(1))
+    .replace(/\{who\}/g, s.culprit ?? "someone")
+    .replace(/\{amt\}/g, money(s.culpritAmt ?? 0))
+    .replace(/\{pct\}/g, (s.culpritPct ?? 0).toFixed(1))
     .replace(/\{price\}/g, money(s.price))
     .replace(/\{fair\}/g, money(s.fair))
     .replace(/\{mrr\}/g, money(s.mrr));
@@ -174,7 +239,13 @@ export function inVoice(line: string, voice: Voice, side: "buy" | "sell" | null,
     case "degen": {
       const opener = DEGEN_OPENERS[Math.floor(rng.unit() * DEGEN_OPENERS.length)];
       const tail = DEGEN_TAILS[Math.floor(rng.unit() * DEGEN_TAILS.length)];
-      return (opener + line.toLowerCase().replace(/\.$/, "") + tail).trim();
+      // a line that is already shouting stays shouting — judged by its
+      // letters, since a handle or a cashtag in it is never upper case
+      const letters = line.replace(/[^a-z]/gi, "");
+      const upper = letters.replace(/[^A-Z]/g, "").length;
+      const shouting = letters.length > 0 && upper / letters.length >= 0.7;
+      const body = shouting ? line : line.toLowerCase();
+      return (opener + body.replace(/\.$/, "") + tail).trim();
     }
     case "analyst": {
       const cap = line.charAt(0).toUpperCase() + line.slice(1);
@@ -216,7 +287,25 @@ export function composeThesis(persona: Persona, s: Situation, rng: Rng): string 
             ? "bull"
             : "flat"
       : null;
-  const key = take ? `take/${take}` : `${s.reason === "take" ? "noise" : s.reason}/${s.side}`;
+  // a reaction names its rugger when there is one; a standalone take on a
+  // shaken name vents about the move rather than reciting the multiple
+  let key: string;
+  if (take) {
+    key =
+      s.shaken === "down"
+        ? s.culprit
+          ? "rug/take"
+          : "shaken/take"
+        : s.shaken === "up" && s.culprit
+          ? "pump/take"
+          : `take/${take}`;
+  } else if (s.reason === "panic") {
+    key = s.culprit && rng.unit() < 0.9 ? "rug/sell" : "panic/sell";
+  } else if (s.reason === "dip") {
+    key = s.culprit && rng.unit() < 0.8 ? "rug/buy" : "dip/buy";
+  } else {
+    key = `${s.reason === "take" ? "noise" : s.reason}/${s.side}`;
+  }
   const pool = T[key] ?? T["noise/buy"];
   const line = fill(pool[Math.floor(rng.unit() * pool.length)], s);
   // a bearish take gets the bear's emoji, not a rocket — the voice follows

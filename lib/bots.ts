@@ -53,9 +53,72 @@ export interface TickerView {
   news: { move: number; ageMs: number }[];
   /** This bot's own position. */
   held: number;
+  /** The biggest print behind the last half hour's move, if one is big enough to blame. */
+  culprit?: Culprit | null;
   /** What the accounts this bot follows just did here: +1 per buy, −1 per sell. */
   herd: number;
   mrr: number;
+}
+
+/** The account behind a move: the biggest print the right way in the last half hour. */
+export interface Culprit {
+  /** As the tape names them; "@handle" for a person. */
+  name: string;
+  side: TradeSide;
+  total: number;
+  shares: number;
+  /** shares over the float, in percent */
+  pctOfFloat: number;
+  ageMs: number;
+  human: boolean;
+}
+
+export interface RecentPrint {
+  userId: string;
+  tickerId: string;
+  side: TradeSide;
+  shares: number;
+  total: number;
+  at: number;
+  name: string;
+  username: string | null;
+  bot: boolean;
+}
+
+/** A print worth blaming: this much of the float, or this many dollars. */
+export const CULPRIT_MIN_PCT = 1.5;
+export const CULPRIT_MIN_TOTAL = 1_500;
+
+/**
+ * Who moved it. For a drop, the biggest sell of the last half hour; for a
+ * pump, the biggest buy. Nobody, if the biggest one was too small to matter
+ * — then the move was the crowd, or the weather, and no name goes on it.
+ */
+export function pickCulprit(
+  prints: RecentPrint[],
+  tickerId: string,
+  float: number,
+  direction: "down" | "up",
+  now: number
+): Culprit | null {
+  const side: TradeSide = direction === "down" ? "sell" : "buy";
+  let best: RecentPrint | null = null;
+  for (const pr of prints) {
+    if (pr.tickerId !== tickerId || pr.side !== side) continue;
+    if (!best || pr.total > best.total) best = pr;
+  }
+  if (!best) return null;
+  const pct = float > 0 ? (best.shares / float) * 100 : 0;
+  if (pct < CULPRIT_MIN_PCT && best.total < CULPRIT_MIN_TOTAL) return null;
+  return {
+    name: best.bot ? best.name : `@${best.username ?? best.name}`,
+    side,
+    total: best.total,
+    shares: best.shares,
+    pctOfFloat: pct,
+    ageMs: now - best.at,
+    human: !best.bot,
+  };
 }
 
 /** What carried a decision: a style, or one of the two reflexes. */
@@ -73,7 +136,7 @@ export interface BotOrder {
 export const MAX_TRADES_PER_ROUND = 40;
 
 /** Standalone theses per round, board-wide. */
-export const MAX_POSTS_PER_ROUND = 6;
+export const MAX_POSTS_PER_ROUND = 12;
 /** Tickers filling at once in a round. */
 export const FILL_CONCURRENCY = 4;
 /** How long a round may spend filling before it stops — the cron has sixty seconds for everything. */
@@ -97,6 +160,8 @@ export const SHAKE_MOVE = 0.05;
 export const SHAKE_WAKE = { paper: 0.8, swing: 0.4, diamond: 0.1 } as const;
 /** Chance a value or whale account wakes to buy a shaken ticker it does not hold. */
 export const DIP_WAKE = 0.12;
+/** Chance a holder of a shaken name posts about it this round, by grip. */
+export const SHAKE_POST = { paper: 0.3, swing: 0.15, diamond: 0.08 } as const;
 /** How hard the drop pushes a holder toward selling, by grip. */
 const PANIC = { paper: 1.2, swing: 0.6, diamond: 0.1 } as const;
 /**
@@ -255,7 +320,10 @@ export function decide(
 
   let note: string | null = null;
   // a panic or a dip buy is worth saying out loud more often than a routine print
-  const rate = reason === "panic" || reason === "dip" ? Math.max(p.thesisRate, 0.6) : p.thesisRate;
+  const rate =
+    reason === "panic" || reason === "dip"
+      ? Math.max(p.thesisRate, v.culprit ? 0.85 : 0.6)
+      : p.thesisRate;
   if (rng.unit() < rate) {
     note = composeThesis(p, situationFor(v, side, reason), rng);
   }
@@ -276,6 +344,15 @@ function situationFor(
     change1hPct: v.change1h * 100,
     change24hPct: v.change24h * 100,
     change15mPct: v.change15m * 100,
+    shaken:
+      Math.abs(v.change15m) >= SHAKE_MOVE || Math.abs(v.change1h) >= SHAKE_MOVE * 1.6
+        ? (v.change15m || v.change1h) < 0
+          ? "down"
+          : "up"
+        : null,
+    culprit: v.culprit?.name ?? null,
+    culpritAmt: v.culprit?.total,
+    culpritPct: v.culprit?.pctOfFloat,
     newsKind: freshest ? (freshest.move >= 0 ? "new" : "churn") : null,
     price: v.price,
     fair: v.fair,
@@ -375,7 +452,8 @@ export async function runBotRound(
   const quarterAgo = new Date(now - 15 * 60_000).toISOString();
   const dayAgo = new Date(now - 86_400_000).toISOString().slice(0, 10);
   const newsSince = new Date(now - 4 * 3_600_000).toISOString();
-  const herdSince = new Date(now - 15 * 60_000).toISOString();
+  const herdSince = now - 15 * 60_000;
+  const blameSince = new Date(now - 30 * 60_000).toISOString();
   const botIds = new Set(population.map((a) => a.id));
   const usernameOf = new Map(population.map((a) => [a.id, a.username]));
   const [
@@ -421,11 +499,13 @@ export async function runBotRound(
       .order("at", { ascending: false })
       .limit(1000),
     admin.from("price_snapshots").select("ticker_id, price").eq("day", dayAgo),
-    // what everyone printed in the last quarter hour — the herd signal
+    // what everyone printed in the last half hour — the herd signal, and
+    // the name on the move
     admin
       .from("trades")
-      .select("user_id, ticker_id, side")
-      .gte("created_at", herdSince)
+      .select("user_id, ticker_id, side, shares, total, created_at, profiles(display_name, username, is_bot, username)")
+      .gte("created_at", blameSince)
+      .order("created_at", { ascending: false })
       .limit(2000),
   ]);
 
@@ -469,13 +549,28 @@ export async function runBotRound(
   for (const s of (snaps ?? []) as { ticker_id: string; price: number }[]) {
     priceDayAgo.set(s.ticker_id, Number(s.price));
   }
-  // recent prints by bots, keyed by the printer's username, per ticker
+  const prints: RecentPrint[] = ((recentPrints ?? []) as Record<string, unknown>[]).map((t) => {
+    const pr = (t.profiles ?? {}) as { display_name?: string; username?: string | null; is_bot?: boolean | null };
+    return {
+      userId: String(t.user_id),
+      tickerId: String(t.ticker_id),
+      side: t.side as TradeSide,
+      shares: Number(t.shares),
+      total: Number(t.total),
+      at: Date.parse(String(t.created_at)),
+      name: String(pr.display_name ?? "someone"),
+      username: pr.username ?? null,
+      bot: botIds.has(String(t.user_id)) || Boolean(pr.is_bot),
+    };
+  });
+  // recent prints by bots, keyed by the printer's username, per ticker —
+  // the herd looks at the last quarter hour only
   const printsBy = new Map<string, { tickerId: string; side: TradeSide }[]>();
-  for (const t of (recentPrints ?? []) as { user_id: string; ticker_id: string; side: TradeSide }[]) {
-    if (!botIds.has(t.user_id)) continue;
-    const u = usernameOf.get(t.user_id)!;
+  for (const t of prints) {
+    if (!botIds.has(t.userId) || t.at < herdSince) continue;
+    const u = usernameOf.get(t.userId)!;
     const l = printsBy.get(u) ?? [];
-    l.push({ tickerId: t.ticker_id, side: t.side });
+    l.push({ tickerId: t.tickerId, side: t.side });
     printsBy.set(u, l);
   }
 
@@ -503,6 +598,7 @@ export async function runBotRound(
         change1h: ago1h && ago1h > 0 ? price / ago1h - 1 : 0,
         change15m: ago15m && ago15m > 0 ? price / ago15m - 1 : 0,
         change24h: ago24h && ago24h > 0 ? price / ago24h - 1 : 0,
+        culprit: null as Culprit | null,
         news: events
           .filter((e) => !e.catchUp && e.prevMrr > 0)
           .map((e) => ({ move: (e.mrr - e.prevMrr) / e.prevMrr, ageMs: now - e.at })),
@@ -510,6 +606,10 @@ export async function runBotRound(
       };
     })
     .filter((v) => v.price > 0);
+  for (const v of board) {
+    const move = Math.abs(v.change15m) >= SHAKE_MOVE ? v.change15m : Math.abs(v.change1h) >= SHAKE_MOVE * 1.6 ? v.change1h : 0;
+    if (move !== 0) v.culprit = pickCulprit(prints, v.id, v.float, move < 0 ? "down" : "up", now);
+  }
 
   const viewsFor = (a: Account): TickerView[] =>
     board.map((v) => {
@@ -528,6 +628,7 @@ export async function runBotRound(
         change1h: v.change1h,
         change15m: v.change15m,
         change24h: v.change24h,
+        culprit: v.culprit,
         news: v.news,
         held: mine.get(`${a.id}/${v.id}`) ?? 0,
         herd,
@@ -617,11 +718,19 @@ export async function runBotRound(
   for (const account of population) {
     if (out.posted >= maxPosts) break;
     if (traded.has(account.id)) continue;
-    if (rng.unit() >= (account.persona.postRate * POST_SCALE * hour) / 288) continue;
+    // a holder of a name that just got hit does not wait for their turn to
+    // talk — that is the wall of "wtf" after a rug
+    const hit = shaken.filter((v) => (mine.get(`${account.id}/${v.id}`) ?? 0) > 0);
+    const venting = hit.length > 0 && rng.unit() < SHAKE_POST[account.persona.hold];
+    if (!venting && rng.unit() >= (account.persona.postRate * POST_SCALE * hour) / 288) continue;
     const views = viewsFor(account);
-    // talk about what you hold, else about whatever is most mispriced
+    // vent about the hit name; else talk about what you hold, else about whatever is most mispriced
     const held = views.filter((v) => v.held > 0);
-    const pool = held.length ? held : [...views].sort((a, b) => Math.abs(b.fair / b.price - 1) - Math.abs(a.fair / a.price - 1)).slice(0, 5);
+    const pool = venting
+      ? views.filter((v) => hit.some((h) => h.symbol === v.symbol))
+      : held.length
+        ? held
+        : [...views].sort((a, b) => Math.abs(b.fair / b.price - 1) - Math.abs(a.fair / a.price - 1)).slice(0, 5);
     const v = pool[Math.floor(rng.unit() * pool.length)];
     if (!v) continue;
     const tickerId = board.find((b) => b.symbol === v.symbol)?.id;

@@ -4,6 +4,8 @@ import {
   MAX_TRADES_PER_ROUND,
   conviction,
   decide,
+  pickCulprit,
+  type RecentPrint,
   isBotUsername,
   personaConviction,
   personaFromSpec,
@@ -215,5 +217,46 @@ describe("the reflexes", () => {
     });
     const o = decide(p, 5_000, [churned], seeded(3));
     expect(o?.reason).not.toBe("dip");
+  });
+});
+
+describe("the rugger", () => {
+  const now = Date.parse("2026-09-02T21:00:00Z");
+  const print = (over: Partial<RecentPrint>): RecentPrint => ({
+    userId: "u",
+    tickerId: "t1",
+    side: "sell",
+    shares: 100,
+    total: 2_000,
+    at: now - 5 * 60_000,
+    name: "hello",
+    username: "hello-6725",
+    bot: false,
+    ...over,
+  });
+
+  it("is the biggest print the right way, named as a person with an @", () => {
+    const prints = [
+      print({ userId: "a", shares: 200, total: 4_000 }),
+      print({ userId: "b", shares: 1_300, total: 28_200 }),
+      print({ userId: "c", side: "buy", shares: 5_000, total: 90_000 }),
+    ];
+    const who = pickCulprit(prints, "t1", 20_000, "down", now);
+    expect(who?.name).toBe("@hello-6725");
+    expect(who?.total).toBe(28_200);
+    expect(who?.pctOfFloat).toBeCloseTo(6.5, 5);
+    expect(who?.human).toBe(true);
+  });
+
+  it("a bot is named as the tape names it, and a pump blames the buyer", () => {
+    const prints = [print({ side: "buy", shares: 800, total: 30_000, name: "Whale Wendy", bot: true })];
+    const who = pickCulprit(prints, "t1", 20_000, "up", now);
+    expect(who?.name).toBe("Whale Wendy");
+    expect(who?.side).toBe("buy");
+  });
+
+  it("nobody, when the biggest print was too small to matter", () => {
+    const prints = [print({ shares: 10, total: 250 })];
+    expect(pickCulprit(prints, "t1", 20_000, "down", now)).toBeNull();
   });
 });
