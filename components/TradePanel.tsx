@@ -129,7 +129,6 @@ export default function TradePanel({
   const [message, setMessage] = useState<string | null>(null);
   const [filled, setFilled] = useState(false);
   const [showPrints, setShowPrints] = useState(false);
-  const [showNote, setShowNote] = useState(false);
   // A fill is instant; the server re-render behind it is not (~2.5s). Without
   // this the panel still reads the old cash after a successful buy, which is
   // exactly what makes people click Buy a second time.
@@ -503,25 +502,14 @@ export default function TradePanel({
         </p>
       )}
 
-      {showNote ? (
-        <input
-          type="text"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          maxLength={140}
-          autoFocus
-          placeholder="your thesis — goes on the record with the print"
-          className="input text-xs"
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setShowNote(true)}
-          className="font-mono text-[11px] text-terminal-muted hover:text-terminal-accent"
-        >
-          + attach a thesis
-        </button>
-      )}
+      <input
+        type="text"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        maxLength={140}
+        placeholder="your thesis — goes on the record with the print"
+        className="input text-xs"
+      />
 
       <button
         onClick={trade}

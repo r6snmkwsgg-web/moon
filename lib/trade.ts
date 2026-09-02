@@ -276,31 +276,35 @@ async function placeOrderOnce(
     return { ok: false, error: msg, status: 400 };
   }
 
+  // The thesis goes on the print BEFORE the response, not in the deferred
+  // bookkeeping: it is one small update, and a page refreshed the moment the
+  // fill lands has to show it. (Deferred, it depended on the after-response
+  // hook actually running, and a thesis that never appeared is exactly what
+  // that looks like from the outside.)
+  if (note) {
+    try {
+      const { data: latestTrade } = await admin
+        .from("trades")
+        .select("id")
+        .eq("user_id", input.userId)
+        .eq("ticker_id", ticker.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestTrade) {
+        await admin.from("trades").update({ note }).eq("id", latestTrade.id);
+      }
+    } catch {
+      // note column missing pre-migration — the trade itself already landed
+    }
+  }
+
   const settle = async () => {
     // keep today's snapshot current so charts include this print's aftermath
     await recordTickerSnapshot(admin, ticker.id, {
       mrr,
       sentiment: fill.newSentiment,
     });
-
-    // attach the public rationale to the print (0003; skipped pre-migration)
-    if (note) {
-      try {
-        const { data: latestTrade } = await admin
-          .from("trades")
-          .select("id")
-          .eq("user_id", input.userId)
-          .eq("ticker_id", ticker.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (latestTrade) {
-          await admin.from("trades").update({ note }).eq("id", latestTrade.id);
-        }
-      } catch {
-        // note column missing pre-migration — the trade itself already landed
-      }
-    }
 
     // a real print from someone you follow is news — alert followers on size
     if (fill.total >= 500) {
