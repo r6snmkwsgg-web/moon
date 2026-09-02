@@ -347,6 +347,14 @@ export default async function TickerPage({ params, searchParams }: Props) {
               viewerId={user?.id ?? null}
               signedIn={user !== null}
               now={renderedAt}
+              pricing={{
+                mrr: quote.liveMrr,
+                sentiment: Number(t.sentiment),
+                multiple: quote.multiple,
+                shares: quote.shares,
+                events: revenueEvents,
+                drift: quote.drift,
+              }}
             />
             <Tabs
               tabs={[

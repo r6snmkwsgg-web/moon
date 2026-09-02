@@ -8,6 +8,7 @@ import type { RevenueEvent } from "@/lib/pricing";
 import {
   executionFillAt,
   FLOW_TICK_MS,
+  flowPrice,
   MAX_POSITION_FRACTION,
   positionLimit,
   settledPrice,
@@ -185,7 +186,24 @@ export default function TradePanel({
       events,
       drift
     );
-  const mark = settledPrice(
+  // Two prices, on purpose. The SETTLED price is what an order fills at —
+  // the anchor, the weather and the news, without the shimmer, since the
+  // shimmer is computable and timing it would be free money. The TAPE price
+  // is settled × shimmer: what the chart draws and the header shows, moving
+  // every second. Fills quote off the first; the position is marked at the
+  // second, so your P&L moves with the chart instead of sitting still for
+  // five minutes while the candle under it wiggles.
+  const settled = settledPrice(
+    mrr,
+    sentiment,
+    quoteT,
+    multiple,
+    outstanding,
+    events,
+    drift
+  );
+  const mark = flowPrice(
+    symbol,
     mrr,
     sentiment,
     quoteT,
@@ -224,7 +242,8 @@ export default function TradePanel({
         ? sharesFor(Math.min(amount, purse))
         : Math.min(Math.floor(amount), buyCeiling, sharesFor(purse));
   const quote = shares >= 1 ? est(tab, shares) : null;
-  const impact = quote && mark > 0 ? quote.avgPrice / mark - 1 : 0;
+  // size impact is measured against the settled price, the one it fills off
+  const impact = quote && settled > 0 ? quote.avgPrice / settled - 1 : 0;
   const overCash = tab === "buy" && unit === "usd" && amount > purse + 0.005;
 
   // the position, marked

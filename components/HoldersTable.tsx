@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Users } from "lucide-react";
 import type { HolderRow } from "@/lib/data";
+import { flowPrice, type RevenueEvent } from "@/lib/pricing";
 import AiChip from "@/components/AiChip";
 import {
   fmtCompact,
@@ -40,6 +41,7 @@ export default function HoldersTable({
   viewerId,
   signedIn,
   now,
+  pricing,
 }: {
   rows: HolderRow[];
   /** Every holder, not just the rows shipped. */
@@ -50,8 +52,52 @@ export default function HoldersTable({
   signedIn: boolean;
   /** The server's clock at render, so durations hydrate identically. */
   now: number;
+  /**
+   * What the live price is built from, so every row is marked at the tape
+   * price the chart draws, every second — not at whatever the server saw
+   * fifteen seconds ago. Rows still carry the server's numbers for the
+   * first paint, so hydration matches.
+   */
+  pricing?: {
+    mrr: number;
+    sentiment: number;
+    multiple: number;
+    shares: number;
+    events: RevenueEvent[];
+    drift: number;
+  };
 }) {
   const [thesisOnly, setThesisOnly] = useState(false);
+  // the tape price, once mounted; null until then so the first paint is the
+  // server's own numbers
+  const [live, setLive] = useState<number | null>(null);
+  useEffect(() => {
+    if (!pricing) return;
+    const tick = () => {
+      if (document.hidden) return;
+      setLive(
+        flowPrice(
+          symbol,
+          pricing.mrr,
+          pricing.sentiment,
+          Date.now(),
+          pricing.multiple,
+          pricing.shares,
+          pricing.events,
+          pricing.drift
+        )
+      );
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [symbol, pricing]);
+  const marked = (r: HolderRow) => {
+    if (live === null || !(live > 0)) return { value: r.value, pnl: r.pnl, pnlPct: r.pnlPct };
+    const value = r.shares * live;
+    const cost = r.shares * r.avgCost;
+    return { value, pnl: value - cost, pnlPct: cost > 0 ? (value - cost) / cost : 0 };
+  };
   const [followingOnly, setFollowingOnly] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const following = useMemo(() => new Set(followedIds), [followedIds]);
@@ -62,7 +108,7 @@ export default function HoldersTable({
       (!followingOnly || following.has(r.userId))
   );
   const shown = showAll ? filtered : filtered.slice(0, FIRST_PAGE);
-  const inMoney = rows.filter((r) => r.pnl > 0).length;
+  const inMoney = rows.filter((r) => marked(r).pnl > 0).length;
 
   return (
     <section className="panel">
@@ -130,7 +176,8 @@ export default function HoldersTable({
             <tbody>
               {shown.map((r) => {
                 const mine = viewerId !== null && r.userId === viewerId;
-                const up = r.pnl >= 0;
+                const m = marked(r);
+                const up = m.pnl >= 0;
                 return (
                   <tr
                     key={r.userId}
@@ -169,7 +216,7 @@ export default function HoldersTable({
                       </div>
                     </td>
                     <td className="num px-3 py-1.5 text-right font-mono">
-                      <div>{fmtMoney(r.value)}</div>
+                      <div>{fmtMoney(m.value)}</div>
                       <div className="text-[11px] text-terminal-muted">
                         {r.shares.toLocaleString("en-US")} shs
                       </div>
@@ -181,9 +228,9 @@ export default function HoldersTable({
                     >
                       <div>
                         {up ? "+" : "−"}
-                        {fmtMoney(Math.abs(r.pnl))}
+                        {fmtMoney(Math.abs(m.pnl))}
                       </div>
-                      <div className="text-[11px]">{fmtPct(r.pnlPct)}</div>
+                      <div className="text-[11px]">{fmtPct(m.pnlPct)}</div>
                     </td>
                     <td className="num hidden px-3 py-1.5 text-right font-mono md:table-cell">
                       <div>{fmtCompact(r.entryMarketCap)} MC</div>
