@@ -124,7 +124,6 @@ export default function TradePanel({
   const [unit, setUnit] = useState<"usd" | "shares">("usd");
   // stored as text so the field can be cleared and retyped freely
   const [amountText, setAmountText] = useState("100");
-  const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [filled, setFilled] = useState(false);
@@ -272,7 +271,7 @@ export default function TradePanel({
       const res = await fetch("/api/trade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, side, shares, note: note.trim() }),
+        body: JSON.stringify({ symbol, side, shares }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -281,7 +280,6 @@ export default function TradePanel({
         setMessage(
           `${side === "buy" ? "Bought" : "Sold"} ${shares.toLocaleString("en-US")} × $${symbol} @ avg ${fmtPrice(json.price)}`
         );
-        setNote("");
         setFilled(true);
         setTimeout(() => setFilled(false), 1200);
         setCooling(true);
@@ -501,15 +499,6 @@ export default function TradePanel({
           that is more than your cash — sized to {fmtMoney(purse)}
         </p>
       )}
-
-      <input
-        type="text"
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        maxLength={140}
-        placeholder="your thesis — goes on the record with the print"
-        className="input text-xs"
-      />
 
       <button
         onClick={trade}

@@ -19,7 +19,7 @@ import { realizedPnl } from "@/lib/equity";
 import { nextEarningsDate } from "@/lib/xp";
 import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import PulseKeeper from "@/components/PulseKeeper";
-import ThesisBox from "@/components/ThesisBox";
+import ThesisCard from "@/components/ThesisCard";
 import ThesesPane from "@/components/ThesesPane";
 import TradingChart from "@/components/TradingChart";
 import HoldersTable from "@/components/HoldersTable";
@@ -106,6 +106,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
 
   // Signed-in extras (own rows only — RLS applies).
   let cash: number | null = null;
+  let author: { name: string; username: string | null } | null = null;
   let sharesHeld = 0;
   let avgCost = 0;
   let realized = 0;
@@ -117,7 +118,11 @@ export default async function TickerPage({ params, searchParams }: Props) {
     const supabase = await createSupabaseServerClient();
     const [profileRes, holdingRes, myTradesRes, delistRes, watchRes, voteRes] =
       await Promise.all([
-        supabase.from("profiles").select("cash").eq("id", user.id).maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("cash, display_name, username")
+          .eq("id", user.id)
+          .maybeSingle(),
         supabase
           .from("holdings")
           .select("shares, avg_cost")
@@ -154,6 +159,12 @@ export default async function TickerPage({ params, searchParams }: Props) {
           .maybeSingle(),
       ]);
     cash = profileRes.data ? Number(profileRes.data.cash) : null;
+    author = profileRes.data
+      ? {
+          name: String(profileRes.data.display_name ?? "you"),
+          username: (profileRes.data.username as string | null) ?? null,
+        }
+      : null;
     sharesHeld = holdingRes.data ? Number(holdingRes.data.shares) : 0;
     avgCost = holdingRes.data ? Number(holdingRes.data.avg_cost) : 0;
     history = (
@@ -353,8 +364,6 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 drift: quote.drift,
               }}
             />
-            <div className="min-w-0 space-y-3">
-            <ThesisBox tickerId={t.id} symbol={t.symbol} signedIn={user !== null} />
             <Tabs
               tabs={[
                 {
@@ -391,7 +400,6 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 },
               ]}
             />
-            </div>
           </div>
         </div>
 
@@ -415,6 +423,12 @@ export default async function TickerPage({ params, searchParams }: Props) {
             avgCost={avgCost}
             realized={realized}
             history={history}
+          />
+          <ThesisCard
+            tickerId={t.id}
+            symbol={t.symbol}
+            signedIn={user !== null}
+            author={author}
           />
           <AboutCard
             ticker={t}
