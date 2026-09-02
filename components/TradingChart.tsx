@@ -13,6 +13,7 @@ import type { ChartPoint } from "@/lib/types";
 import type { Timeframe } from "@/lib/candles";
 import type { RevenueEvent } from "@/lib/pricing";
 import { fmtBarPct, fmtPct, fmtPrice } from "@/lib/format";
+import { useLiveSentiment } from "@/lib/live";
 import {
   axisTimeLabel,
   buildCandles,
@@ -114,7 +115,7 @@ function smoothPath(pts: { x: number; y: number }[]): string {
 export default function TradingChart({
   symbol,
   mrr,
-  sentiment,
+  sentiment: sentimentProp,
   series,
   fairPrice,
   multiple,
@@ -151,6 +152,8 @@ export default function TradingChart({
   const hour12 = clock === "12h";
   const [tfOpen, setTfOpen] = useState(false);
   const [mode, setMode] = useState<"candle" | "line">("candle");
+  // your own fill moves the curve here the moment it comes back
+  const sentiment = useLiveSentiment(symbol, sentimentProp);
   // the y-axis reads in price or in market cap — same bars, one multiply
   const [scale, setScale] = useState<"price" | "mc">("price");
   const [now, setNow] = useState<number | null>(null); // null until mounted

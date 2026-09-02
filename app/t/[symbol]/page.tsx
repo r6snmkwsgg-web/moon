@@ -376,6 +376,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
         {/* the rail — trading is always in reach */}
         <div className="space-y-3">
           <TradePanel
+            author={author}
             symbol={t.symbol}
             mrr={quote.liveMrr}
             sentiment={Number(t.sentiment)}

@@ -53,5 +53,7 @@ export async function POST(request: Request) {
     price: result.price,
     total: result.total,
     cash: result.cash,
+    // the curve after this fill — the page moves the chart on it at once
+    sentiment: result.newSentiment,
   });
 }

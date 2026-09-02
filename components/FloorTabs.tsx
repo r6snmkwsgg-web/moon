@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { ChevronDown, Filter } from "lucide-react";
 import type { FeedTrade, TickerPost } from "@/lib/data";
 import { MIN_SIZE_PRESETS, minSizeLabel, passesMinSize } from "@/lib/min-size";
+import { useLiveFills } from "@/lib/live";
 import TradesList from "@/components/TradesList";
 import ThesesPane from "@/components/ThesesPane";
 
@@ -55,7 +55,38 @@ export default function FloorTabs({
     }
   };
 
-  const shownTrades = useMemo(() => trades.filter((t) => passesMinSize(t.total, min)), [trades, min]);
+  // your own prints, ahead of the server's copy of the tape; once a refresh
+  // carries the real row (same side, size and name) the live one steps aside
+  const liveFills = useLiveFills(symbol);
+  const allTrades = useMemo(() => {
+    const fresh = liveFills.filter(
+      (f) =>
+        !trades.some(
+          (t) =>
+            t.side === f.side &&
+            t.shares === f.shares &&
+            (t.username ?? null) === (f.username ?? null) &&
+            Math.abs(Date.parse(t.created_at) - Date.parse(f.created_at)) < 120_000
+        )
+    );
+    const rows: FeedTrade[] = fresh.map((f) => ({
+      id: f.id,
+      side: f.side,
+      shares: f.shares,
+      price: f.price,
+      total: f.total,
+      created_at: f.created_at,
+      trader: f.trader,
+      username: f.username,
+      symbol: f.symbol,
+      note: null,
+      bot: false,
+      likes: 0,
+      likedByMe: false,
+    }));
+    return [...rows, ...trades];
+  }, [liveFills, trades]);
+  const shownTrades = useMemo(() => allTrades.filter((t) => passesMinSize(t.total, min)), [allTrades, min]);
   const shownPosts = useMemo(() => posts.filter((p) => passesMinSize(p.positionValue, min)), [posts, min]);
   const shownTheses = useMemo(() => theses.filter((t) => passesMinSize(t.total, min)), [theses, min]);
 
@@ -126,31 +157,28 @@ export default function FloorTabs({
         )}
       </div>
 
-      {tab === "trades" ? (
-        <>
-          <TradesList trades={shownTrades} showSymbol={false} signedIn={signedIn} showNotes={false} />
-          {shownTrades.length === 0 && trades.length > 0 && (
-            <p className="px-3 py-4 text-center font-mono text-[11px] text-terminal-muted">
-              nothing that size recently — lower the filter
-            </p>
-          )}
-          <Link
-            href="/tape"
-            className="block border-t border-terminal-line px-3 py-1.5 font-mono text-[11px] text-terminal-accent hover:underline"
-          >
-            full tape →
-          </Link>
-        </>
-      ) : (
-        <ThesesPane
-          posts={shownPosts}
-          theses={shownTheses}
-          symbol={symbol}
-          viewerId={viewerId}
-          signedIn={signedIn}
-          filtered={min !== null && posts.length + theses.length > 0}
-        />
-      )}
+      {/* the lists scroll inside the panel, so the floor keeps its height */}
+      <div className="max-h-[560px] overflow-y-auto">
+        {tab === "trades" ? (
+          <>
+            <TradesList trades={shownTrades} showSymbol={false} signedIn={signedIn} showNotes={false} />
+            {shownTrades.length === 0 && allTrades.length > 0 && (
+              <p className="px-3 py-4 text-center font-mono text-[11px] text-terminal-muted">
+                nothing that size recently — lower the filter
+              </p>
+            )}
+          </>
+        ) : (
+          <ThesesPane
+            posts={shownPosts}
+            theses={shownTheses}
+            symbol={symbol}
+            viewerId={viewerId}
+            signedIn={signedIn}
+            filtered={min !== null && posts.length + theses.length > 0}
+          />
+        )}
+      </div>
     </section>
   );
 }

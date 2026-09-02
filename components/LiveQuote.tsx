@@ -6,6 +6,7 @@ import { fmtCompact, fmtPrice } from "@/lib/format";
 import type { ChartPoint } from "@/lib/types";
 import type { RevenueEvent } from "@/lib/pricing";
 import ChangePct from "@/components/ChangePct";
+import { useLiveSentiment } from "@/lib/live";
 
 /**
  * The headline price, on the chart's clock.
@@ -21,7 +22,7 @@ import ChangePct from "@/components/ChangePct";
 export default function LiveQuote({
   symbol,
   mrr,
-  sentiment,
+  sentiment: sentimentProp,
   series,
   multiple,
   shares,
@@ -45,6 +46,8 @@ export default function LiveQuote({
   renderedAt: number;
 }) {
   const [now, setNow] = useState(renderedAt);
+  // your own fill moves this number the moment it comes back
+  const sentiment = useLiveSentiment(symbol, sentimentProp);
 
   useEffect(() => {
     const id = setInterval(() => {

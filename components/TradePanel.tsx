@@ -16,6 +16,7 @@ import {
 } from "@/lib/pricing";
 import { fmtCountdown, fmtMoney, fmtPct, fmtPrice } from "@/lib/format";
 import LivePrice from "@/components/LivePrice";
+import { publishFill, useLiveSentiment } from "@/lib/live";
 
 /** Signed money — on a P&L line the sign is the whole point. */
 function fmtSigned(value: number): string {
@@ -72,7 +73,8 @@ const PCT_CHIPS = [25, 50, 75];
 export default function TradePanel({
   symbol,
   mrr,
-  sentiment,
+  sentiment: sentimentProp,
+  author = null,
   multiple,
   outstanding = SHARES_OUTSTANDING,
   floatHeld = 0,
@@ -93,6 +95,8 @@ export default function TradePanel({
   price?: number;
   mrr: number;
   sentiment: number;
+  /** Who is trading — for the print the tape shows before the server does. */
+  author?: { name: string; username: string | null } | null;
   multiple: number;
   /** This ticker's float, set at IPO. */
   outstanding?: number;
@@ -138,7 +142,9 @@ export default function TradePanel({
     realized: number;
   } | null>(null);
   const [cooling, setCooling] = useState(false);
-  const [refreshing, startRefresh] = useTransition();
+  const [, startRefresh] = useTransition();
+  // the curve as this page last moved it — a fill lands here before the server re-renders
+  const sentiment = useLiveSentiment(symbol, sentimentProp);
   useEffect(() => {
     // server numbers have landed — drop the optimistic ones
     setFill(null);
@@ -294,8 +300,23 @@ export default function TradePanel({
         );
         setFilled(true);
         setTimeout(() => setFilled(false), 1200);
+        // a beat against a double-tap; the ticket is otherwise back at once
         setCooling(true);
-        setTimeout(() => setCooling(false), 1200);
+        setTimeout(() => setCooling(false), 400);
+        // the chart, the header, the holders and the tape all move on this now
+        if (typeof json.sentiment === "number") {
+          publishFill(symbol, json.sentiment, {
+            id: `live-${Date.now()}`,
+            symbol,
+            side,
+            shares,
+            price: Number(json.price),
+            total: Number(json.total),
+            trader: author?.name ?? "you",
+            username: author?.username ?? null,
+            created_at: new Date().toISOString(),
+          });
+        }
         // the ledger's own rule: a buy blends into the average cost, a sell
         // books the difference against it and leaves the average alone
         const nextHeld = shownHeld + (side === "buy" ? shares : -shares);
@@ -322,7 +343,9 @@ export default function TradePanel({
     }
   }
 
-  const busy = pending || refreshing || cooling;
+  // the refresh that follows a fill is not waited on: the position, the
+  // price and the tape were all updated the moment the order came back
+  const busy = pending || cooling;
   const label = pending
     ? "…"
     : tab === "buy"

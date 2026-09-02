@@ -236,7 +236,7 @@ export function timeOfDayFactor(t: number): number {
  * listing sees one trade an hour — an empty room. Everyone wakes this many
  * times more often than their activity says.
  */
-export const WAKE_SCALE = 3;
+export const WAKE_SCALE = 4;
 /** Paper hands check the chart more often than diamond hands do. */
 export const HOLD_TEMPO: Record<Hold, number> = { paper: 1.4, swing: 1, diamond: 0.7 };
 

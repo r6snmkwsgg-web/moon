@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Users } from "lucide-react";
 import type { HolderRow } from "@/lib/data";
 import { flowPrice, type RevenueEvent } from "@/lib/pricing";
+import { useLiveSentiment } from "@/lib/live";
 import AiChip from "@/components/AiChip";
 import {
   fmtCompact,
@@ -71,6 +72,7 @@ export default function HoldersTable({
   // the tape price, once mounted; null until then so the first paint is the
   // server's own numbers
   const [live, setLive] = useState<number | null>(null);
+  const liveSentiment = useLiveSentiment(symbol, pricing?.sentiment ?? 0);
   useEffect(() => {
     if (!pricing) return;
     const tick = () => {
@@ -79,7 +81,7 @@ export default function HoldersTable({
         flowPrice(
           symbol,
           pricing.mrr,
-          pricing.sentiment,
+          liveSentiment,
           Date.now(),
           pricing.multiple,
           pricing.shares,
@@ -91,7 +93,7 @@ export default function HoldersTable({
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [symbol, pricing]);
+  }, [symbol, pricing, liveSentiment]);
   const marked = (r: HolderRow) => {
     if (live === null || !(live > 0)) return { value: r.value, pnl: r.pnl, pnlPct: r.pnlPct };
     const value = r.shares * live;

@@ -105,6 +105,8 @@ const PANIC = { paper: 1.2, swing: 0.6, diamond: 0.1 } as const;
  * ticker's holders used it up before the next ticker's were even rolled.
  */
 export const MAX_SHAKEN = 200;
+/** The floor talks twice as much as the personas' own rate says — thirty listings is a lot of floor. */
+export const POST_SCALE = 2;
 /** Hearts the population leaves on the floor per round, at most. */
 export const MAX_LIKES_PER_ROUND = 6;
 
@@ -615,7 +617,7 @@ export async function runBotRound(
   for (const account of population) {
     if (out.posted >= maxPosts) break;
     if (traded.has(account.id)) continue;
-    if (rng.unit() >= (account.persona.postRate * hour) / 288) continue;
+    if (rng.unit() >= (account.persona.postRate * POST_SCALE * hour) / 288) continue;
     const views = viewsFor(account);
     // talk about what you hold, else about whatever is most mispriced
     const held = views.filter((v) => v.held > 0);
