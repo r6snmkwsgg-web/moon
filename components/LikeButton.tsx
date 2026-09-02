@@ -31,15 +31,18 @@ export default function LikeButton({
     (_cur, next: { likes: number; liked: boolean }) => next
   );
 
-  const cls = `inline-flex items-center gap-1 rounded px-1 py-0.5 font-mono text-[10px] transition-colors ${
-    state.liked ? "text-terminal-down" : "text-terminal-muted hover:text-terminal-text"
+  // a real button, not a glyph: bordered, counted even at zero, red once yours
+  const cls = `inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] leading-none transition-colors ${
+    state.liked
+      ? "border-terminal-down/40 bg-terminal-down/10 text-terminal-down"
+      : "border-terminal-line text-terminal-muted hover:border-terminal-text/40 hover:text-terminal-text"
   }`;
 
   if (!signedIn) {
     return (
       <Link href={`/login?next=/t/${symbol}`} className={cls} title="Sign in to like">
-        <Heart size={11} />
-        {state.likes > 0 && <span className="num">{state.likes}</span>}
+        <Heart size={12} />
+        <span className="num">{state.likes}</span>
       </Link>
     );
   }
@@ -58,8 +61,8 @@ export default function LikeButton({
       }
       className={cls}
     >
-      <Heart size={11} fill={state.liked ? "currentColor" : "none"} />
-      {state.likes > 0 && <span className="num">{state.likes}</span>}
+      <Heart size={12} fill={state.liked ? "currentColor" : "none"} />
+      <span className="num">{state.likes}</span>
     </button>
   );
 }

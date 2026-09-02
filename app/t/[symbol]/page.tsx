@@ -98,7 +98,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
       getRecentTrades(60, t.id),
       getTickerPosts(t.id, quote.price, 40, user?.id ?? null),
       getRecentTrades(60, t.id, undefined, true, user?.id ?? null),
-      getHolders(t.id, quote.price, quote.shares),
+      getHolders(t.id, quote.price, quote.shares, 100, user?.id ?? null),
       user ? getFollowedIds(user.id) : Promise.resolve([] as string[]),
     ]);
 

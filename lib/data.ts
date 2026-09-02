@@ -932,6 +932,11 @@ export interface HolderRow {
   heldSince: number | null;
   thesis: string | null;
   thesisAt: number | null;
+  /** Where the thesis lives, so it can be liked: a floor post or a print's note. */
+  thesisKind: "post" | "trade" | null;
+  thesisId: string | null;
+  thesisLikes: number;
+  thesisLikedByMe: boolean;
   lastTradeAt: number | null;
   /** An AI trader. */
   bot: boolean;
@@ -947,7 +952,8 @@ export async function getHolders(
   tickerId: string,
   price: number,
   float: number,
-  limit = 100
+  limit = 100,
+  viewerId: string | null = null
 ): Promise<{ rows: HolderRow[]; total: number }> {
   const admin = createSupabaseAdminClient();
   const { data, count } = await admin
@@ -966,7 +972,7 @@ export async function getHolders(
   const [{ data: tradeRows }, postsRes] = await Promise.all([
     admin
       .from("trades")
-      .select("user_id, side, shares, created_at, note")
+      .select("id, user_id, side, shares, created_at, note")
       .eq("ticker_id", tickerId)
       .in("user_id", ids)
       .order("created_at", { ascending: true })
@@ -975,24 +981,26 @@ export async function getHolders(
     // either kind is the one the row shows
     admin
       .from("posts")
-      .select("user_id, body, created_at")
+      .select("id, user_id, body, created_at")
       .eq("ticker_id", tickerId)
       .in("user_id", ids)
       .order("created_at", { ascending: false })
       .limit(2000),
   ]);
-  const latestPost = new Map<string, { body: string; at: number }>();
-  for (const r of (postsRes.data ?? []) as { user_id: string; body: string; created_at: string }[]) {
-    if (!latestPost.has(r.user_id)) latestPost.set(r.user_id, { body: r.body, at: Date.parse(r.created_at) });
+  const latestPost = new Map<string, { id: string; body: string; at: number }>();
+  for (const r of (postsRes.data ?? []) as { id: string; user_id: string; body: string; created_at: string }[]) {
+    if (!latestPost.has(r.user_id)) latestPost.set(r.user_id, { id: r.id, body: r.body, at: Date.parse(r.created_at) });
   }
   const activity = summariseHolderTrades(
     ((tradeRows ?? []) as {
+      id: string;
       user_id: string;
       side: "buy" | "sell";
       shares: number;
       created_at: string;
       note: string | null;
     }[]).map((t) => ({
+      id: String(t.id),
       userId: t.user_id,
       side: t.side,
       shares: Number(t.shares),
@@ -1000,6 +1008,27 @@ export async function getHolders(
       note: t.note ?? null,
     }))
   );
+
+  // hearts on whichever thesis each row will show — one lookup per kind
+  const postIds: string[] = [];
+  const tradeIds: string[] = [];
+  for (const h of held) {
+    const uid = String(h.user_id);
+    const a = activity.get(uid);
+    const post = latestPost.get(uid);
+    if (post && (a?.thesisAt === null || a?.thesisAt === undefined || post.at > a.thesisAt)) {
+      postIds.push(post.id);
+    } else if (a?.thesisTradeId) {
+      tradeIds.push(a.thesisTradeId);
+    }
+  }
+  const [postHearts, tradeHearts] = await Promise.all([
+    likesFor(admin, "post", postIds, viewerId),
+    likesFor(admin, "trade", tradeIds, viewerId),
+  ]);
+  const hearts = new Map<string, { likes: number; mine: boolean }>();
+  for (const [id, v] of postHearts) hearts.set(`post:${id}`, v);
+  for (const [id, v] of tradeHearts) hearts.set(`trade:${id}`, v);
 
   const rows = held
     .map((h): HolderRow => {
@@ -1012,10 +1041,11 @@ export async function getHolders(
       const post = latestPost.get(String(h.user_id));
       const thesis =
         post && (a?.thesisAt === null || a?.thesisAt === undefined || post.at > a.thesisAt)
-          ? { text: post.body, at: post.at }
+          ? { text: post.body, at: post.at, kind: "post" as const, id: post.id }
           : a?.thesis
-            ? { text: a.thesis, at: a.thesisAt ?? null }
+            ? { text: a.thesis, at: a.thesisAt ?? null, kind: "trade" as const, id: a.thesisTradeId }
             : null;
+      const heart = thesis?.id ? hearts.get(`${thesis.kind}:${thesis.id}`) : undefined;
       return {
         userId: String(h.user_id),
         trader: String(profile.display_name ?? "trader"),
@@ -1029,6 +1059,10 @@ export async function getHolders(
         heldSince: a?.heldSince ?? null,
         thesis: thesis?.text ?? null,
         thesisAt: thesis?.at ?? null,
+        thesisKind: thesis?.id ? thesis.kind : null,
+        thesisId: thesis?.id ?? null,
+        thesisLikes: heart?.likes ?? 0,
+        thesisLikedByMe: heart?.mine ?? false,
         lastTradeAt: a?.lastTradeAt ?? null,
         bot: isBotProfile(profile as { username?: string | null; is_bot?: boolean | null }),
       };

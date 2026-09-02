@@ -12,6 +12,8 @@
  */
 
 export interface HolderTrade {
+  /** The trade's row id — a note on it can be liked by it. */
+  id?: string;
   userId: string;
   side: "buy" | "sell";
   shares: number;
@@ -25,6 +27,8 @@ export interface HolderActivity {
   heldSince: number | null;
   thesis: string | null;
   thesisAt: number | null;
+  /** The print the thesis rode in on, when it is one. */
+  thesisTradeId: string | null;
   lastTradeAt: number | null;
 }
 
@@ -38,6 +42,7 @@ export function summariseHolderTrades(
       heldSince: null,
       thesis: null,
       thesisAt: null,
+      thesisTradeId: null,
       lastTradeAt: null,
     };
     if (tr.side === "buy") {
@@ -50,6 +55,7 @@ export function summariseHolderTrades(
     if (tr.note && tr.note.trim()) {
       s.thesis = tr.note.trim();
       s.thesisAt = tr.at;
+      s.thesisTradeId = tr.id ?? null;
     }
     s.lastTradeAt = tr.at;
     book.set(tr.userId, s);
@@ -60,6 +66,7 @@ export function summariseHolderTrades(
       heldSince: s.heldSince,
       thesis: s.thesis,
       thesisAt: s.thesisAt,
+      thesisTradeId: s.thesisTradeId,
       lastTradeAt: s.lastTradeAt,
     });
   }

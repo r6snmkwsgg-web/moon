@@ -7,6 +7,7 @@ import type { HolderRow } from "@/lib/data";
 import { flowPrice, type RevenueEvent } from "@/lib/pricing";
 import { useLiveSentiment } from "@/lib/live";
 import AiChip from "@/components/AiChip";
+import LikeButton from "@/components/LikeButton";
 import {
   fmtCompact,
   fmtDuration,
@@ -246,11 +247,23 @@ export default function HoldersTable({
                           <p className="line-clamp-2 text-[13px] leading-snug text-terminal-text">
                             {r.thesis}
                           </p>
-                          {r.thesisAt !== null && (
-                            <span className="font-mono text-[10px] text-terminal-muted">
-                              {timeAgo(r.thesisAt, now)} ago
-                            </span>
-                          )}
+                          <span className="mt-0.5 flex items-center gap-2">
+                            {r.thesisKind && r.thesisId && (
+                              <LikeButton
+                                kind={r.thesisKind}
+                                targetId={r.thesisId}
+                                symbol={symbol}
+                                likes={r.thesisLikes}
+                                liked={r.thesisLikedByMe}
+                                signedIn={signedIn}
+                              />
+                            )}
+                            {r.thesisAt !== null && (
+                              <span className="font-mono text-[10px] text-terminal-muted">
+                                {timeAgo(r.thesisAt, now)} ago
+                              </span>
+                            )}
+                          </span>
                         </>
                       ) : (
                         <span className="text-[12px] text-terminal-muted/60">
