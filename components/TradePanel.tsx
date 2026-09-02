@@ -129,6 +129,7 @@ export default function TradePanel({
   const [message, setMessage] = useState<string | null>(null);
   const [filled, setFilled] = useState(false);
   const [showPrints, setShowPrints] = useState(false);
+  const [showNote, setShowNote] = useState(false);
   // A fill is instant; the server re-render behind it is not (~2.5s). Without
   // this the panel still reads the old cash after a successful buy, which is
   // exactly what makes people click Buy a second time.
@@ -326,7 +327,7 @@ export default function TradePanel({
         : `Sell $${symbol}`;
 
   const chipClass = (active: boolean) =>
-    `rounded-md border px-2 py-1 font-mono text-[11px] transition-colors ${
+    `rounded-md border px-1 py-1.5 text-center font-mono text-[11px] transition-colors ${
       active
         ? "border-terminal-accent/60 bg-terminal-accent/10 text-terminal-accent"
         : "border-terminal-line bg-terminal-bg text-terminal-muted hover:border-terminal-muted hover:text-terminal-text"
@@ -424,7 +425,7 @@ export default function TradePanel({
       </div>
 
       {/* ── quick sizes ──────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-1.5">
+      <div className="grid grid-cols-5 gap-1">
         {tab === "sell"
           ? PCT_CHIPS.map((p) => (
               <button
@@ -460,7 +461,7 @@ export default function TradePanel({
                   {n >= 1000 ? `${n / 1000}k` : n}
                 </button>
               ))}
-        {tab === "buy" && (
+        {tab === "buy" ? (
           <button
             type="button"
             onClick={() =>
@@ -472,6 +473,16 @@ export default function TradePanel({
             className={chipClass(false)}
           >
             max
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={shownHeld < 1}
+            onClick={() => setAmountText(String(shownHeld))}
+            title="Everything you hold"
+            className={chipClass(shownHeld > 0 && shares === shownHeld && amount === shownHeld)}
+          >
+            all
           </button>
         )}
       </div>
@@ -492,19 +503,30 @@ export default function TradePanel({
         </p>
       )}
 
-      <input
-        type="text"
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        maxLength={140}
-        placeholder="thesis (optional — goes on the record)"
-        className="input text-xs"
-      />
+      {showNote ? (
+        <input
+          type="text"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          maxLength={140}
+          autoFocus
+          placeholder="your thesis — goes on the record with the print"
+          className="input text-xs"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowNote(true)}
+          className="font-mono text-[11px] text-terminal-muted hover:text-terminal-accent"
+        >
+          + attach a thesis
+        </button>
+      )}
 
       <button
         onClick={trade}
         disabled={busy || shares < 1}
-        className={`${tab === "buy" ? "btn-buy" : "btn-sell"} w-full py-2.5 text-base`}
+        className={`${tab === "buy" ? "btn-buy" : "btn-sell"} w-full py-3 text-base`}
       >
         {label}
       </button>
@@ -609,12 +631,10 @@ export default function TradePanel({
           </span>
         )}
       </p>
-      <p className="text-[10px] leading-snug text-terminal-muted/70">
-        Play money. Float {outstanding.toLocaleString("en-US")} shs, one account
-        may hold {Math.round(MAX_POSITION_FRACTION * 100)}% of it
-        {shownHeld > 0 && roomInLimit < 1 ? " — you are at the limit" : ""}.
-        Orders fill along the hype curve, so size moves the price under you and a
-        round trip washes.
+      <p className="num font-mono text-[10px] text-terminal-muted/70">
+        play money · float {outstanding.toLocaleString("en-US")} shs ·{" "}
+        {Math.round(MAX_POSITION_FRACTION * 100)}% per account
+        {shownHeld > 0 && roomInLimit < 1 ? " · you are at the limit" : ""}
       </p>
     </div>
   );

@@ -289,7 +289,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className="panel flex flex-wrap divide-x divide-terminal-line overflow-hidden">
         {(
           [
             ["Mkt cap", fmtCompact(quote.marketCap)],
@@ -304,10 +304,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             ["Top 10 holding", `${topTenPct.toFixed(topTenPct >= 10 ? 0 : 1)}%`],
           ] as [string, React.ReactNode][]
         ).map(([label, value]) => (
-          <div
-            key={label}
-            className="panel min-w-[92px] flex-1 px-2.5 py-1.5 text-center"
-          >
+          <div key={label} className="min-w-[96px] flex-1 px-3 py-1.5">
             <div className="microlabel !text-[9px]">{label}</div>
             <div className="num mt-0.5 font-mono text-[13px] font-semibold">{value}</div>
           </div>

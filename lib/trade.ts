@@ -45,11 +45,39 @@ export type OrderResult =
     }
   | { ok: false; error: string; status: number };
 
+/**
+ * How many times an order re-reads the curve when someone else moved it
+ * between our read and our claim. Three collisions in a row on one ticker
+ * inside a few milliseconds is not a race, it is a flood; the order is
+ * turned away and the trader tries again.
+ */
+const CLAIM_ATTEMPTS = 3;
+/** Numeric equality for the claim, wide enough to survive a JSON round trip. */
+const CLAIM_EPS = 1e-9;
+
 export async function placeOrder(
   admin: SupabaseClient,
   input: OrderInput,
   opts: { now?: number } = {}
 ): Promise<OrderResult> {
+  for (let attempt = 1; ; attempt++) {
+    const r = await placeOrderOnce(admin, input, opts);
+    if (r !== "moved") return r;
+    if (attempt >= CLAIM_ATTEMPTS) {
+      return {
+        ok: false,
+        status: 409,
+        error: "The price moved under your order — try again.",
+      };
+    }
+  }
+}
+
+async function placeOrderOnce(
+  admin: SupabaseClient,
+  input: OrderInput,
+  opts: { now?: number } = {}
+): Promise<OrderResult | "moved"> {
   const now = opts.now ?? Date.now();
   const side = input.side;
   const shares = Number(input.shares);
@@ -204,6 +232,25 @@ export async function placeOrder(
     };
   }
 
+  // CLAIM THE CURVE before the ledger moves. The fill above was priced off
+  // the sentiment we read; if anyone — a person, a bot in the same second —
+  // moved it since, this order would fill off a stale curve and its own
+  // impact would overwrite theirs (execute_trade sets sentiment to the value
+  // it is handed). So the move from s0 to s1 is a compare-and-set: it lands
+  // only if the curve still reads s0, and otherwise the whole order is
+  // re-read and re-priced. Concurrent orders on one ticker serialise on this
+  // line, each filling off the curve the one before it left.
+  const s0 = Number(ticker.sentiment);
+  const { data: claimed, error: claimErr } = await admin
+    .from("tickers")
+    .update({ sentiment: fill.newSentiment })
+    .eq("id", ticker.id)
+    .gte("sentiment", s0 - CLAIM_EPS)
+    .lte("sentiment", s0 + CLAIM_EPS)
+    .select("id");
+  if (claimErr) return { ok: false, error: "Trade failed.", status: 500 };
+  if (!claimed || claimed.length === 0) return "moved";
+
   const { data, error } = await admin.rpc("execute_trade", {
     p_user_id: input.userId,
     p_ticker_id: ticker.id,
@@ -213,6 +260,14 @@ export async function placeOrder(
     p_new_sentiment: fill.newSentiment,
   });
   if (error) {
+    // the ledger refused — give the curve back, unless someone has already
+    // moved on from where we left it
+    await admin
+      .from("tickers")
+      .update({ sentiment: s0 })
+      .eq("id", ticker.id)
+      .gte("sentiment", fill.newSentiment - CLAIM_EPS)
+      .lte("sentiment", fill.newSentiment + CLAIM_EPS);
     const msg = error.message.includes("insufficient cash")
       ? "Not enough play money."
       : error.message.includes("insufficient shares")
