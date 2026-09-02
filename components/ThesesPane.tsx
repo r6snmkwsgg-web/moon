@@ -72,7 +72,7 @@ export default function ThesesPane({
               ) : (
                 <span className="font-mono font-bold">{it.post.author}</span>
               )}
-              <AiChip username={it.post.username} />
+              <AiChip username={it.post.username} bot={it.post.bot} />
               {it.post.stance !== null && (
                 <span
                   className={`flex items-center gap-0.5 rounded px-1 py-0.5 font-mono text-[10px] font-bold ${
@@ -139,7 +139,7 @@ export default function ThesesPane({
               ) : (
                 <span className="font-mono font-bold">{it.trade.trader}</span>
               )}
-              <AiChip username={it.trade.username} />
+              <AiChip username={it.trade.username} bot={it.trade.bot} />
               <span
                 className={`num rounded px-1.5 py-0.5 font-mono font-semibold ${
                   it.trade.side === "buy"

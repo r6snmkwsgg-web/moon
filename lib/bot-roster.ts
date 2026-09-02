@@ -42,10 +42,23 @@ export function isBotUsername(username: string | null | undefined): boolean {
  */
 export function startingCashFor(
   username: string | null | undefined,
-  humanStake: number
+  humanStake: number,
+  persona?: { cash?: number } | null
 ): number {
+  // the persona on the row (0009) is the record; the roster covers the
+  // twelve originals before it is applied
+  if (persona && typeof persona.cash === "number" && persona.cash > 0) return persona.cash;
   const bot = username ? BOTS.find((b) => b.username === username) : undefined;
   return bot ? bot.cash : humanStake;
+}
+
+/** Whether an account is an AI trader: the flag on the row once 0009 is
+ *  applied, the roster before it. */
+export function isBotProfile(profile: {
+  username?: string | null;
+  is_bot?: boolean | null;
+}): boolean {
+  return profile.is_bot === true || isBotUsername(profile.username);
 }
 
 /** The mailbox a bot account is registered under. Nothing is ever sent to it. */

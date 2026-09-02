@@ -63,7 +63,7 @@ export default function TradesList({
               ) : (
                 <span className="font-mono text-terminal-text">{t.trader}</span>
               ))}
-            {showTrader && <AiChip username={t.username} />}
+            {showTrader && <AiChip username={t.username} bot={t.bot} />}
             {showTrader && (
               <span className="text-terminal-muted">
                 {t.side === "buy" ? "bought" : "sold"}

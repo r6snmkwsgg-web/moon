@@ -6,12 +6,15 @@ import { isBotUsername } from "@/lib/bot-roster";
  */
 export default function AiChip({
   username,
+  bot,
   className = "",
 }: {
-  username: string | null | undefined;
+  username?: string | null;
+  /** The flag off the profile row (0009); the roster is the fallback. */
+  bot?: boolean;
   className?: string;
 }) {
-  if (!isBotUsername(username)) return null;
+  if (!bot && !isBotUsername(username)) return null;
   return (
     <span
       title="An AI trader — its judgement is code, its trades are real"

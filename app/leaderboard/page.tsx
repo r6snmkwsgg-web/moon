@@ -5,7 +5,7 @@ import { fmtMoney } from "@/lib/format";
 import { STARTING_CASH } from "@/lib/config";
 import TierBadge from "@/components/TierBadge";
 import AiChip from "@/components/AiChip";
-import { isBotUsername } from "@/lib/bot-roster";
+import { isBotProfile } from "@/lib/bot-roster";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +43,7 @@ export default async function LeaderboardPage({
     getXpMap(),
   ]);
   const top = rows
-    .filter((row) => !humansOnly || !isBotUsername(row.valuation.profile.username))
+    .filter((row) => !humansOnly || !isBotProfile(row.valuation.profile))
     .slice(0, 25);
 
   return (
@@ -133,7 +133,7 @@ export default async function LeaderboardPage({
                       ) : (
                         v.profile.display_name
                       )}
-                      <AiChip username={v.profile.username} />
+                      <AiChip username={v.profile.username} bot={v.profile.is_bot} />
                       <TierBadge xp={xpMap.get(v.profile.id) ?? 0} />
                       {isMe && (
                         <span className="text-[10px] text-terminal-accent">

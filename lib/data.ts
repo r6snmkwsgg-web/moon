@@ -17,7 +17,7 @@ import { mergeAnchors } from "@/lib/candles";
 import { anchorRevenue } from "@/lib/revenue";
 import { summariseHolderTrades } from "@/lib/holders";
 import { latestEventMrr } from "@/lib/pulse";
-import { startingCashFor } from "@/lib/bot-roster";
+import { isBotProfile, startingCashFor } from "@/lib/bot-roster";
 import type { DailyRevenue } from "@/lib/surprise";
 import { STARTING_CASH } from "@/lib/config";
 import { getRevenueEvents } from "@/lib/pulse";
@@ -751,7 +751,8 @@ function valuePortfolio(
     positions,
     holdingsValue,
     totalValue,
-    totalPnl: totalValue - startingCashFor(profile.username, STARTING_CASH),
+    totalPnl:
+      totalValue - startingCashFor(profile.username, STARTING_CASH, profile.persona),
   };
 }
 
@@ -806,6 +807,8 @@ export interface FeedTrade {
   username: string | null;
   symbol: string;
   note: string | null; // the public "why" (0003)
+  /** An AI trader's print. */
+  bot: boolean;
 }
 
 /**
@@ -822,7 +825,7 @@ export async function getRecentTrades(
   const admin = createSupabaseAdminClient();
   let query = admin
     .from("trades")
-    .select("*, profiles(display_name, username), tickers(symbol)")
+    .select("*, profiles(*), tickers(symbol)")
     .order("created_at", { ascending: false })
     .limit(limit);
   if (tickerId) query = query.eq("ticker_id", tickerId);
@@ -845,6 +848,7 @@ export async function getRecentTrades(
       username: (profile.username as string) ?? null,
       symbol: String(ticker.symbol ?? "?"),
       note: (t.note as string) ?? null,
+      bot: isBotProfile(profile as { username?: string | null; is_bot?: boolean | null }),
     };
   });
 }
@@ -869,6 +873,8 @@ export interface HolderRow {
   thesis: string | null;
   thesisAt: number | null;
   lastTradeAt: number | null;
+  /** An AI trader. */
+  bot: boolean;
 }
 
 /**
@@ -886,7 +892,7 @@ export async function getHolders(
   const admin = createSupabaseAdminClient();
   const { data, count } = await admin
     .from("holdings")
-    .select("user_id, shares, avg_cost, profiles(display_name, username)", {
+    .select("user_id, shares, avg_cost, profiles(*)", {
       count: "exact",
     })
     .eq("ticker_id", tickerId)
@@ -942,6 +948,7 @@ export async function getHolders(
         thesis: a?.thesis ?? null,
         thesisAt: a?.thesisAt ?? null,
         lastTradeAt: a?.lastTradeAt ?? null,
+        bot: isBotProfile(profile as { username?: string | null; is_bot?: boolean | null }),
       };
     })
     .sort((a, b) => b.value - a.value);
@@ -961,6 +968,8 @@ export interface TickerPost {
   /** The poster's REAL position, joined live — never stored, can't be faked. */
   positionShares: number;
   positionPnl: number | null; // vs avg cost at the live price
+  /** An AI trader's take. */
+  bot: boolean;
 }
 
 /** Discussion thread for one ticker, each post carrying its author's live position. */
@@ -973,7 +982,7 @@ export async function getTickerPosts(
     const admin = createSupabaseAdminClient();
     const { data } = await admin
       .from("posts")
-      .select("*, profiles(display_name, username)")
+      .select("*, profiles(*)")
       .eq("ticker_id", tickerId)
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -1009,6 +1018,7 @@ export async function getTickerPosts(
           pos && shares > 0
             ? shares * livePrice - shares * Number(pos.avg_cost)
             : null,
+        bot: isBotProfile(profile as { username?: string | null; is_bot?: boolean | null }),
       };
     });
   } catch {
@@ -1259,7 +1269,7 @@ export async function getLeaderboard(
       rangePnl:
         v.totalValue -
         (baseline.get(v.profile.id) ??
-          startingCashFor(v.profile.username, STARTING_CASH)),
+          startingCashFor(v.profile.username, STARTING_CASH, v.profile.persona)),
     }))
     .sort((a, b) => b.rangePnl - a.rangePnl);
 }

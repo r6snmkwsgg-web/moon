@@ -197,7 +197,7 @@ export default function HoldersTable({
                         ) : (
                           <span className="font-mono font-bold">{r.trader}</span>
                         )}
-                        <AiChip username={r.username} />
+                        <AiChip username={r.username} bot={r.bot} />
                         {mine && (
                           <span className="rounded bg-terminal-accent/15 px-1 font-mono text-[10px] text-terminal-accent">
                             you

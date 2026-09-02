@@ -55,6 +55,9 @@ export interface Profile {
   username?: string;
   invite_code?: string;
   invited_by?: string | null;
+  // 0009_bot_population — absent until the migration runs
+  is_bot?: boolean;
+  persona?: { cash?: number } | null;
 }
 
 export interface Trade {
