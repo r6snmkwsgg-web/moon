@@ -247,7 +247,7 @@ export default function AboutCard({
           {isDemo ? "demo listing · simulated revenue pulse and AI traders" : "play money · real revenue"}
         </span>
         <Link href="/how" className="shrink-0 text-terminal-accent hover:underline">
-          how the price is built →
+          how the market works →
         </Link>
       </p>
     </section>
