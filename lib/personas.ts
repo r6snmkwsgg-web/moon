@@ -34,6 +34,54 @@ export interface Persona {
   postRate: number;
   /** Usernames this one copies, with a delay. */
   follows: string[];
+  /** One of the twenty the floor follows: calls names, adds to them, holds. */
+  leader?: boolean;
+  /**
+   * How far this account's own idea of fair value strays from the formula,
+   * as the sigma of a log-normal. Nobody trades the formula; they trade
+   * their read of it, and their read is wrong by this much, per name, per
+   * week. Defaults by dominant style (see fairSloppiness).
+   */
+  sloppiness?: number;
+}
+
+/** The default sloppiness of a fair-value read, by the style that dominates. */
+export const SLOPPINESS: Record<BotStyle, number> = {
+  whale: 0.08,
+  value: 0.14,
+  news: 0.22,
+  momentum: 0.35,
+  noise: 0.45,
+};
+
+export function dominantStyle(p: Persona): BotStyle {
+  let best: BotStyle = "noise";
+  let w = -1;
+  for (const [k, v] of Object.entries(p.styles) as [BotStyle, number][]) {
+    if (v > w) {
+      w = v;
+      best = k;
+    }
+  }
+  return best;
+}
+
+export function fairSloppiness(p: Persona): number {
+  return p.sloppiness ?? SLOPPINESS[dominantStyle(p)];
+}
+
+/**
+ * This account's fair value for this name, this week: the formula times a
+ * personal, persistent error. Deterministic in (who, what, when) so the
+ * same account keeps the same wrong number for days and then changes its
+ * mind, which is what conviction looks like from outside.
+ */
+export function myFairValue(p: Persona, symbol: string, fair: number, now: number): number {
+  const sigma = fairSloppiness(p);
+  if (sigma <= 0 || !(fair > 0)) return fair;
+  const week = Math.floor(now / (7 * 86_400_000));
+  const z = seededRng(`${p.username}|${symbol}|${week}`).gauss();
+  return fair * Math.exp(sigma * z);
 }
 
 /* ── deterministic randomness ─────────────────────────────────────────── */
@@ -240,10 +288,18 @@ export const WAKE_SCALE = 4;
 /** Paper hands check the chart more often than diamond hands do. */
 export const HOLD_TEMPO: Record<Hold, number> = { paper: 1.4, swing: 1, diamond: 0.7 };
 
+/** A leader is on the floor more than their activity says — that is how they lead. */
+export const LEADER_TEMPO = 1.5;
+
 export function actChance(p: Persona, t: number, intervalMs = 5 * 60_000): number {
   return Math.min(
     0.95,
-    (p.activityPerDay * WAKE_SCALE * HOLD_TEMPO[p.hold] * intervalMs * timeOfDayFactor(t)) /
+    (p.activityPerDay *
+      WAKE_SCALE *
+      HOLD_TEMPO[p.hold] *
+      (p.leader ? LEADER_TEMPO : 1) *
+      intervalMs *
+      timeOfDayFactor(t)) /
       86_400_000
   );
 }

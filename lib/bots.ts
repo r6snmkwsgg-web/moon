@@ -20,7 +20,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { BOTS, type BotSpec, type BotStyle } from "@/lib/bot-roster";
 import { cryptoRandom, type FlowRandom } from "@/lib/flow";
-import { actChance, timeOfDayFactor, type Persona } from "@/lib/personas";
+import { actChance, myFairValue, timeOfDayFactor, type Persona } from "@/lib/personas";
 import { pageAll } from "@/lib/supabase/page-all";
 import {
   fairPrice,
@@ -51,8 +51,11 @@ export interface TickerView {
   change15m: number;
   /** Revenue news of the last few hours: signed fraction of MRR, and age. */
   news: { move: number; ageMs: number }[];
-  /** This bot's own position. */
+  /** This bot's own position, and what it paid on average (0 without one). */
   held: number;
+  avgCost: number;
+  /** A leader this bot follows holds the name — their conviction is borrowed. */
+  leaderHolds: boolean;
   /** The biggest print behind the last half hour's move, if one is big enough to blame. */
   culprit?: Culprit | null;
   /** What the accounts this bot follows just did here: +1 per buy, −1 per sell. */
@@ -173,7 +176,9 @@ export const MAX_SHAKEN = 200;
 /** The floor talks twice as much as the personas' own rate says — thirty listings is a lot of floor. */
 export const POST_SCALE = 2;
 /** Hearts the population leaves on the floor per round, at most. */
-export const MAX_LIKES_PER_ROUND = 6;
+export const MAX_LIKES_PER_ROUND = 20;
+/** Votes the population casts on the community gauges per round, at most. */
+export const MAX_VOTES_PER_ROUND = 40;
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
@@ -209,10 +214,19 @@ export function conviction(style: BotStyle, v: TickerView, rng: FlowRandom): num
 }
 
 /** A persona's conviction: its style mix, plus the crowd it follows. */
-export function personaConviction(p: Persona, v: TickerView, rng: FlowRandom): {
+export function personaConviction(
+  p: Persona,
+  view: TickerView,
+  rng: FlowRandom,
+  now = Date.now()
+): {
   c: number;
   reason: Reason;
 } {
+  // nobody trades the formula: they trade their own read of it, which is
+  // wrong by a personal, persistent amount — so accounts disagree, some buy
+  // what others sell, and none of them knows exactly when
+  const v: TickerView = { ...view, fair: myFairValue(p, view.symbol, view.fair, now) };
   let total = 0;
   let best: Reason = "noise";
   let bestAbs = -1;
@@ -226,7 +240,10 @@ export function personaConviction(p: Persona, v: TickerView, rng: FlowRandom): {
   }
   // herding: a buy by someone you follow is worth a bit of conviction on its
   // own, capped so a crowd cannot talk you into more than a half-size order
-  total += clamp(v.herd * 0.2, -0.5, 0.5);
+  total += clamp(v.herd * 0.2, -0.6, 0.6);
+  // a leader adds to their own call and does not chase the exit
+  if (p.leader && v.held > 0 && total > 0) total += 0.2;
+  if (p.leader && total < 0) total *= 0.5;
 
   // The reflexes. A holder watching their name drop a tenth in a quarter
   // hour does not consult a model: paper hands are out, swing hands trim,
@@ -234,7 +251,8 @@ export function personaConviction(p: Persona, v: TickerView, rng: FlowRandom): {
   // same drop on NO bad news sees a seller, not a churn — and buys it.
   const drop = Math.max(0, -v.change15m, -v.change1h * 0.5);
   if (v.held > 0 && drop >= 0.03) {
-    const panic = PANIC[p.hold] * clamp(drop / 0.08, 0, 1);
+    // half the panic if someone you follow is still in — that is what a leader is for
+    const panic = PANIC[p.hold] * clamp(drop / 0.08, 0, 1) * (v.leaderHolds ? 0.5 : 1);
     total -= panic;
     if (panic > bestAbs) {
       bestAbs = panic;
@@ -311,7 +329,7 @@ export function decide(
     if (want < 1 && affordable >= 1) want = 1;
     shares = Math.min(want, room, left, affordable);
   } else {
-    const appetite = SELL_APPETITE[p.hold];
+    const appetite = SELL_APPETITE[p.hold] * (p.leader ? 0.5 : 1);
     const frac = clamp(Math.abs(c) * appetite, 0.1, 1);
     // a near-full sell is a full sell — nobody leaves seven shares behind
     shares = frac >= 0.9 ? v.held : Math.min(v.held, Math.max(1, Math.round(v.held * frac)));
@@ -325,7 +343,9 @@ export function decide(
       ? Math.max(p.thesisRate, v.culprit ? 0.85 : 0.6)
       : p.thesisRate;
   if (rng.unit() < rate) {
-    note = composeThesis(p, situationFor(v, side, reason), rng);
+    // the note cites this account's own fair value, not the formula's
+    const mine = { ...v, fair: myFairValue(p, v.symbol, v.fair, Date.now()) };
+    note = composeThesis(p, situationFor(mine, side, reason), rng);
   }
   return { symbol: v.symbol, side, shares, note, reason };
 }
@@ -367,6 +387,8 @@ export interface BotRoundResult {
   shaken?: number;
   /** Hearts left on the floor this round. */
   liked?: number;
+  /** Votes cast on the gauges this round. */
+  voted?: number;
   attempted: number;
   filled: number;
   posted: number;
@@ -452,7 +474,7 @@ export async function runBotRound(
   const quarterAgo = new Date(now - 15 * 60_000).toISOString();
   const dayAgo = new Date(now - 86_400_000).toISOString().slice(0, 10);
   const newsSince = new Date(now - 4 * 3_600_000).toISOString();
-  const herdSince = now - 15 * 60_000;
+  const herdSince = now - 30 * 60_000;
   const blameSince = new Date(now - 30 * 60_000).toISOString();
   const botIds = new Set(population.map((a) => a.id));
   const usernameOf = new Map(population.map((a) => [a.id, a.username]));
@@ -477,10 +499,10 @@ export async function runBotRound(
       .select("ticker_id, at, prev_mrr, mrr, prev_subscriptions")
       .gte("at", newsSince)
       .order("at", { ascending: true }),
-    pageAll<{ user_id: string; ticker_id: string; shares: number }>((f, t) =>
+    pageAll<{ user_id: string; ticker_id: string; shares: number; avg_cost?: number }>((f, t) =>
       admin
         .from("holdings")
-        .select("user_id, ticker_id, shares")
+        .select("user_id, ticker_id, shares, avg_cost")
         .gt("shares", 0)
         .order("user_id")
         .order("ticker_id")
@@ -533,9 +555,19 @@ export async function runBotRound(
   }
   const floatHeld = new Map<string, number>();
   const mine = new Map<string, number>(); // `${userId}/${tickerId}` → shares
+  const myAvg = new Map<string, number>(); // `${userId}/${tickerId}` → avg cost
   for (const h of (holdings ?? []) as { user_id: string; ticker_id: string; shares: number }[]) {
     floatHeld.set(h.ticker_id, (floatHeld.get(h.ticker_id) ?? 0) + Number(h.shares));
     mine.set(`${h.user_id}/${h.ticker_id}`, Number(h.shares));
+    myAvg.set(`${h.user_id}/${h.ticker_id}`, Number((h as { avg_cost?: number }).avg_cost ?? 0));
+  }
+  // which names each leader is in — followers borrow that conviction
+  const leaderHoldings = new Map<string, Set<string>>();
+  for (const a of population) {
+    if (!a.persona.leader) continue;
+    const held = new Set<string>();
+    for (const [k, n] of mine) if (n > 0 && k.startsWith(`${a.id}/`)) held.add(k.slice(a.id.length + 1));
+    leaderHoldings.set(a.username, held);
   }
   const priceHourAgo = new Map<string, number>();
   for (const k of (ticksAgo ?? []) as { ticker_id: string; price: number }[]) {
@@ -565,12 +597,13 @@ export async function runBotRound(
   });
   // recent prints by bots, keyed by the printer's username, per ticker —
   // the herd looks at the last quarter hour only
-  const printsBy = new Map<string, { tickerId: string; side: TradeSide }[]>();
+  const printsBy = new Map<string, { tickerId: string; side: TradeSide; weight: number }[]>();
+  const leaderNames = new Set(population.filter((a) => a.persona.leader).map((a) => a.username));
   for (const t of prints) {
     if (!botIds.has(t.userId) || t.at < herdSince) continue;
     const u = usernameOf.get(t.userId)!;
     const l = printsBy.get(u) ?? [];
-    l.push({ tickerId: t.tickerId, side: t.side });
+    l.push({ tickerId: t.tickerId, side: t.side, weight: leaderNames.has(u) ? 2 : 1 });
     printsBy.set(u, l);
   }
 
@@ -614,10 +647,12 @@ export async function runBotRound(
   const viewsFor = (a: Account): TickerView[] =>
     board.map((v) => {
       let herd = 0;
+      let leaderHolds = false;
       for (const u of a.persona.follows) {
         for (const pr of printsBy.get(u) ?? []) {
-          if (pr.tickerId === v.id) herd += pr.side === "buy" ? 1 : -1;
+          if (pr.tickerId === v.id) herd += (pr.side === "buy" ? 1 : -1) * pr.weight;
         }
+        if (leaderHoldings.get(u)?.has(v.id)) leaderHolds = true;
       }
       return {
         symbol: v.symbol,
@@ -631,6 +666,8 @@ export async function runBotRound(
         culprit: v.culprit,
         news: v.news,
         held: mine.get(`${a.id}/${v.id}`) ?? 0,
+        avgCost: myAvg.get(`${a.id}/${v.id}`) ?? 0,
+        leaderHolds,
         herd,
         mrr: v.mrr,
       };
@@ -741,9 +778,40 @@ export async function runBotRound(
     const { error } = await admin.from("posts").insert({ ticker_id: tickerId, user_id: account.id, body, stance });
     if (!error) out.posted++;
   }
-  // A few hearts. Awake accounts that hold a name read its last day of
-  // theses and like one — a take on something you own is the one you
-  // notice. Pre-0010 the table is missing and this is a no-op.
+  // The poll. Everyone awake this round has an opinion on the name they
+  // looked hardest at; about half of them say so on the gauge — bull if
+  // they would buy it, bear if they would sell. Upserted, so a change of
+  // mind is one row, not two.
+  try {
+    let voted = 0;
+    const votes: { user_id: string; ticker_id: string; vote: 1 | -1; updated_at: string }[] = [];
+    for (const account of roster) {
+      if (votes.length >= MAX_VOTES_PER_ROUND) break;
+      if (rng.unit() > 0.5) continue;
+      const views = viewsFor(account);
+      let strongest: { v: TickerView; c: number } | null = null;
+      for (const v of views) {
+        const { c } = personaConviction(account.persona, v, rng, now);
+        if (!strongest || Math.abs(c) > Math.abs(strongest.c)) strongest = { v, c };
+      }
+      if (!strongest || Math.abs(strongest.c) < 0.3) continue;
+      const tickerId = board.find((b) => b.symbol === strongest!.v.symbol)?.id;
+      if (!tickerId) continue;
+      votes.push({ user_id: account.id, ticker_id: tickerId, vote: strongest.c > 0 ? 1 : -1, updated_at: new Date(now).toISOString() });
+    }
+    if (votes.length > 0) {
+      const { error } = await admin.from("ticker_votes").upsert(votes, { onConflict: "user_id,ticker_id" });
+      if (!error) voted = votes.length;
+    }
+    out.voted = voted;
+  } catch {
+    // votes are cosmetic
+  }
+
+  // Hearts. Awake accounts read the last day of theses on names they hold
+  // and like some — weighted to the big positions and the leaders, since
+  // that is who gets read: a take backed by $40k gets the hearts, a take
+  // backed by $40 gets scrolled past. Pre-0010 the table is missing.
   try {
     const dayAgoIso = new Date(now - 86_400_000).toISOString();
     const [{ data: recentPosts }, { data: recentNotes }] = await Promise.all([
@@ -762,19 +830,28 @@ export async function runBotRound(
         .limit(300),
     ]);
     type Thesis = { id: string; ticker_id: string; user_id: string };
+    const priceOf = new Map(board.map((b) => [b.id, b.price]));
     const theses = [
       ...((recentPosts ?? []) as Thesis[]).map((r) => ({ kind: "post" as const, ...r })),
       ...((recentNotes ?? []) as Thesis[]).map((r) => ({ kind: "trade" as const, ...r })),
-    ];
+    ].map((t) => {
+      const backing = (mine.get(`${t.user_id}/${t.ticker_id}`) ?? 0) * (priceOf.get(t.ticker_id) ?? 0);
+      const author = usernameOf.get(t.user_id);
+      const leader = author ? leaderNames.has(author) : false;
+      return { ...t, weight: Math.sqrt(1 + backing / 100) * (leader ? 3 : 1) };
+    });
     let liked = 0;
     for (const account of roster) {
       if (liked >= MAX_LIKES_PER_ROUND) break;
-      if (rng.unit() > 0.35) continue;
+      if (rng.unit() > 0.5) continue;
       const own = theses.filter(
         (t) => t.user_id !== account.id && (mine.get(`${account.id}/${t.ticker_id}`) ?? 0) > 0
       );
-      const pick = own[Math.floor(rng.unit() * own.length)];
-      if (!pick) continue;
+      const total = own.reduce((a, t) => a + t.weight, 0);
+      if (total <= 0) continue;
+      let r = rng.unit() * total;
+      let pick = own[own.length - 1];
+      for (const t of own) if ((r -= t.weight) <= 0) { pick = t; break; }
       const { error } = await admin
         .from("thesis_likes")
         .upsert(

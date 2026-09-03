@@ -3,6 +3,8 @@ import {
   actChance,
   WAKE_SCALE,
   HOLD_TEMPO,
+  myFairValue,
+  SLOPPINESS,
   generatePersona,
   generatePopulation,
   seededRng,
@@ -115,5 +117,30 @@ describe("seededRng", () => {
     const mean = xs.reduce((s, x) => s + x, 0) / xs.length;
     expect(mean).toBeGreaterThan(0.45);
     expect(mean).toBeLessThan(0.55);
+  });
+});
+
+describe("everyone's own fair value", () => {
+  it("is the formula times a personal error that lasts a week, then moves", () => {
+    const p = generatePersona("v", 7);
+    const monday = Date.parse("2026-09-07T12:00:00Z");
+    const a = myFairValue(p, "SNDR", 25, monday);
+    const b = myFairValue(p, "SNDR", 25, monday + 2 * 86_400_000);
+    const later = myFairValue(p, "SNDR", 25, monday + 9 * 86_400_000);
+    expect(a).toBe(b); // same read all week
+    expect(a).not.toBe(later); // then a change of mind
+    expect(myFairValue(p, "PRL", 25, monday)).not.toBe(a); // a different name, a different read
+    expect(myFairValue({ ...p, sloppiness: 0 }, "SNDR", 25, monday)).toBe(25);
+  });
+
+  it("noise traders are sloppier than whales, and the population disagrees", () => {
+    expect(SLOPPINESS.noise).toBeGreaterThan(SLOPPINESS.value);
+    expect(SLOPPINESS.value).toBeGreaterThan(SLOPPINESS.whale);
+    const monday = Date.parse("2026-09-07T12:00:00Z");
+    const reads = Array.from({ length: 300 }, (_, i) => myFairValue(generatePersona("v", i), "SNDR", 25, monday));
+    const under = reads.filter((r) => r < 25).length;
+    expect(under).toBeGreaterThan(90);
+    expect(under).toBeLessThan(210); // both sides of the formula, no consensus
+    expect(Math.max(...reads) / Math.min(...reads)).toBeGreaterThan(1.5);
   });
 });

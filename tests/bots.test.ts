@@ -44,6 +44,8 @@ const view = (over: Partial<TickerView> = {}): TickerView => ({
   change24h: 0,
   news: [],
   held: 0,
+  avgCost: 0,
+  leaderHolds: false,
   herd: 0,
   mrr: 14_100,
   ...over,
@@ -59,6 +61,7 @@ const pure = (style: Persona["styles"] extends Partial<Record<infer S, number>> 
   thesisRate: 0,
   postRate: 0,
   follows: [],
+  sloppiness: 0, // the tests pin the formula; the floor's own reads are tested apart
   ...over,
 });
 
@@ -113,7 +116,7 @@ describe("conviction, by style", () => {
     expect(Math.abs(mixed.c)).toBeLessThan(0.05);
     // the crowd buying tips it, but never past half size on its own
     const herded = personaConviction(pure("noise", { styles: { noise: 1 } }), view({ herd: 10 }), fixed(0.5));
-    expect(herded.c).toBeCloseTo(0.5, 5);
+    expect(herded.c).toBeCloseTo(0.6, 5);
   });
 });
 
@@ -258,5 +261,28 @@ describe("the rugger", () => {
   it("nobody, when the biggest print was too small to matter", () => {
     const prints = [print({ shares: 10, total: 250 })];
     expect(pickCulprit(prints, "t1", 20_000, "down", now)).toBeNull();
+  });
+});
+
+describe("leaders", () => {
+  it("add to a name they hold and are slow to leave it", () => {
+    const leader = pure("value", { leader: true, hold: "swing" });
+    const follower = pure("value", { hold: "swing" });
+    // a modest edge, so neither read is pinned at the clamp
+    const cheap = view({ price: 22, fair: 25, held: 100 });
+    expect(personaConviction(leader, cheap, seeded(1)).c).toBeGreaterThan(
+      personaConviction(follower, cheap, seeded(1)).c
+    );
+    const rich = view({ price: 32, fair: 25, held: 100 });
+    expect(personaConviction(leader, rich, seeded(1)).c).toBeGreaterThan(
+      personaConviction(follower, rich, seeded(1)).c
+    ); // less negative
+  });
+
+  it("a follower panics half as hard while the leader is still in", () => {
+    const p = pure("value", { hold: "paper" });
+    const alone = view({ price: 22, fair: 25, change15m: -0.12, change1h: -0.12, held: 400 });
+    const covered = view({ ...alone, leaderHolds: true });
+    expect(personaConviction(p, covered, seeded(2)).c).toBeGreaterThan(personaConviction(p, alone, seeded(2)).c);
   });
 });
