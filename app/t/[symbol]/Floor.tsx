@@ -18,6 +18,7 @@ export default async function Floor({
   viewerId,
   renderedAt,
   pricing,
+  min = null,
 }: {
   tickerId: string;
   symbol: string;
@@ -25,6 +26,8 @@ export default async function Floor({
   shares: number;
   viewerId: string | null;
   renderedAt: number;
+  /** The size filter from the URL: prints and positions of at least this much. */
+  min?: number | null;
   pricing: {
     mrr: number;
     sentiment: number;
@@ -34,14 +37,18 @@ export default async function Floor({
     drift: number;
   };
 }) {
-  const [recentTrades, posts, theses, holders, followedIds] = await Promise.all([
-    // enough of the floor that a size filter still leaves something to read
-    getRecentTrades(60, tickerId),
-    getTickerPosts(tickerId, price, 40, viewerId),
-    getRecentTrades(60, tickerId, undefined, true, viewerId),
+  // With a size filter on, the rows are filtered in the query and the
+  // window widens: a $10K print from three hours ago is exactly what the
+  // filter is for, and it was the 110th most recent — outside the sixty.
+  const filtered = min !== null && min > 0;
+  const [recentTrades, allPosts, theses, holders, followedIds] = await Promise.all([
+    getRecentTrades(filtered ? 200 : 60, tickerId, undefined, false, viewerId, min),
+    getTickerPosts(tickerId, price, filtered ? 120 : 40, viewerId),
+    getRecentTrades(filtered ? 200 : 60, tickerId, undefined, true, viewerId, min),
     getHolders(tickerId, price, shares, 100, viewerId),
     viewerId ? getFollowedIds(viewerId) : Promise.resolve([] as string[]),
   ]);
+  const posts = filtered ? allPosts.filter((p) => p.positionValue >= (min ?? 0)) : allPosts;
   return (
     <div className="grid items-start gap-3 2xl:grid-cols-[minmax(0,1fr)_380px]">
       <HoldersTable
@@ -61,6 +68,7 @@ export default async function Floor({
         symbol={symbol}
         signedIn={viewerId !== null}
         viewerId={viewerId}
+        serverMin={min}
       />
     </div>
   );

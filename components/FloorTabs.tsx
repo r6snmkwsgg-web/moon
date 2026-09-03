@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Filter } from "lucide-react";
 import type { FeedTrade, TickerPost } from "@/lib/data";
 import { MIN_SIZE_PRESETS, minSizeLabel, passesMinSize } from "@/lib/min-size";
@@ -25,6 +26,7 @@ export default function FloorTabs({
   symbol,
   signedIn,
   viewerId,
+  serverMin = null,
 }: {
   trades: FeedTrade[];
   posts: TickerPost[];
@@ -32,20 +34,37 @@ export default function FloorTabs({
   symbol: string;
   signedIn: boolean;
   viewerId: string | null;
+  /** The filter the server already applied to these rows (from the URL). */
+  serverMin?: number | null;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [tab, setTab] = useState<"trades" | "theses">("trades");
-  const [min, setMin] = useState<number | null>(null);
+  const [min, setMin] = useState<number | null>(serverMin);
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
 
   // remembered per browser — a whale-watcher stays a whale-watcher
+  // The filter is applied where the rows are — in the query — so a choice
+  // goes into the URL and the floor re-renders with every print over the
+  // size, not just the ones that happened to be in the last sixty. The
+  // client filter below still applies instantly to what is on screen.
+  const navigate = (v: number | null) => {
+    router.replace(v === null ? pathname : `${pathname}?min=${v}`, { scroll: false });
+  };
   useEffect(() => {
+    if (serverMin !== null) return; // the URL already says
     try {
       const raw = localStorage.getItem(storageKey(symbol));
-      if (raw !== null) setMin(raw === "" ? null : Number(raw));
+      if (raw !== null && raw !== "") {
+        const v = Number(raw);
+        setMin(v);
+        navigate(v);
+      }
     } catch {
       // storage unavailable
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
   const choose = (v: number | null) => {
     setMin(v);
@@ -55,6 +74,7 @@ export default function FloorTabs({
     } catch {
       // storage unavailable
     }
+    navigate(v);
   };
 
   // your own prints, ahead of the server's copy of the tape; once a refresh
@@ -159,6 +179,17 @@ export default function FloorTabs({
         )}
       </div>
 
+      {min !== null && (
+        <p className="flex items-center justify-between gap-2 border-b border-terminal-line/60 px-3 py-1 font-mono text-[10px] text-terminal-muted">
+          <span>
+            {tab === "trades" ? "prints" : "theses backed by"} over {minSizeLabel(min).replace("Min size (>", "").replace(")", "")}
+            {" · "}last 200 on the tape
+          </span>
+          <button type="button" onClick={() => choose(null)} className="text-terminal-accent hover:underline">
+            show all
+          </button>
+        </p>
+      )}
       {/* the lists scroll inside the panel, so the floor keeps its height */}
       <div className="max-h-[560px] overflow-y-auto">
         {tab === "trades" ? (

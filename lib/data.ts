@@ -882,7 +882,9 @@ export async function getRecentTrades(
   tickerId?: string,
   userIds?: string[],
   thesesOnly = false,
-  viewerId?: string | null
+  viewerId?: string | null,
+  /** Only prints of at least this many dollars — the floor's size filter, applied where the rows are. */
+  minTotal?: number | null
 ): Promise<FeedTrade[]> {
   if (userIds && userIds.length === 0) return [];
   const admin = createSupabaseAdminClient();
@@ -893,6 +895,7 @@ export async function getRecentTrades(
     .limit(limit);
   if (tickerId) query = query.eq("ticker_id", tickerId);
   if (userIds) query = query.in("user_id", userIds);
+  if (minTotal && minTotal > 0) query = query.gte("total", minTotal);
   // trades that carry a written thesis (0003; the filter no-ops to an empty
   // result pre-migration since the column is missing)
   if (thesesOnly) query = query.not("note", "is", null);

@@ -42,7 +42,7 @@ export const dynamic = "force-dynamic";
 
 type Props = {
   params: Promise<{ symbol: string }>;
-  searchParams: Promise<{ ipo?: string }>;
+  searchParams: Promise<{ ipo?: string; min?: string }>;
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -66,7 +66,9 @@ function nextReportLabel(latestMonth: string): string {
 }
 
 export default async function TickerPage({ params, searchParams }: Props) {
-  const [{ symbol }, { ipo }] = await Promise.all([params, searchParams]);
+  const [{ symbol }, { ipo, min: minParam }] = await Promise.all([params, searchParams]);
+  // the floor's size filter — applied in the query, so it is a URL, not a state
+  const minSize = minParam && Number(minParam) > 0 ? Number(minParam) : null;
   // the viewer and the ticker load together — one round trip, not two
   const [data, user] = await Promise.all([getTickerPage(symbol), getUser()]);
   if (!data) notFound();
@@ -344,6 +346,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
               shares={quote.shares}
               viewerId={user?.id ?? null}
               renderedAt={renderedAt}
+              min={minSize}
               pricing={{
                 mrr: quote.liveMrr,
                 sentiment: Number(t.sentiment),
