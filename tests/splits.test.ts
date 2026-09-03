@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CROWDED_FRACTION, FLOOR_PRICE, FULL_FRACTION, REVERSE_FACTOR, SPLIT_COOLDOWN_MS, SPLIT_PRICE, splitFactor } from "@/lib/splits";
+import { CROWDED_FRACTION, FLOOR_PRICE, REVERSE_FACTOR, SPLIT_COOLDOWN_MS, SPLIT_PRICE, splitFactor } from "@/lib/splits";
 
 const base = { price: 25, heldFraction: 0.2, demand: 0.1, lastSplitAt: null, now: 1_800_000_000_000 };
 
@@ -24,14 +24,6 @@ describe("the float follows demand", () => {
     expect(splitFactor({ ...base, price: 0.5, heldFraction: 0.7 })).toBe(2); // to $0.25, fine
     expect(splitFactor({ ...base, price: 0.015, heldFraction: 0.7 })).toBeNull(); // would cross the floor
     expect(splitFactor({ ...base, price: FLOOR_PRICE / 2 })).toBe(REVERSE_FACTOR); // consolidated a hundred to one
-  });
-
-  it("doubles a full float at once, cooldown or not — a float nobody can buy is not a market", () => {
-    const justSplit = base.now - 60_000;
-    expect(splitFactor({ ...base, heldFraction: FULL_FRACTION, lastSplitAt: justSplit })).toBe(2);
-    expect(splitFactor({ ...base, heldFraction: 0.97, price: 300, lastSplitAt: justSplit })).toBe(2);
-    // short of full, the cooldown still holds
-    expect(splitFactor({ ...base, heldFraction: CROWDED_FRACTION + 0.1, lastSplitAt: justSplit })).toBeNull();
   });
 
   it("waits out the cooldown", () => {

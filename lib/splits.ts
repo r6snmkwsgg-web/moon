@@ -28,14 +28,6 @@ export const FLOOR_PRICE = 0.01;
 export const REVERSE_FACTOR = 0.01;
 /** A split does not follow another one this soon. */
 export const SPLIT_COOLDOWN_MS = 6 * 3_600_000;
-/**
- * Unless the float is this full. A float nobody can buy into is not a
- * market — every order bounces off "fully held" — so a name this crowded
- * doubles on the spot, cooldown or not, and again on the next pass if the
- * crowd is still eating it. A run big enough to take a float four times
- * over gets four floats.
- */
-export const FULL_FRACTION = 0.9;
 
 export interface SplitInput {
   price: number;
@@ -53,9 +45,6 @@ export interface SplitInput {
  */
 export function splitFactor(s: SplitInput): number | null {
   if (!(s.price > 0)) return null;
-  // a float that is all but gone makes room now; everything else waits its turn
-  const full = s.heldFraction >= FULL_FRACTION && s.price / 2 >= FLOOR_PRICE;
-  if (full) return 2;
   if (s.lastSplitAt !== null && s.now - s.lastSplitAt < SPLIT_COOLDOWN_MS) return null;
   // the floor first — a name that fell through it is consolidated whatever else is true
   if (s.price < FLOOR_PRICE) return REVERSE_FACTOR;
