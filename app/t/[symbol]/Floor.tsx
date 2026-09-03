@@ -66,6 +66,7 @@ export default async function Floor({
         posts={posts}
         theses={theses}
         symbol={symbol}
+        tickerId={tickerId}
         signedIn={viewerId !== null}
         viewerId={viewerId}
         serverMin={min}

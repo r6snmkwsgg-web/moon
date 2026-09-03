@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Filter } from "lucide-react";
 import type { FeedTrade, TickerPost } from "@/lib/data";
 import { MIN_SIZE_PRESETS, minSizeLabel, passesMinSize } from "@/lib/min-size";
-import { useLiveFills } from "@/lib/live";
+import { publishFills, useLiveFills, type LiveFill } from "@/lib/live";
 import TradesList from "@/components/TradesList";
 import ThesesPane from "@/components/ThesesPane";
 
@@ -24,6 +24,7 @@ export default function FloorTabs({
   posts,
   theses,
   symbol,
+  tickerId,
   signedIn,
   viewerId,
   serverMin = null,
@@ -32,6 +33,8 @@ export default function FloorTabs({
   posts: TickerPost[];
   theses: FeedTrade[];
   symbol: string;
+  /** For the poll — the tape route takes the id. */
+  tickerId?: string;
   signedIn: boolean;
   viewerId: string | null;
   /** The filter the server already applied to these rows (from the URL). */
@@ -77,14 +80,68 @@ export default function FloorTabs({
     navigate(v);
   };
 
-  // your own prints, ahead of the server's copy of the tape; once a refresh
-  // carries the real row (same side, size and name) the live one steps aside
+  // The tape fills in as the market prints. Every few seconds the open
+  // page asks for prints since the newest one it knows and the curve as it
+  // stands; they land here ahead of the server's copy, and the chart, the
+  // header and the ticket move on the curve they came with. Once a refresh
+  // carries the real rows, the live copies step aside.
   const liveFills = useLiveFills(symbol);
+  const [freshIds, setFreshIds] = useState<Set<string>>(() => new Set());
+  const newest = useMemo(() => {
+    const times = [...trades, ...liveFills.filter((f) => !f.id.startsWith("live-"))].map((t) => Date.parse(t.created_at));
+    return times.length ? new Date(Math.max(...times)).toISOString() : null;
+  }, [trades, liveFills]);
+  const newestRef = useRef(newest);
+  newestRef.current = newest;
+  useEffect(() => {
+    if (!tickerId) return;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped || document.hidden) return;
+      try {
+        const qs = new URLSearchParams({ ticker: tickerId });
+        if (newestRef.current) qs.set("since", newestRef.current);
+        const res = await fetch(`/api/tape?${qs}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const json = (await res.json()) as { trades: FeedTrade[]; sentiment: number | null };
+        const fills: LiveFill[] = json.trades.map((t) => ({
+          id: t.id,
+          symbol,
+          side: t.side,
+          shares: t.shares,
+          price: t.price,
+          total: t.total,
+          trader: t.trader,
+          username: t.username,
+          created_at: t.created_at,
+          note: t.note,
+          bot: t.bot,
+        }));
+        publishFills(symbol, json.sentiment, fills);
+        if (fills.length > 0) {
+          setFreshIds(new Set(fills.map((f) => f.id)));
+          setTimeout(() => setFreshIds(new Set()), 2_500);
+        }
+      } catch {
+        // a missed poll is the next poll's problem
+      }
+    };
+    const id = setInterval(tick, 4_000);
+    return () => {
+      stopped = true;
+      clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickerId, symbol]);
+
   const allTrades = useMemo(() => {
+    const serverIds = new Set(trades.map((t) => t.id));
     const fresh = liveFills.filter(
       (f) =>
+        !serverIds.has(f.id) &&
         !trades.some(
           (t) =>
+            f.id.startsWith("live-") &&
             t.side === f.side &&
             t.shares === f.shares &&
             (t.username ?? null) === (f.username ?? null) &&
@@ -101,16 +158,22 @@ export default function FloorTabs({
       trader: f.trader,
       username: f.username,
       symbol: f.symbol,
-      note: null,
-      bot: false,
+      note: f.note ?? null,
+      bot: f.bot ?? false,
       likes: 0,
       likedByMe: false,
     }));
     return [...rows, ...trades];
   }, [liveFills, trades]);
+  // a live print with a note is a thesis too
+  const allTheses = useMemo(() => {
+    const serverIds = new Set(theses.map((t) => t.id));
+    const live = allTrades.filter((t) => t.note && !serverIds.has(t.id) && !trades.some((s) => s.id === t.id));
+    return [...live, ...theses];
+  }, [allTrades, theses, trades]);
   const shownTrades = useMemo(() => allTrades.filter((t) => passesMinSize(t.total, min)), [allTrades, min]);
   const shownPosts = useMemo(() => posts.filter((p) => passesMinSize(p.positionValue, min)), [posts, min]);
-  const shownTheses = useMemo(() => theses.filter((t) => passesMinSize(t.total, min)), [theses, min]);
+  const shownTheses = useMemo(() => allTheses.filter((t) => passesMinSize(t.total, min)), [allTheses, min]);
 
   const tabCls = (k: "trades" | "theses") =>
     `microlabel px-3 py-2.5 transition-colors ${
@@ -194,7 +257,13 @@ export default function FloorTabs({
       <div className="max-h-[560px] overflow-y-auto">
         {tab === "trades" ? (
           <>
-            <TradesList trades={shownTrades} showSymbol={false} signedIn={signedIn} showNotes={false} />
+            <TradesList
+              trades={shownTrades}
+              showSymbol={false}
+              signedIn={signedIn}
+              showNotes={false}
+              freshIds={freshIds}
+            />
             {shownTrades.length === 0 && allTrades.length > 0 && (
               <Hidden count={allTrades.length} min={min} onClear={() => choose(null)} what="prints" />
             )}

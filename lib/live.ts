@@ -23,6 +23,9 @@ export interface LiveFill {
   trader: string;
   username: string | null;
   created_at: string;
+  /** A note on the print, when the poll brought one. */
+  note?: string | null;
+  bot?: boolean;
 }
 
 type State = {
@@ -40,8 +43,24 @@ const subscribe = (l: () => void) => {
 
 /** A fill just came back: the curve moved to `sentiment`, and this printed. */
 export function publishFill(symbol: string, sentiment: number, fill: LiveFill | null): void {
-  state.sentiment.set(symbol, { value: sentiment, at: Date.now() });
-  if (fill) state.fills = [fill, ...state.fills].slice(0, 20);
+  publishFills(symbol, sentiment, fill ? [fill] : []);
+}
+
+/**
+ * The poll brought prints: the curve stands at `sentiment` now, and these
+ * landed since the last look. Newest first, no duplicates, eighty kept.
+ */
+export function publishFills(symbol: string, sentiment: number | null, fills: LiveFill[]): void {
+  if (sentiment !== null) state.sentiment.set(symbol, { value: sentiment, at: Date.now() });
+  if (fills.length > 0) {
+    const known = new Set(state.fills.map((f) => f.id));
+    const fresh = fills.filter((f) => !known.has(f.id));
+    if (fresh.length > 0) {
+      state.fills = [...fresh, ...state.fills]
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+        .slice(0, 80);
+    }
+  }
   emit();
 }
 

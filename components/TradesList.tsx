@@ -21,12 +21,15 @@ export default function TradesList({
   signedIn = false,
   showNotes = true,
   showTrader = true,
+  freshIds,
 }: {
   trades: FeedTrade[];
   showSymbol?: boolean;
   signedIn?: boolean;
   showNotes?: boolean; // off where a ThesisFeed already shows them
   showTrader?: boolean; // off on a profile, where every row is the same person
+  /** Rows that just landed — they flash in. */
+  freshIds?: Set<string>;
 }) {
   if (trades.length === 0) {
     return (
@@ -42,7 +45,7 @@ export default function TradesList({
           key={t.id}
           className={`space-y-0.5 px-3 py-1.5 text-[12px] ${
             showSymbol ? "row-hover cursor-pointer" : ""
-          }`}
+          } ${freshIds?.has(t.id) ? (t.side === "buy" ? "tape-in-up" : "tape-in-down") : ""}`}
         >
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span
