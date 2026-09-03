@@ -11,10 +11,22 @@ export async function notifyUsers(
   title: string,
   tickerId?: string
 ): Promise<void> {
-  const ids = [...new Set(userIds)];
-  if (ids.length === 0) return;
+  const all = [...new Set(userIds)];
+  if (all.length === 0) return;
   try {
     const admin = createSupabaseAdminClient();
+    // the AI traders never open their alerts — a thousand of them following
+    // twenty leaders was five thousand unread rows a day, for nobody
+    const ids: string[] = [];
+    for (let i = 0; i < all.length; i += 200) {
+      const { data } = await admin
+        .from("profiles")
+        .select("id")
+        .in("id", all.slice(i, i + 200))
+        .or("is_bot.is.null,is_bot.eq.false");
+      for (const r of (data ?? []) as { id: string }[]) ids.push(r.id);
+    }
+    if (ids.length === 0) return;
     await admin.from("notifications").insert(
       ids.map((user_id) => ({
         user_id,

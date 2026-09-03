@@ -164,6 +164,26 @@ export async function GET(request: Request) {
     // no revenue_events table — nothing to report
   }
 
+  // ── 6. housekeeping — what nobody reads any more is not kept ─────────────
+  // The chart bridges two days of ticks and reads daily snapshots past
+  // that; the traders look back a day. Ticks older than two weeks, alerts
+  // older than a month, and read alerts older than a week go, so the
+  // database holds steady instead of growing a few megabytes a day.
+  let pruned: unknown = null;
+  try {
+    const twoWeeks = new Date(Date.now() - 14 * 86400_000).toISOString();
+    const month = new Date(Date.now() - 30 * 86400_000).toISOString();
+    const week = new Date(Date.now() - 7 * 86400_000).toISOString();
+    const [ticks, oldAlerts, readAlerts] = await Promise.all([
+      admin.from("flow_ticks").delete({ count: "exact" }).lt("at", twoWeeks),
+      admin.from("notifications").delete({ count: "exact" }).lt("created_at", month),
+      admin.from("notifications").delete({ count: "exact" }).eq("read", true).lt("created_at", week),
+    ]);
+    pruned = { ticks: ticks.count ?? 0, alerts: (oldAlerts.count ?? 0) + (readAlerts.count ?? 0) };
+  } catch (e) {
+    pruned = { error: e instanceof Error ? e.message : String(e) };
+  }
+
   // ── 4c. the month's growth is paid out; the founders' calls are judged ────
   let dividends: unknown = null;
   let calls: unknown = null;
@@ -266,5 +286,5 @@ export async function GET(request: Request) {
     moveAlerts,
     stripeSynced,
     demoReported,
-    portfoliosSnapshotted, dividends, calls });
+    portfoliosSnapshotted, dividends, calls, pruned });
 }
