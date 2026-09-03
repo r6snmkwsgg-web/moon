@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
@@ -151,8 +152,14 @@ export default async function ProfilePage({ params }: Props) {
           />
 
           <section className="panel">
-            <h2 className="microlabel border-b border-terminal-line px-3 py-2">
+            <h2 className="microlabel flex items-center justify-between border-b border-terminal-line px-3 py-2">
               Recent trades
+              <Link
+                href={`/u/${profile.username}/trades`}
+                className="font-mono text-[11px] font-normal normal-case tracking-normal text-terminal-accent hover:underline"
+              >
+                see all →
+              </Link>
             </h2>
             <TradesList
               trades={theirTrades}

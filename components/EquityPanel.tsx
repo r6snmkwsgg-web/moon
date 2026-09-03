@@ -21,6 +21,7 @@ import {
   type EquityTrade,
 } from "@/lib/equity";
 import Tri from "@/components/Tri";
+import { closedPositions } from "@/lib/positions";
 import {
   fmtMarketDateTime,
   fmtMarketTime,
@@ -158,6 +159,9 @@ export default function EquityPanel({
   const stateAt = useMemo(() => makeStateAt(inputs), [inputs]);
   const pricesAt = useMemo(() => makePricesAt(holdings), [holdings]);
   const realized = useMemo(() => realizedPnl(trades), [trades]);
+  // the round trips already finished — a book has two halves
+  const closed = useMemo(() => closedPositions(trades), [trades]);
+  const [book, setBook] = useState<"open" | "closed">("open");
 
   // The positions read off the same price functions at the same instant as
   // the curve above them, so no two numbers on this page can disagree.
@@ -631,6 +635,71 @@ export default function EquityPanel({
     </section>
 
     <section className="panel overflow-x-auto">
+      {/* open positions, or the round trips already closed */}
+      <div className="flex items-center gap-1 border-b border-terminal-line px-2 pt-1">
+        {(["open", "closed"] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setBook(k)}
+            className={`-mb-px border-b-2 px-2 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.14em] transition-colors ${
+              book === k
+                ? "border-terminal-accent text-terminal-text"
+                : "border-transparent text-terminal-muted hover:text-terminal-text"
+            }`}
+          >
+            {k} · {k === "open" ? positions.length : closed.length}
+          </button>
+        ))}
+      </div>
+      {book === "closed" ? (
+        <table className="w-full min-w-[560px] text-sm">
+          <thead>
+            <tr className="border-b border-terminal-line text-left font-mono text-[11px] uppercase tracking-wider text-terminal-muted">
+              <th className="px-3 py-2.5">Position</th>
+              <th className="px-3 py-2.5 text-right">Peak shares</th>
+              <th className="hidden px-3 py-2.5 text-right sm:table-cell">Bought</th>
+              <th className="hidden px-3 py-2.5 text-right sm:table-cell">Sold</th>
+              <th className="px-3 py-2.5 text-right">Held</th>
+              <th className="px-3 py-2.5 text-right">Closed</th>
+              <th className="px-3 py-2.5 text-right">PnL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {closed.map((c, i) => (
+              <tr key={`${c.symbol}-${c.closedAt}-${i}`} className="row-hover cursor-pointer border-b border-terminal-line/50 last:border-0">
+                <td className="px-3 py-2.5">
+                  <Link href={`/t/${c.symbol}`} className="row-link font-mono font-bold">
+                    ${c.symbol}
+                  </Link>
+                  <span className="block text-[10px] text-terminal-muted">
+                    {c.trades} prints
+                  </span>
+                </td>
+                <td className="num px-3 py-2.5 text-right font-mono">{c.peakShares.toLocaleString("en-US")}</td>
+                <td className="num hidden px-3 py-2.5 text-right font-mono text-terminal-muted sm:table-cell">{fmtMoney(c.bought)}</td>
+                <td className="num hidden px-3 py-2.5 text-right font-mono text-terminal-muted sm:table-cell">{fmtMoney(c.sold)}</td>
+                <td className="num px-3 py-2.5 text-right font-mono text-terminal-muted">{heldFor(c.closedAt - c.openedAt)}</td>
+                <td className="num px-3 py-2.5 text-right font-mono text-terminal-muted">
+                  {new Date(c.closedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                </td>
+                <td className={`num px-3 py-2.5 text-right font-mono ${c.pnl >= 0 ? "text-terminal-up" : "text-terminal-down"}`}>
+                  {c.pnl >= 0 ? "+" : "−"}
+                  {fmtMoney(Math.abs(c.pnl))}
+                  <span className="block text-[10px]">{fmtPct(c.pnlPct)}</span>
+                </td>
+              </tr>
+            ))}
+            {closed.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-3 py-10 text-center text-terminal-muted">
+                  Nothing closed yet — a position closes on the sell that takes it back to zero.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      ) : (
       <table className="w-full min-w-[560px] text-sm">
         <thead>
           <tr className="border-b border-terminal-line text-left font-mono text-[11px] uppercase tracking-wider text-terminal-muted">
@@ -716,7 +785,17 @@ export default function EquityPanel({
           )}
         </tbody>
       </table>
+      )}
     </section>
     </>
   );
+}
+
+/** "3h 12m", "2d 4h" — how long a round trip lasted. */
+function heldFor(ms: number): string {
+  const m = Math.max(1, Math.round(ms / 60_000));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
