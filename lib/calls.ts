@@ -9,6 +9,9 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+/** Guidance the form offers: expected change in next month's MRR. */
+export const GUIDANCE_STEPS = [-0.2, -0.1, 0, 0.05, 0.1, 0.25, 0.5] as const;
+
 /** How much of a call's guidance the market prices in, before credibility. */
 export const CALL_DISCOUNT = 0.4;
 /** Within this many points of guidance counts as met. */

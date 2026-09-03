@@ -23,6 +23,7 @@ import LiveQuote from "@/components/LiveQuote";
 import TradePanel, { type OwnPrint } from "@/components/TradePanel";
 import AboutCard from "@/components/AboutCard";
 import EarningsCallCard from "@/components/EarningsCallCard";
+import { GUIDANCE_STEPS } from "@/lib/calls";
 import ShareButton from "@/components/ShareButton";
 import ChangePct from "@/components/ChangePct";
 import LogoTile from "@/components/LogoTile";
@@ -39,7 +40,6 @@ import {
   updateWebsite,
   postCall,
   buyBack,
-  GUIDANCE_STEPS,
 } from "./actions";
 
 export const dynamic = "force-dynamic";

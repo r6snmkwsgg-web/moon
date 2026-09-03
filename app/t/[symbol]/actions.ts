@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getMarket } from "@/lib/data";
 import { placeOrder } from "@/lib/trade";
+import { GUIDANCE_STEPS } from "@/lib/calls";
 import { normaliseWebsite } from "@/lib/website";
 import { createSupabaseServerClient, getUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -189,9 +190,6 @@ export async function updateWebsite(formData: FormData) {
   if (error) throw new Error("Could not save the website — has migration 0010 been run?");
   revalidatePath(`/t/${ticker.symbol}`);
 }
-
-/** Guidance the form offers: expected change in next month's MRR. */
-export const GUIDANCE_STEPS = [-0.2, -0.1, 0, 0.05, 0.1, 0.25, 0.5] as const;
 
 /**
  * An earnings call: the founder tells the market what next month's MRR
