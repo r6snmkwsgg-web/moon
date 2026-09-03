@@ -70,6 +70,15 @@ export default function HoldersTable({
   };
 }) {
   const [thesisOnly, setThesisOnly] = useState(false);
+  // a long thesis is clamped to two lines; a click opens it in place
+  const [openThesis, setOpenThesis] = useState<Set<string>>(() => new Set());
+  const toggleThesis = (id: string) =>
+    setOpenThesis((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   // the tape price, once mounted; null until then so the first paint is the
   // server's own numbers
   const [live, setLive] = useState<number | null>(null);
@@ -244,7 +253,21 @@ export default function HoldersTable({
                     <td className="hidden max-w-[22rem] px-3 py-1.5 lg:table-cell">
                       {r.thesis ? (
                         <>
-                          <p className="line-clamp-2 text-[13px] leading-snug text-terminal-text">
+                          <p
+                            role="button"
+                            tabIndex={0}
+                            title={openThesis.has(r.userId) ? "Click to collapse" : r.thesis}
+                            onClick={() => toggleThesis(r.userId)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleThesis(r.userId);
+                              }
+                            }}
+                            className={`cursor-pointer text-[13px] leading-snug text-terminal-text ${
+                              openThesis.has(r.userId) ? "" : "line-clamp-2"
+                            }`}
+                          >
                             {r.thesis}
                           </p>
                           <span className="mt-0.5 flex items-center gap-2">

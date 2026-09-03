@@ -71,21 +71,21 @@ interface Rng {
 
 const T: Record<string, string[]> = {
   "value/buy": [
-    "{sym} is {edge}% under fair value. revenue does not lie, hype does.",
-    "paying {price} for a business worth {fair}. i will take that trade every day.",
+    "{sym} is {edge}% under my number. revenue does not lie, hype does.",
+    "paying {price} for a business i have at {fair}. i will take that trade every day.",
     "mrr is the anchor and the anchor is above the price. adding {sym}.",
-    "{sym} at {edge}% below fair is the only thing on the board that is cheap.",
+    "{sym} at {edge}% below where i have it is the only thing on the board that is cheap.",
     "nobody is looking at {sym}. that is the whole thesis.",
     "{mrr} a month and the market has it at {price}. fine, mine.",
-    "bought the dip in {sym}, fair value is {fair} and it is not going lower than this.",
+    "bought the dip in {sym}. my math says {fair} and it is not going lower than this.",
     "the multiple on {sym} makes no sense at this price. long.",
   ],
   "value/sell": [
-    "{sym} is {edge}% over fair. taking it off, thank you hype.",
+    "{sym} is {edge}% over my number. taking it off, thank you hype.",
     "sold {sym}. the price got ahead of the revenue and that always ends the same way.",
-    "trimming {sym} into strength. fair is {fair}, this is not.",
+    "trimming {sym} into strength. i have it at {fair}, this is not that.",
     "{sym} at {price} is a gift from momentum traders. accepted.",
-    "the anchor is {fair}. out of {sym} until it remembers.",
+    "my anchor is {fair}. out of {sym} until it remembers.",
   ],
   "momentum/buy": [
     "{sym} up {h1}% on the hour. trend is the friend, in.",
@@ -128,12 +128,12 @@ const T: Record<string, string[]> = {
     "sold {sym}. no reason. next.",
   ],
   "whale/buy": [
-    "size position in {sym}. fair value is {fair} and the market is asleep.",
+    "size position in {sym}. i make it worth {fair} and the market is asleep.",
     "accumulating {sym}. this is mispriced by {edge}% and i have the patience.",
     "took a real position in {sym}. revenue is {mrr} a month; do the math on the multiple.",
   ],
   "whale/sell": [
-    "distribution in {sym}. {edge}% over fair is a gift, and i give gifts back.",
+    "distribution in {sym}. {edge}% over my number is a gift, and i give gifts back.",
     "sized out of {sym}. the multiple got silly.",
   ],
   "panic/sell": [
@@ -150,7 +150,7 @@ const T: Record<string, string[]> = {
   "dip/buy": [
     "{sym} down {m15}% just now with revenue unchanged. buying the panic.",
     "somebody sold {sym} into no news at all. thank you, filled at {price}.",
-    "{sym} is {edge}% under fair after that dump. this is what the cash was for.",
+    "{sym} is {edge}% under my number after that dump. this is what the cash was for.",
     "bought {sym} from whoever just panicked. mrr is still {mrr} a month.",
     "the dip in {sym} is one seller, not a churn. adding.",
   ],
@@ -173,7 +173,7 @@ const T: Record<string, string[]> = {
     "everyone panicking over {who} selling {amt}. mrr is still {mrr}. buying the fear.",
     "{who} sold {pct}% of the float and nothing about the business changed. adding {sym}.",
     "the {sym} dump was one account, not a churn. bought what {who} threw away.",
-    "wtf {who} lol. anyway {sym} is {edge}% under fair now, filled.",
+    "wtf {who} lol. anyway {sym} is {edge}% under my number now, filled.",
     "{who} dumped, the paper hands followed, and i got {sym} at {price}. this is the game.",
   ],
   "rug/take": [
@@ -224,14 +224,14 @@ const T: Record<string, string[]> = {
   ],
   "take/bull": [
     "{sym} is the cleanest revenue on the board and it trades like nobody noticed.",
-    "watching {sym}. fair value {fair}, price {price}. patience.",
+    "watching {sym}. i have it at {fair}, price {price}. patience.",
     "{sym} will be the one everyone claims they saw early.",
     "the {sym} founder ships. that is the whole investment case.",
     "not in {sym} yet but the chart is starting to make sense.",
     "{mrr} a month and growing. {sym} is not a meme, it is a business.",
   ],
   "take/bear": [
-    "{sym} is {edge}% over fair value on pure hype. this ends.",
+    "{sym} is {edge}% over anything i can justify, on pure hype. this ends.",
     "who is buying {sym} up here. revenue did not move.",
     "{sym} looks like a rug waiting for a buyer.",
     "the {sym} multiple is fantasy. fantasy money, fine, but still.",
@@ -240,7 +240,7 @@ const T: Record<string, string[]> = {
   "take/flat": [
     "{sym} is doing nothing and that is fine, most businesses do nothing most days.",
     "no position in {sym}. waiting for the next report.",
-    "{sym} at fair value. nothing to do here.",
+    "{sym} is about where i have it. nothing to do here.",
     "the board is quiet. {sym} is quiet. touch grass.",
   ],
 };
