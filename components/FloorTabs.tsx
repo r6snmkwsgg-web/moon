@@ -8,7 +8,9 @@ import { useLiveFills } from "@/lib/live";
 import TradesList from "@/components/TradesList";
 import ThesesPane from "@/components/ThesesPane";
 
-const STORAGE_KEY = "sx:floor-min-size";
+// remembered per ticker: a whale-watch on one name must not silently empty
+// the next name's floor, where every print is smaller
+const storageKey = (symbol: string) => `sx:floor-min-size:${symbol}`;
 
 /**
  * The floor's two tabs — the tape and the theses — with one filter over
@@ -39,17 +41,17 @@ export default function FloorTabs({
   // remembered per browser — a whale-watcher stays a whale-watcher
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(storageKey(symbol));
       if (raw !== null) setMin(raw === "" ? null : Number(raw));
     } catch {
       // storage unavailable
     }
-  }, []);
+  }, [symbol]);
   const choose = (v: number | null) => {
     setMin(v);
     setOpen(false);
     try {
-      localStorage.setItem(STORAGE_KEY, v === null ? "" : String(v));
+      localStorage.setItem(storageKey(symbol), v === null ? "" : String(v));
     } catch {
       // storage unavailable
     }
@@ -163,22 +165,52 @@ export default function FloorTabs({
           <>
             <TradesList trades={shownTrades} showSymbol={false} signedIn={signedIn} showNotes={false} />
             {shownTrades.length === 0 && allTrades.length > 0 && (
-              <p className="px-3 py-4 text-center font-mono text-[11px] text-terminal-muted">
-                nothing that size recently — lower the filter
-              </p>
+              <Hidden count={allTrades.length} min={min} onClear={() => choose(null)} what="prints" />
             )}
           </>
         ) : (
-          <ThesesPane
-            posts={shownPosts}
-            theses={shownTheses}
-            symbol={symbol}
-            viewerId={viewerId}
-            signedIn={signedIn}
-            filtered={min !== null && posts.length + theses.length > 0}
-          />
+          shownPosts.length + shownTheses.length === 0 && posts.length + theses.length > 0 ? (
+            <Hidden
+              count={posts.length + theses.length}
+              min={min}
+              onClear={() => choose(null)}
+              what="theses"
+            />
+          ) : (
+            <ThesesPane
+              posts={shownPosts}
+              theses={shownTheses}
+              symbol={symbol}
+              viewerId={viewerId}
+              signedIn={signedIn}
+            />
+          )
         )}
       </div>
     </section>
+  );
+}
+
+/** The filter is hiding everything — say so, with the count, and a way out. */
+function Hidden({
+  count,
+  min,
+  onClear,
+  what,
+}: {
+  count: number;
+  min: number | null;
+  onClear: () => void;
+  what: "prints" | "theses";
+}) {
+  return (
+    <p className="flex flex-wrap items-center justify-center gap-x-2 px-3 py-4 text-center font-mono text-[11px] text-terminal-muted">
+      <span>
+        {count} {what} here, none over {minSizeLabel(min).replace("Min size (>", "").replace(")", "")}
+      </span>
+      <button type="button" onClick={onClear} className="text-terminal-accent hover:underline">
+        show all
+      </button>
+    </p>
   );
 }
