@@ -529,6 +529,8 @@ export async function getTickerPage(symbol: string): Promise<{
   fairSeries: ChartPoint[];
   dayStats: DayStats;
   floatHeld: number; // shares currently held across all players
+  /** Shares in the ten largest positions — the strip's "top 10 holding". */
+  topTenShares: number;
   tradePoints: { t: number; shares: number }[];
   /**
    * Where the chart is allowed to start: the listing, or the first price we
@@ -606,7 +608,16 @@ export async function getTickerPage(symbol: string): Promise<{
       .from("watchlists")
       .select("*", { count: "exact", head: true })
       .eq("ticker_id", ticker.id),
-    admin.from("holdings").select("shares").eq("ticker_id", ticker.id),
+    // every position, biggest first — a thousand accounts can all hold one name
+    pageAll<{ shares: number }>((f, t) =>
+      admin
+        .from("holdings")
+        .select("shares")
+        .eq("ticker_id", ticker.id)
+        .gt("shares", 0)
+        .order("shares", { ascending: false })
+        .range(f, t)
+    ).then((data) => ({ data })),
     admin
       .from("trades")
       .select("price, shares, total")
@@ -657,10 +668,9 @@ export async function getTickerPage(symbol: string): Promise<{
     (allTradesRes.data ?? []) as { shares: number; created_at: string }[]
   ).map((t) => ({ t: Date.parse(t.created_at), shares: Number(t.shares) }));
 
-  const floatHeld = ((heldRes.data ?? []) as { shares: number }[]).reduce(
-    (sum, h) => sum + Number(h.shares),
-    0
-  );
+  const heldRows = (heldRes.data ?? []) as { shares: number }[];
+  const floatHeld = heldRows.reduce((sum, h) => sum + Number(h.shares), 0);
+  const topTenShares = heldRows.slice(0, 10).reduce((sum, h) => sum + Number(h.shares), 0);
 
   const todayTrades = (todayTradesRes.data ?? []) as {
     price: number;
@@ -711,6 +721,7 @@ export async function getTickerPage(symbol: string): Promise<{
     fairSeries,
     dayStats,
     floatHeld,
+    topTenShares,
     tradePoints,
     earliest: Math.max(
       Date.parse((ticker as Ticker).listed_at),

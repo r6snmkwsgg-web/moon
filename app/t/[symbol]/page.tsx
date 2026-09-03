@@ -2,11 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
-  getFollowedIds,
-  getHolders,
-  getRecentTrades,
   getTickerPage,
-  getTickerPosts,
   getVoteGauge,
   tickerExists,
 } from "@/lib/data";
@@ -21,8 +17,8 @@ import { Bell, BadgeCheck, Eye, Zap } from "lucide-react";
 import PulseKeeper from "@/components/PulseKeeper";
 import ThesisCard from "@/components/ThesisCard";
 import TradingChart from "@/components/TradingChart";
-import HoldersTable from "@/components/HoldersTable";
-import FloorTabs from "@/components/FloorTabs";
+import { Suspense } from "react";
+import Floor, { FloorSkeleton } from "./Floor";
 import LiveQuote from "@/components/LiveQuote";
 import TradePanel, { type OwnPrint } from "@/components/TradePanel";
 import AboutCard from "@/components/AboutCard";
@@ -83,6 +79,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
     watchersCount,
     series,
     floatHeld,
+    topTenShares,
+    holdersCount,
     tradePoints,
     earliest,
     revenueEvents,
@@ -91,16 +89,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const t = quote.ticker;
   const isFounder = user !== null && t.claimed_by === user.id;
 
-  const [gauge, recentTrades, posts, theses, holders, followedIds] =
-    await Promise.all([
-      getVoteGauge(t.id),
-      // enough of the floor that a size filter still leaves something to read
-      getRecentTrades(60, t.id),
-      getTickerPosts(t.id, quote.price, 40, user?.id ?? null),
-      getRecentTrades(60, t.id, undefined, true, user?.id ?? null),
-      getHolders(t.id, quote.price, quote.shares, 100, user?.id ?? null),
-      user ? getFollowedIds(user.id) : Promise.resolve([] as string[]),
-    ]);
+  // the gauge does not depend on the viewer, so it loads beside the viewer's own rows
+  const gaugeP = getVoteGauge(t.id);
 
   // Signed-in extras (own rows only — RLS applies).
   let cash: number | null = null;
@@ -207,7 +197,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
   }
 
   // the strip over the chart: what fomo-style pages put first
-  const topTen = holders.rows.slice(0, 10).reduce((sum, r) => sum + r.shares, 0);
+  const gauge = await gaugeP;
+  const topTen = topTenShares;
   const topTenPct = quote.shares > 0 ? Math.min(100, (topTen / quote.shares) * 100) : 0;
   const vol24h = flow24h.reduce((sum, p) => sum + p.total, 0);
 
@@ -309,7 +300,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
               quote.liveMrr > 0 ? fmtCompact(quote.liveMrr) : "—",
             ],
             ["Multiple", `${quote.multiple.toFixed(1)}×`],
-            ["Holders", holders.total.toLocaleString("en-US")],
+            ["Holders", holdersCount.toLocaleString("en-US")],
             ["Top 10 holding", `${topTenPct.toFixed(topTenPct >= 10 ? 0 : 1)}%`],
           ] as [string, React.ReactNode][]
         ).map(([label, value]) => (
@@ -343,16 +334,16 @@ export default async function TickerPage({ params, searchParams }: Props) {
             initialTimeframe={openingTimeframe(renderedAt - earliest)}
           />
 
-          {/* the floor: who holds it, and the tape, right under the chart */}
-          <div className="grid items-start gap-3 2xl:grid-cols-[minmax(0,1fr)_380px]">
-            <HoldersTable
-              rows={holders.rows}
-              total={holders.total}
+          {/* the floor: who holds it, and the tape — streamed in under the
+              chart, so the chart and the ticket never wait on it */}
+          <Suspense fallback={<FloorSkeleton />}>
+            <Floor
+              tickerId={t.id}
               symbol={t.symbol}
-              followedIds={followedIds}
+              price={quote.price}
+              shares={quote.shares}
               viewerId={user?.id ?? null}
-              signedIn={user !== null}
-              now={renderedAt}
+              renderedAt={renderedAt}
               pricing={{
                 mrr: quote.liveMrr,
                 sentiment: Number(t.sentiment),
@@ -362,15 +353,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 drift: quote.drift,
               }}
             />
-            <FloorTabs
-              trades={recentTrades}
-              posts={posts}
-              theses={theses}
-              symbol={t.symbol}
-              signedIn={user !== null}
-              viewerId={user?.id ?? null}
-            />
-          </div>
+          </Suspense>
         </div>
 
         {/* the rail — trading is always in reach */}
