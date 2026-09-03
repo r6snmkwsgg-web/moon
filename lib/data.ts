@@ -543,6 +543,12 @@ export async function getTickerPage(symbol: string): Promise<{
   revenueEvents: RevenueEvent[]; // Stripe changes since the last report
   /** Every print of the last 24 hours — the About card's window stats. */
   flow24h: { side: "buy" | "sell"; total: number; userId: string; at: number }[];
+  /** The founder's earnings calls, newest first (0012). */
+  calls: TickerCall[];
+  /** The last dividend paid on the name, if any (0012). */
+  dividend: { month: string; perShare: number; pool: number; holders: number } | null;
+  /** Shares the founder has retired, in total (0012). */
+  buybacks: { shares: number; total: number; count: number; lastAt: string | null };
 } | null> {
   const supabase = await createSupabaseServerClient();
 
@@ -598,6 +604,9 @@ export async function getTickerPage(symbol: string): Promise<{
     allTradesRes,
     series,
     flowRes,
+    callsRes,
+    dividendRes,
+    buybacksRes,
   ] = await Promise.all([
     admin
       .from("holdings")
@@ -649,7 +658,51 @@ export async function getTickerPage(symbol: string): Promise<{
       .gte("created_at", new Date(Date.now() - 86_400_000).toISOString())
       .order("created_at", { ascending: false })
       .limit(2000),
+    // the founder's moves (0012) — each reads as empty until the migration runs
+    admin
+      .from("calls")
+      .select("*, profiles(display_name, username)")
+      .eq("ticker_id", ticker.id)
+      .order("created_at", { ascending: false })
+      .limit(5),
+    admin
+      .from("dividends")
+      .select("month, per_share, pool, holders")
+      .eq("ticker_id", ticker.id)
+      .order("month", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    admin.from("buybacks").select("shares, total, created_at").eq("ticker_id", ticker.id).order("created_at", { ascending: false }).limit(500),
   ]);
+  const calls: TickerCall[] = ((callsRes.data ?? []) as Record<string, unknown>[]).map((c) => {
+    const pr = (c.profiles ?? {}) as { display_name?: string; username?: string | null };
+    return {
+      id: String(c.id),
+      body: String(c.body),
+      guidance: Number(c.guidance),
+      actual: c.actual === null || c.actual === undefined ? null : Number(c.actual),
+      outcome: (c.outcome as TickerCall["outcome"]) ?? null,
+      settledMonth: (c.settled_month as string) ?? null,
+      createdAt: String(c.created_at),
+      founder: String(pr.display_name ?? "founder"),
+      username: pr.username ?? null,
+    };
+  });
+  const dividend = dividendRes.data
+    ? {
+        month: String(dividendRes.data.month),
+        perShare: Number(dividendRes.data.per_share),
+        pool: Number(dividendRes.data.pool),
+        holders: Number(dividendRes.data.holders),
+      }
+    : null;
+  const buybackRows = (buybacksRes.data ?? []) as { shares: number; total: number; created_at: string }[];
+  const buybacks = {
+    shares: buybackRows.reduce((a, b) => a + Number(b.shares), 0),
+    total: buybackRows.reduce((a, b) => a + Number(b.total), 0),
+    count: buybackRows.length,
+    lastAt: buybackRows[0]?.created_at ?? null,
+  };
   const flow24h = (
     (flowRes.data ?? []) as {
       side: "buy" | "sell";
@@ -722,6 +775,9 @@ export async function getTickerPage(symbol: string): Promise<{
     dayStats,
     floatHeld,
     topTenShares,
+    calls,
+    dividend,
+    buybacks,
     tradePoints,
     earliest: Math.max(
       Date.parse((ticker as Ticker).listed_at),
@@ -836,6 +892,8 @@ export interface FeedTrade {
   /** Hearts on the note (0010). */
   likes: number;
   likedByMe: boolean;
+  /** A founder's buyback — the shares were retired, not held (0012). */
+  buyback: boolean;
 }
 
 /**
@@ -929,8 +987,22 @@ export async function getRecentTrades(
       bot: isBotProfile(profile as { username?: string | null; is_bot?: boolean | null }),
       likes: h?.likes ?? 0,
       likedByMe: h?.mine ?? false,
+      buyback: Boolean(t.is_buyback),
     };
   });
+}
+
+/** A founder's earnings call, as the page shows it. */
+export interface TickerCall {
+  id: string;
+  body: string;
+  guidance: number;
+  actual: number | null;
+  outcome: "beat" | "met" | "missed" | null;
+  settledMonth: string | null;
+  createdAt: string;
+  founder: string;
+  username: string | null;
 }
 
 /** One row of the public holders table — every number off the ledger. */
@@ -1272,9 +1344,11 @@ export async function getEquityInputs(userId: string): Promise<{
   startedAt: number;
   holdings: EquityHolding[];
   trades: EquityTrade[];
+  /** Dividends collected, in total (0012). */
+  dividends: number;
 }> {
   const admin = createSupabaseAdminClient();
-  const [quotes, profileRes, holdingsRes, tradesRes] = await Promise.all([
+  const [quotes, profileRes, holdingsRes, tradesRes, dividendsRes] = await Promise.all([
     getMarket(),
     admin.from("profiles").select("cash, created_at").eq("id", userId).maybeSingle(),
     admin
@@ -1283,11 +1357,13 @@ export async function getEquityInputs(userId: string): Promise<{
       .eq("user_id", userId),
     admin
       .from("trades")
-      .select("ticker_id, side, shares, price, total, note, created_at")
+      .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: true })
       .limit(TRADE_HISTORY_LIMIT),
+    admin.from("dividend_payments").select("amount").eq("user_id", userId).limit(5000),
   ]);
+  const dividends = ((dividendsRes.data ?? []) as { amount: number }[]).reduce((a, d) => a + Number(d.amount), 0);
 
   const byId = new Map(quotes.map((q) => [q.ticker.id, q]));
   const holdingRows = (holdingsRes.data ?? []) as {
@@ -1301,7 +1377,8 @@ export async function getEquityInputs(userId: string): Promise<{
   const costOf = new Map(
     holdingRows.map((h) => [h.ticker_id, Number(h.avg_cost)])
   );
-  const tradeRows = (tradesRes.data ?? []) as {
+  // a buyback's shares were retired the moment they were bought — not a position
+  const tradeRows = ((tradesRes.data ?? []) as Record<string, unknown>[]).filter((t) => !t.is_buyback) as unknown as {
     ticker_id: string;
     side: "buy" | "sell";
     shares: number;
@@ -1377,6 +1454,7 @@ export async function getEquityInputs(userId: string): Promise<{
       : Date.now() - 86_400_000,
     holdings,
     trades,
+    dividends,
   };
 }
 

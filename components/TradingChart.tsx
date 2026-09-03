@@ -123,6 +123,7 @@ export default function TradingChart({
   events = [],
   drift = 0,
   trades = [],
+  calls = [],
   earliest,
   initialTimeframe,
   heightClass = "h-[300px] sm:h-[380px]",
@@ -140,6 +141,8 @@ export default function TradingChart({
    *  server has to hand it over. */
   drift?: number;
   trades?: { t: number; shares: number }[];
+  /** The founder's earnings calls — marked on the tape where they were made. */
+  calls?: { at: number; guidance: number }[];
   earliest?: number;
   /** Frame to open on — the server knows how old the ticker is. */
   initialTimeframe?: string;
@@ -1064,6 +1067,28 @@ export default function TradingChart({
                       ).toLocaleString("en-US")}`}
                     </title>
                   </path>
+                </g>
+              );
+            })}
+
+            {/* the founder spoke — a call is marked where it was made */}
+            {calls.map((c) => {
+              if (candles.length < 2) return null;
+              const first = candles[0].t;
+              const last = candles[candles.length - 1].t + tf.ms;
+              if (c.at < first || c.at > last) return null;
+              const i = Math.min(candles.length - 1, Math.max(0, Math.floor((c.at - first) / tf.ms)));
+              const x = geo.x(i);
+              const y = geo.padT + 10;
+              const tone = c.guidance > 0 ? UP : c.guidance < 0 ? DOWN : MUTED;
+              return (
+                <g key={`call${c.at}`} opacity="0.95">
+                  <line x1={x} x2={x} y1={geo.padT} y2={geo.h - geo.padB} stroke={tone} strokeWidth="1" strokeDasharray="2 4" opacity="0.4" />
+                  <rect x={x - 12} y={y - 7} width="24" height="13" rx="3" fill={tone} opacity="0.9" />
+                  <text x={x} y={y + 3} textAnchor="middle" fill="#0b0f19" fontSize="8" fontWeight="700" fontFamily="ui-monospace, monospace">
+                    CALL
+                  </text>
+                  <title>{`Earnings call — guiding ${c.guidance >= 0 ? "+" : ""}${Math.round(c.guidance * 100)}% next month`}</title>
                 </g>
               );
             })}

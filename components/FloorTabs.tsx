@@ -162,6 +162,7 @@ export default function FloorTabs({
       bot: f.bot ?? false,
       likes: 0,
       likedByMe: false,
+      buyback: false,
     }));
     return [...rows, ...trades];
   }, [liveFills, trades]);

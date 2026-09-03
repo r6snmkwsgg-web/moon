@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { payDividends } from "@/lib/dividends";
+import { settleCalls } from "@/lib/calls";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   changeFraction,
@@ -162,6 +164,20 @@ export async function GET(request: Request) {
     // no revenue_events table — nothing to report
   }
 
+  // ── 4c. the month's growth is paid out; the founders' calls are judged ────
+  let dividends: unknown = null;
+  let calls: unknown = null;
+  try {
+    dividends = await payDividends(admin);
+  } catch (e) {
+    dividends = { error: e instanceof Error ? e.message : String(e) };
+  }
+  try {
+    calls = await settleCalls(admin);
+  } catch (e) {
+    calls = { error: e instanceof Error ? e.message : String(e) };
+  }
+
   // ── 1–3. decay, snapshot, move alerts ─────────────────────────────────────
   for (const ticker of tickers) {
     // the snapshot carries the LIVE anchor: the newest event for a listing
@@ -250,6 +266,5 @@ export async function GET(request: Request) {
     moveAlerts,
     stripeSynced,
     demoReported,
-    portfoliosSnapshotted,
-  });
+    portfoliosSnapshotted, dividends, calls });
 }

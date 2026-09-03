@@ -32,7 +32,7 @@ export interface Situation {
   culprit?: string | null;
   culpritAmt?: number;
   culpritPct?: number;
-  newsKind?: "new" | "churn" | "expansion" | "contraction" | null;
+  newsKind?: "new" | "churn" | "expansion" | "contraction" | "call" | "buyback" | null;
   price: number;
   /** This account's OWN fair value — the formula through their error. */
   fair: number;
@@ -473,6 +473,8 @@ export function composeThesis(persona: Persona, s: Situation, rng: Rng): string 
     key = s.culprit && rng.unit() < 0.9 ? "rug/sell" : "panic/sell";
   } else if (s.reason === "dip") {
     key = s.culprit && rng.unit() < 0.8 ? "rug/buy" : "dip/buy";
+  } else if (s.reason === "news" && (s.newsKind === "call" || s.newsKind === "buyback") && rng.unit() < 0.8) {
+    key = `${s.newsKind}/${s.side}`;
   } else {
     key = `${s.reason === "take" ? "noise" : s.reason}/${s.side}`;
   }

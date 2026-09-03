@@ -70,6 +70,7 @@ export default async function PortfolioPage() {
       <div className="grid items-start gap-4 xl:grid-cols-[1fr_330px]">
         <div className="min-w-0 space-y-4">
       <EquityPanel
+        dividends={equity.dividends}
         cash={Number(valuation.profile.cash)}
         holdings={equity.holdings}
         trades={equity.trades}

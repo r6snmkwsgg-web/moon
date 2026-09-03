@@ -171,7 +171,7 @@ export default function ThesesPane({
                 }`}
                 title={`The trade behind this thesis — ${it.trade.shares.toLocaleString("en-US")} shs @ ${fmtPrice(it.trade.price)}, on record`}
               >
-                {it.trade.side === "buy" ? "bought" : "sold"}{" "}
+                {it.trade.buyback ? "bought back" : it.trade.side === "buy" ? "bought" : "sold"}{" "}
                 {fmtMoney(it.trade.total, it.trade.total >= 1000 ? 0 : 2)}
               </span>
               <span className="ml-auto flex items-center gap-1">

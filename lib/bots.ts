@@ -22,6 +22,7 @@ import { BOTS, type BotSpec, type BotStyle } from "@/lib/bot-roster";
 import { cryptoRandom, type FlowRandom } from "@/lib/flow";
 import { actChance, myFairValue, timeOfDayFactor, type Persona } from "@/lib/personas";
 import { pageAll } from "@/lib/supabase/page-all";
+import { CALL_DISCOUNT, CALL_NEWS_MS, credibility, type CallOutcome } from "@/lib/calls";
 import {
   fairPrice,
   floatOf,
@@ -49,8 +50,8 @@ export interface TickerView {
   change24h: number;
   /** The last quarter hour — a dump shows up here first. */
   change15m: number;
-  /** Revenue news of the last few hours: signed fraction of MRR, and age. */
-  news: { move: number; ageMs: number }[];
+  /** News of the last few hours — a revenue print, a founder's call, a buyback — as a signed move, and its age. */
+  news: { move: number; ageMs: number; kind?: "revenue" | "call" | "buyback" }[];
   /** This bot's own position, and what it paid on average (0 without one). */
   held: number;
   avgCost: number;
@@ -384,7 +385,15 @@ function situationFor(
     culprit: v.culprit?.name ?? null,
     culpritAmt: v.culprit?.total,
     culpritPct: v.culprit?.pctOfFloat,
-    newsKind: freshest ? (freshest.move >= 0 ? "new" : "churn") : null,
+    newsKind: freshest
+      ? freshest.kind === "call"
+        ? "call"
+        : freshest.kind === "buyback"
+          ? "buyback"
+          : freshest.move >= 0
+            ? "new"
+            : "churn"
+      : null,
     price: v.price,
     fair: v.fair,
     mrr: v.mrr,
@@ -500,6 +509,8 @@ export async function runBotRound(
     { data: ticksQuarterAgo },
     { data: snaps },
     { data: recentPrints },
+    { data: recentCalls },
+    { data: recentBuybacks },
   ] = await Promise.all([
     admin.from("tickers").select("*"),
     admin.from("mrr_updates").select("ticker_id, month, mrr").order("month", { ascending: true }),
@@ -540,6 +551,9 @@ export async function runBotRound(
       .gte("created_at", blameSince)
       .order("created_at", { ascending: false })
       .limit(2000),
+    // the founders' moves (0012): every call for credibility, the recent ones as news
+    admin.from("calls").select("ticker_id, user_id, guidance, outcome, created_at").order("created_at", { ascending: false }).limit(500),
+    admin.from("buybacks").select("ticker_id, shares, created_at").gte("created_at", new Date(now - CALL_NEWS_MS).toISOString()).limit(200),
   ]);
 
   const history = new Map<string, { month: string; mrr: number }[]>();
@@ -627,6 +641,27 @@ export async function runBotRound(
   }
 
   // the board as the quote prices it, minus the shimmer
+  // a founder's call is news at a discount, and at their record's credibility
+  type CallLite = { ticker_id: string; user_id: string; guidance: number; outcome: CallOutcome | null; created_at: string };
+  const callRows = ((recentCalls ?? []) as unknown[]) as CallLite[];
+  const recordOf = new Map<string, CallOutcome[]>();
+  for (const c of callRows) if (c.outcome) recordOf.set(c.user_id, [...(recordOf.get(c.user_id) ?? []), c.outcome]);
+  const extraNews = new Map<string, { move: number; ageMs: number; kind: "call" | "buyback" }[]>();
+  for (const c of callRows) {
+    const age = now - Date.parse(c.created_at);
+    if (age < 0 || age > CALL_NEWS_MS) continue;
+    const l = extraNews.get(c.ticker_id) ?? [];
+    l.push({ move: Number(c.guidance) * CALL_DISCOUNT * credibility(recordOf.get(c.user_id) ?? []), ageMs: age, kind: "call" });
+    extraNews.set(c.ticker_id, l);
+  }
+  const floatById = new Map(((tickers ?? []) as Record<string, unknown>[]).map((t) => [String(t.id), floatOf(t.shares_outstanding as number | null)]));
+  for (const b of (recentBuybacks ?? []) as { ticker_id: string; shares: number; created_at: string }[]) {
+    const l = extraNews.get(b.ticker_id) ?? [];
+    // retiring 2% of the float reads like a 6% revenue beat — a founder buying is the strongest signal there is
+    l.push({ move: (Number(b.shares) / (floatById.get(b.ticker_id) ?? 10_000)) * 3, ageMs: now - Date.parse(b.created_at), kind: "buyback" });
+    extraNews.set(b.ticker_id, l);
+  }
+
   const board = ((tickers ?? []) as Record<string, unknown>[])
     .map((t) => {
       const id = String(t.id);
@@ -651,9 +686,12 @@ export async function runBotRound(
         change15m: ago15m && ago15m > 0 ? price / ago15m - 1 : 0,
         change24h: ago24h && ago24h > 0 ? price / ago24h - 1 : 0,
         culprit: null as Culprit | null,
-        news: events
-          .filter((e) => !e.catchUp && e.prevMrr > 0)
-          .map((e) => ({ move: (e.mrr - e.prevMrr) / e.prevMrr, ageMs: now - e.at })),
+        news: [
+          ...events
+            .filter((e) => !e.catchUp && e.prevMrr > 0)
+            .map((e) => ({ move: (e.mrr - e.prevMrr) / e.prevMrr, ageMs: now - e.at, kind: "revenue" as const })),
+          ...(extraNews.get(id) ?? []),
+        ],
         mrr,
       };
     })

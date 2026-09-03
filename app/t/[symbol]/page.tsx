@@ -7,7 +7,7 @@ import {
   tickerExists,
 } from "@/lib/data";
 import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
-import { fmtCompact, fmtMonth, currentMonthISO } from "@/lib/format";
+import { currentMonthISO, fmtCompact, fmtMoney, fmtMonth } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
 import { changeFraction } from "@/lib/pricing";
 import { openingTimeframe } from "@/lib/candles";
@@ -22,6 +22,7 @@ import Floor, { FloorSkeleton } from "./Floor";
 import LiveQuote from "@/components/LiveQuote";
 import TradePanel, { type OwnPrint } from "@/components/TradePanel";
 import AboutCard from "@/components/AboutCard";
+import EarningsCallCard from "@/components/EarningsCallCard";
 import ShareButton from "@/components/ShareButton";
 import ChangePct from "@/components/ChangePct";
 import LogoTile from "@/components/LogoTile";
@@ -36,6 +37,9 @@ import {
   submitMrr,
   updateLogo,
   updateWebsite,
+  postCall,
+  buyBack,
+  GUIDANCE_STEPS,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -83,6 +87,9 @@ export default async function TickerPage({ params, searchParams }: Props) {
     floatHeld,
     topTenShares,
     holdersCount,
+    calls,
+    dividend,
+    buybacks,
     tradePoints,
     earliest,
     revenueEvents,
@@ -332,6 +339,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             events={revenueEvents}
             drift={quote.drift}
             trades={tradePoints}
+            calls={calls.map((c) => ({ at: Date.parse(c.createdAt), guidance: c.guidance }))}
             earliest={earliest}
             initialTimeframe={openingTimeframe(renderedAt - earliest)}
           />
@@ -413,7 +421,10 @@ export default async function TickerPage({ params, searchParams }: Props) {
             earliest={earliest}
             renderedAt={renderedAt}
             nextEarningsAt={t.stripe_verified ? nextEarningsDate().toISOString() : null}
+            dividend={dividend}
+            buybacks={buybacks}
           />
+          <EarningsCallCard calls={calls} symbol={t.symbol} />
           <VoteBar
             tickerId={t.id}
             symbol={t.symbol}
@@ -540,6 +551,58 @@ export default async function TickerPage({ params, searchParams }: Props) {
               )}
             </div>
           )}
+
+          {/* an earnings call: guidance the next real print will judge */}
+          <form action={postCall} className="space-y-2 border-t border-terminal-line pt-3">
+            <input type="hidden" name="ticker_id" value={t.id} />
+            <div className="text-xs text-terminal-muted">
+              Earnings call — tell the market what next month looks like. The AI
+              traders price it at a discount, the next real report marks it beat,
+              met or missed, and your record is your credibility. One a day; it
+              cannot be deleted.
+            </div>
+            <textarea
+              name="body"
+              required
+              maxLength={600}
+              rows={2}
+              placeholder="Shipped the annual plan, two enterprise trials in the pipe, churn flat…"
+              className="input w-full text-sm"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-xs text-terminal-muted">
+                Guiding next month
+                <select name="guidance" defaultValue="0.05" className="input py-1 font-mono text-xs">
+                  {GUIDANCE_STEPS.map((g) => (
+                    <option key={g} value={g}>
+                      {g >= 0 ? "+" : ""}
+                      {Math.round(g * 100)}% MRR
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="btn-ghost text-xs">Hold the call</button>
+            </div>
+          </form>
+
+          {/* a buyback: the founder's own money, off the float, retired */}
+          <form action={buyBack} className="flex flex-wrap items-end gap-2 border-t border-terminal-line pt-3">
+            <input type="hidden" name="ticker_id" value={t.id} />
+            <label className="min-w-0 flex-1 text-xs text-terminal-muted">
+              Buy back shares — bought at the live price with your play money
+              ({cash !== null ? fmtMoney(cash) : "—"} available) and retired. The
+              float shrinks; every remaining share is a bigger slice.
+              <input
+                type="number"
+                name="dollars"
+                min={10}
+                step={10}
+                placeholder="500"
+                className="input mt-1 font-mono"
+              />
+            </label>
+            <button className="btn-ghost text-xs">Buy back</button>
+          </form>
 
           <form
             action={updateWebsite}

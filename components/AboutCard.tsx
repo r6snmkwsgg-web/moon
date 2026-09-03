@@ -64,6 +64,8 @@ export default function AboutCard({
   earliest,
   renderedAt,
   nextEarningsAt,
+  dividend = null,
+  buybacks = null,
 }: {
   ticker: Ticker;
   series: ChartPoint[];
@@ -84,6 +86,10 @@ export default function AboutCard({
   renderedAt: number;
   /** ISO instant of the next Stripe re-sync, or null for a manual reporter. */
   nextEarningsAt: string | null;
+  /** The last dividend paid on the name (0012). */
+  dividend?: { month: string; perShare: number; pool: number; holders: number } | null;
+  /** Shares the founder has retired (0012). */
+  buybacks?: { shares: number; total: number; count: number; lastAt: string | null } | null;
 }) {
   const priceAt = makePriceAt(
     ticker.symbol,
@@ -213,6 +219,21 @@ export default function AboutCard({
             </span>
           )}
         </Row>
+        {dividend && (
+          <Row label="Last dividend">
+            <span title={`${fmtMoney(dividend.pool, 0)} paid to ${dividend.holders} holders — a year of the month's MRR growth`}>
+              {fmtMoney(dividend.perShare, dividend.perShare < 1 ? 4 : 2)}/sh ·{" "}
+              {new Date(dividend.month).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}
+            </span>
+          </Row>
+        )}
+        {buybacks && buybacks.shares > 0 && (
+          <Row label="Buybacks">
+            <span title="Shares the founder bought with their own play money and retired">
+              {buybacks.shares.toLocaleString("en-US")} shs retired · {fmtMoney(buybacks.total, 0)}
+            </span>
+          </Row>
+        )}
         <Row label="Next earnings">
           {nextEarningsAt ? (
             <CountdownChip target={nextEarningsAt} prefix="" />

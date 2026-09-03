@@ -69,7 +69,7 @@ export default function TradesList({
             {showTrader && <AiChip username={t.username} bot={t.bot} />}
             {showTrader && (
               <span className="text-terminal-muted">
-                {t.side === "buy" ? "bought" : "sold"}
+                {t.buyback ? "bought back" : t.side === "buy" ? "bought" : "sold"}
               </span>
             )}
             {/* the size in money — the shares and the price sit in the tooltip */}

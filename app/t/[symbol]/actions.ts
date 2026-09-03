@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getMarket } from "@/lib/data";
+import { placeOrder } from "@/lib/trade";
 import { normaliseWebsite } from "@/lib/website";
 import { createSupabaseServerClient, getUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -186,6 +188,106 @@ export async function updateWebsite(formData: FormData) {
   const { error } = await admin.from("tickers").update({ website }).eq("id", ticker.id);
   if (error) throw new Error("Could not save the website — has migration 0010 been run?");
   revalidatePath(`/t/${ticker.symbol}`);
+}
+
+/** Guidance the form offers: expected change in next month's MRR. */
+export const GUIDANCE_STEPS = [-0.2, -0.1, 0, 0.05, 0.1, 0.25, 0.5] as const;
+
+/**
+ * An earnings call: the founder tells the market what next month's MRR
+ * will do, in their own words. Public, permanent, and judged by the next
+ * real print — a call you cannot delete is what makes it a call.
+ */
+export async function postCall(formData: FormData) {
+  const user = await getUser();
+  if (!user) throw new Error("Sign in first.");
+  const tickerId = String(formData.get("ticker_id") ?? "");
+  const body = String(formData.get("body") ?? "").replace(/\s+/g, " ").trim();
+  const guidance = Number(formData.get("guidance"));
+  if (body.length < 1 || body.length > 600) throw new Error("A call is 1–600 characters.");
+  if (!GUIDANCE_STEPS.some((g) => Math.abs(g - guidance) < 1e-9)) throw new Error("Pick a guidance.");
+
+  const admin = createSupabaseAdminClient();
+  const { data: ticker } = await admin
+    .from("tickers")
+    .select("id, symbol, claimed_by")
+    .eq("id", tickerId)
+    .maybeSingle();
+  if (!ticker || ticker.claimed_by !== user.id) {
+    throw new Error("Only the claimed founder can hold an earnings call.");
+  }
+  const { count } = await admin
+    .from("calls")
+    .select("*", { count: "exact", head: true })
+    .eq("ticker_id", ticker.id)
+    .gte("created_at", new Date(Date.now() - 24 * 3_600_000).toISOString());
+  if ((count ?? 0) >= 1) throw new Error("One call a day — the market needs time to trade it.");
+  const { error } = await admin.from("calls").insert({
+    ticker_id: ticker.id,
+    user_id: user.id,
+    body,
+    guidance,
+  });
+  if (error) throw new Error("Could not post the call — has migration 0012 been run?");
+  // the floor sees it too, from the founder, marked as a call
+  await admin.from("posts").insert({
+    ticker_id: ticker.id,
+    user_id: user.id,
+    body: `📣 Earnings call — guiding ${guidance >= 0 ? "+" : ""}${Math.round(guidance * 100)}% next month: ${body}`.slice(0, 280),
+    stance: guidance > 0 ? 1 : guidance < 0 ? -1 : null,
+  });
+  revalidatePath(`/t/${ticker.symbol}`);
+}
+
+/**
+ * A buyback: the founder buys shares off the float with their own play
+ * money at the curve's price, slippage and all, and retires them. The
+ * float shrinks, every remaining share is a bigger slice of the same
+ * company, and the tape shows "bought back".
+ */
+export async function buyBack(formData: FormData) {
+  const user = await getUser();
+  if (!user) throw new Error("Sign in first.");
+  const tickerId = String(formData.get("ticker_id") ?? "");
+  const dollars = Number(formData.get("dollars"));
+  if (!(dollars >= 10)) throw new Error("A buyback is at least $10.");
+
+  const admin = createSupabaseAdminClient();
+  const { data: ticker } = await admin
+    .from("tickers")
+    .select("id, symbol, claimed_by, shares_outstanding, sentiment, drift")
+    .eq("id", tickerId)
+    .maybeSingle();
+  if (!ticker || ticker.claimed_by !== user.id) {
+    throw new Error("Only the claimed founder can buy back shares.");
+  }
+  // size the order off the live quote, then let placeOrder fill it honestly
+  const quote = (await getMarket()).find((q) => q.ticker.id === ticker.id);
+  if (!quote || !(quote.price > 0)) throw new Error("No price yet.");
+  const shares = Math.max(1, Math.floor(dollars / (quote.price * 1.05)));
+  const result = await placeOrder(admin, { userId: user.id, symbol: ticker.symbol, side: "buy", shares });
+  if (!result.ok) throw new Error(result.error);
+  await result.settle();
+  const { data: trade } = await admin
+    .from("trades")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("ticker_id", ticker.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const { error } = await admin.rpc("retire_shares", {
+    p_ticker_id: ticker.id,
+    p_user_id: user.id,
+    p_shares: shares,
+    p_trade_id: trade?.id ?? null,
+  });
+  if (error) {
+    // the shares are bought and held; only the retirement failed — say so
+    throw new Error(`Bought ${shares} shares but could not retire them: ${error.message}`);
+  }
+  revalidatePath(`/t/${ticker.symbol}`);
+  revalidatePath("/");
 }
 
 /** Delete your own post (RLS scoped). */

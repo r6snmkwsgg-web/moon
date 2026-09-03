@@ -107,8 +107,11 @@ export default function EquityPanel({
   playerCount,
   renderedAt,
   own = true,
+  dividends = 0,
 }: {
   cash: number;
+  /** Dividends collected, in total (0012). */
+  dividends?: number;
   holdings: EquityHolding[];
   trades: EquityTrade[];
   startedAt: number;
@@ -597,7 +600,7 @@ export default function EquityPanel({
       </div>
 
       {/* every figure below reads off the same function on the same tick */}
-      <div className="grid grid-cols-2 divide-x divide-y divide-terminal-line/60 border-t border-terminal-line sm:grid-cols-3 lg:grid-cols-5 lg:divide-y-0">
+      <div className="grid grid-cols-2 divide-x divide-y divide-terminal-line/60 border-t border-terminal-line sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
         <Stat
           label="Today"
           tone="signed"
@@ -628,6 +631,13 @@ export default function EquityPanel({
               : `${realized >= 0 ? "+" : "−"}${fmtMoney(Math.abs(realized))}`
           }
           sub={realized === 0 ? "nothing sold yet" : "booked on sales"}
+        />
+        <Stat
+          label="Dividends"
+          tone={dividends > 0 ? "signed" : "plain"}
+          delta={dividends}
+          value={dividends > 0 ? `+${fmtMoney(dividends)}` : "—"}
+          sub={dividends > 0 ? "paid on MRR growth" : "hold what grows"}
         />
         <Stat label="Cash" value={fmtMoney(cash)} sub="buying power" />
         <Stat label="Rank" value={`#${rank}`} sub={`of ${playerCount}`} />
