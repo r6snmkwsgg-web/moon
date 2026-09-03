@@ -1,4 +1,4 @@
-import { getFollowedIds, getHolders, getRecentTrades, getTickerPosts } from "@/lib/data";
+import { getFloorCounts, getFollowedIds, getHolders, getRecentTrades, getTickerPosts } from "@/lib/data";
 import type { RevenueEvent } from "@/lib/pricing";
 import HoldersTable from "@/components/HoldersTable";
 import FloorTabs from "@/components/FloorTabs";
@@ -41,12 +41,14 @@ export default async function Floor({
   // window widens: a $10K print from three hours ago is exactly what the
   // filter is for, and it was the 110th most recent — outside the sixty.
   const filtered = min !== null && min > 0;
-  const [recentTrades, allPosts, theses, holders, followedIds] = await Promise.all([
+  // the newest page of each; the floor pages the rest in as you scroll
+  const [recentTrades, allPosts, theses, holders, followedIds, counts] = await Promise.all([
     getRecentTrades(filtered ? 200 : 60, tickerId, undefined, false, viewerId, min),
-    getTickerPosts(tickerId, price, filtered ? 120 : 40, viewerId),
+    getTickerPosts(tickerId, price, filtered ? 120 : 60, viewerId),
     getRecentTrades(filtered ? 200 : 60, tickerId, undefined, true, viewerId, min),
     getHolders(tickerId, price, shares, 100, viewerId),
     viewerId ? getFollowedIds(viewerId) : Promise.resolve([] as string[]),
+    getFloorCounts(tickerId),
   ]);
   const posts = filtered ? allPosts.filter((p) => p.positionValue >= (min ?? 0)) : allPosts;
   return (
@@ -67,6 +69,8 @@ export default async function Floor({
         theses={theses}
         symbol={symbol}
         tickerId={tickerId}
+        price={price}
+        counts={counts}
         signedIn={viewerId !== null}
         viewerId={viewerId}
         serverMin={min}

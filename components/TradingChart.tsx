@@ -36,7 +36,6 @@ import Tri from "@/components/Tri";
 
 const UP = "#22c55e";
 const DOWN = "#f43f5e";
-const AMBER = "#fbbf24";
 const MUTED = "#8494ab";
 const GRID = "#182236";
 
@@ -117,7 +116,6 @@ export default function TradingChart({
   mrr,
   sentiment: sentimentProp,
   series,
-  fairPrice,
   multiple,
   shares,
   events = [],
@@ -132,7 +130,7 @@ export default function TradingChart({
   mrr: number;
   sentiment: number;
   series: ChartPoint[];
-  fairPrice: number;
+  /** For the price function only — the chart never shows it. */
   multiple: number;
   shares: number;
   /** Real Stripe revenue changes — the steps and spikes on the tape. */
@@ -302,14 +300,6 @@ export default function TradingChart({
       if (c.l < vMin) vMin = c.l;
       if (c.h > vMax) vMax = c.h;
     }
-    // the anchor never stretches the scale — an indicator far outside the
-    // window would squash the candles into a stripe. It draws only if it
-    // already falls inside the price range (standard indicator behavior).
-    const span = vMax - vMin || vMax || 1;
-    if (fairPrice > vMin - span * 0.15 && fairPrice < vMax + span * 0.15) {
-      vMin = Math.min(vMin, fairPrice);
-      vMax = Math.max(vMax, fairPrice);
-    }
     const pad = (vMax - vMin || vMax || 1) * 0.08;
     vMin = Math.max(0, vMin - pad);
     vMax += pad;
@@ -332,7 +322,7 @@ export default function TradingChart({
     return {
       w, h, padR, padT, padB, plotW, plotH, volH, step, shift, x, y, vy, vMin, vMax,
     };
-  }, [dims, candles, fairPrice, hasVolume, viewBars]);
+  }, [dims, candles, hasVolume, viewBars]);
 
   // two formatters: `pf` labels the axis at grid-line precision, `pfx` is
   // the readout (header, OHLC, tooltip) and carries two more digits so a
@@ -890,19 +880,6 @@ export default function TradingChart({
                 );
               })()}
 
-            {/* fair-value anchor */}
-            {fairPrice > geo.vMin && fairPrice < geo.vMax && (
-              <line
-                x1={0}
-                x2={geo.plotW}
-                y1={geo.y(fairPrice)}
-                y2={geo.y(fairPrice)}
-                stroke={AMBER}
-                strokeWidth="1.5"
-                strokeDasharray="5 4"
-                opacity="0.7"
-              />
-            )}
 
             {drawLine ? (
               <>
@@ -1174,15 +1151,6 @@ export default function TradingChart({
           {tf.label} {drawLine ? "line" : "candles"}
           {wickOnly && mode === "candle" ? " (dense)" : ""} · play
           money
-        </span>
-        <span className="flex items-center gap-1.5 text-terminal-amber">
-          <span className="inline-block h-0 w-4 border-t border-dashed border-terminal-amber" />
-          {/* the float is per-ticker since 0004 — a hardcoded 10k here was
-              printing the wrong formula on every company that isn't 10,000 */}
-          fair value · {multiple.toFixed(1)}× ARR ÷{" "}
-          {shares >= 1000
-            ? `${(shares / 1000).toFixed(shares % 1000 === 0 ? 0 : 1)}k`
-            : shares}
         </span>
         <span className="ml-auto hidden text-terminal-muted/70 md:block">
           scroll to zoom · drag to pan

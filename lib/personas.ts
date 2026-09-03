@@ -37,15 +37,15 @@ export interface Persona {
   /** One of the twenty the floor follows: calls names, adds to them, holds. */
   leader?: boolean;
   /**
-   * How far this account's own idea of fair value strays from the formula,
-   * as the sigma of a log-normal. Nobody trades the formula; they trade
-   * their read of it, and their read is wrong by this much, per name, per
-   * week. Defaults by dominant style (see fairSloppiness).
+   * How far this account's own number for a name strays from the floor's
+   * read of the tape (lib/reference), as the sigma of a log-normal. Their
+   * read is wrong by this much, per name, per week. Defaults by dominant
+   * style (see fairSloppiness).
    */
   sloppiness?: number;
 }
 
-/** The default sloppiness of a fair-value read, by the style that dominates. */
+/** The default sloppiness of a value read, by the style that dominates. */
 export const SLOPPINESS: Record<BotStyle, number> = {
   whale: 0.08,
   value: 0.14,
@@ -71,8 +71,8 @@ export function fairSloppiness(p: Persona): number {
 }
 
 /**
- * This account's fair value for this name, this week: the formula times a
- * personal, persistent error. Deterministic in (who, what, when) so the
+ * This account's own number for this name, this week: the floor's read of
+ * the tape times a personal, persistent error. Deterministic in (who, what, when) so the
  * same account keeps the same wrong number for days and then changes its
  * mind, which is what conviction looks like from outside.
  */

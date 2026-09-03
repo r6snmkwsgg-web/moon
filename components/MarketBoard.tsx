@@ -29,17 +29,15 @@ import Tri from "@/components/Tri";
 
 /* ── the filter model ──────────────────────────────────────────────── */
 
-type SortKey = "cap" | "price" | "day" | "week" | "mrr" | "mult" | "symbol" | "new";
+type SortKey = "cap" | "price" | "day" | "week" | "mrr" | "symbol" | "new";
 type Trust = "any" | "verified" | "founder";
 type MrrBand = "any" | "micro" | "small" | "mid" | "large";
-type ValueBand = "any" | "value" | "fair" | "premium";
 type Move = "any" | "up" | "down" | "big";
 
 interface Filters {
   q: string;
   trust: Trust;
   mrr: MrrBand;
-  value: ValueBand;
   move: Move;
   hideDemo: boolean;
   newOnly: boolean;
@@ -49,7 +47,6 @@ const BLANK: Filters = {
   q: "",
   trust: "any",
   mrr: "any",
-  value: "any",
   move: "any",
   hideDemo: false,
   newOnly: false,
@@ -63,7 +60,6 @@ const SORTS: Record<SortKey, (a: TickerQuote, b: TickerQuote) => number> = {
   day: (a, b) => b.dayChange - a.dayChange,
   week: (a, b) => b.weekChange - a.weekChange,
   mrr: (a, b) => b.latestMrr - a.latestMrr,
-  mult: (a, b) => b.multiple - a.multiple,
   symbol: (a, b) => a.ticker.symbol.localeCompare(b.ticker.symbol),
   new: (a, b) => b.ticker.listed_at.localeCompare(a.ticker.listed_at),
 };
@@ -82,13 +78,6 @@ const MRRS: { v: MrrBand; label: string; test: (q: TickerQuote) => boolean }[] =
   { v: "large", label: "$50k+", test: (q) => q.latestMrr >= 50_000 },
 ];
 
-const VALUES: { v: ValueBand; label: string; test: (q: TickerQuote) => boolean }[] = [
-  { v: "any", label: "Any", test: () => true },
-  { v: "value", label: "Under 2.5×", test: (q) => q.multiple < 2.5 },
-  { v: "fair", label: "2.5–4×", test: (q) => q.multiple >= 2.5 && q.multiple < 4 },
-  { v: "premium", label: "4×+", test: (q) => q.multiple >= 4 },
-];
-
 const MOVES: { v: Move; label: string; test: (q: TickerQuote) => boolean }[] = [
   { v: "any", label: "Any", test: () => true },
   { v: "up", label: "Green today", test: (q) => q.dayChange > 0 },
@@ -102,7 +91,6 @@ const SORT_LABELS: { v: SortKey; label: string }[] = [
   { v: "day", label: "24h" },
   { v: "week", label: "7d" },
   { v: "mrr", label: "MRR" },
-  { v: "mult", label: "Multiple" },
   { v: "symbol", label: "A–Z" },
   { v: "new", label: "Newest" },
 ];
@@ -135,7 +123,6 @@ function passesFilters(q: TickerQuote, f: Filters): boolean {
   if (f.hideDemo && q.ticker.fixture) return false;
   if (f.newOnly && !isNew(q)) return false;
   if (!MRRS.find((b) => b.v === f.mrr)!.test(q)) return false;
-  if (!VALUES.find((b) => b.v === f.value)!.test(q)) return false;
   if (!MOVES.find((b) => b.v === f.move)!.test(q)) return false;
   return true;
 }
@@ -156,12 +143,6 @@ function activeChips(f: Filters): { key: string; label: string; clear: Partial<F
       key: "mrr",
       label: `MRR ${MRRS.find((b) => b.v === f.mrr)!.label}`,
       clear: { mrr: "any" },
-    });
-  if (f.value !== "any")
-    out.push({
-      key: "value",
-      label: `${VALUES.find((b) => b.v === f.value)!.label} ARR`,
-      clear: { value: "any" },
     });
   if (f.move !== "any")
     out.push({
@@ -364,7 +345,6 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
     { key: "day", label: "24h" },
     { key: "week", label: "7d", at: "hidden sm:table-cell" },
     { key: "mrr", label: "MRR", at: "hidden sm:table-cell" },
-    { key: "mult", label: "× ARR", at: "hidden lg:table-cell" },
     { key: "cap", label: "Mkt cap" },
     { key: null, label: "30d" },
   ];
@@ -507,12 +487,6 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
                 value={f.mrr}
                 options={MRRS}
                 onChange={(v) => set({ mrr: v })}
-              />
-              <Seg
-                label="Valuation (× ARR)"
-                value={f.value}
-                options={VALUES}
-                onChange={(v) => set({ value: v })}
               />
               <Seg
                 label="Today"
@@ -662,12 +636,6 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
                   </td>
                   <td className="num hidden px-3 py-2 text-right font-mono text-terminal-amber sm:table-cell">
                     {fmtCompact(q.latestMrr)}
-                  </td>
-                  <td
-                    className="num hidden px-3 py-2 text-right font-mono text-terminal-muted lg:table-cell"
-                    title="The ARR multiple this ticker's revenue record earns"
-                  >
-                    {q.multiple.toFixed(1)}×
                   </td>
                   <td className="num px-3 py-2 text-right font-mono text-terminal-muted">
                     {fmtCompact(q.marketCap)}

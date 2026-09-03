@@ -181,9 +181,6 @@ export default function AboutCard({
         </Row>
         <Row label={revenueSource === "payments" ? "Revenue / yr" : "ARR"}>
           {fmtCompact(arr)}
-        </Row>
-        <Row label="Multiple">
-          {multiple.toFixed(1)}× {revenueSource === "payments" ? "rev" : "ARR"}
           {mom !== null && (
             <span className={mom >= 0 ? "ml-1 text-terminal-up" : "ml-1 text-terminal-down"}>
               {fmtPct(mom)} MoM

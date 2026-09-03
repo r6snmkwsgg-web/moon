@@ -48,15 +48,22 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Refresh the session token if it's expired.
-  await supabase.auth.getUser();
+  // Refresh the session token if it is about to expire. This used to call
+  // getUser(), which is a round trip to the auth server on EVERY request —
+  // every page, every prefetch, every four-second tape poll — before the
+  // request could even start. getSession() reads the cookie and only goes
+  // to the network when the token needs refreshing; the pages themselves
+  // verify the token against the project's signing key (lib/supabase/server).
+  await supabase.auth.getSession();
 
   return response;
 }
 
 export const config = {
   matcher: [
-    // Skip static assets and the OG image (public, no auth needed).
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Skip static assets, the OG image, and the API routes: the tape poll,
+    // the pulse and the crons carry no session to refresh, and the ones
+    // that need a user check it themselves.
+    "/((?!api/|_next/static|_next/image|favicon.ico|icon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

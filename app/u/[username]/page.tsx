@@ -5,6 +5,7 @@ import {
   getEquityInputs,
   getFollowStats,
   getIsFollowing,
+  getProfileRow,
   getPublicProfile,
   getRecentTrades,
   getXpMap,
@@ -39,21 +40,25 @@ const MEDAL_COLORS = ["#fbbf24", "#b9c2cf", "#cd8a4b"];
 
 export default async function ProfilePage({ params }: Props) {
   const { username } = await params;
-  const data = await getPublicProfile(username);
-  if (!data) notFound();
-
-  const { profile, valuation, rank, playerCount } = data;
-  const [viewer, xpMap, followStats, theirTrades, equity, following] = await Promise.all([
-    getUser(),
+  // the row is shared with the metadata lookup — already in hand — and the
+  // viewer verifies locally, so neither is a round trip
+  const row = await getProfileRow(username);
+  if (!row) notFound();
+  const viewer = await getUser();
+  // the standing, the curve and the rest all go out together — the standing
+  // used to go first, and the curve waited for it
+  const [data, xpMap, followStats, theirTrades, equity, following] = await Promise.all([
+    getPublicProfile(username),
     getXpMap(),
-    getFollowStats(profile.id),
-    getRecentTrades(8, undefined, [profile.id]),
+    getFollowStats(row.id),
+    getRecentTrades(8, undefined, [row.id]),
     // the same inputs the owner's own page uses — a public curve is
     // reconstructed from prices and the trade log, not from daily dots
-    getEquityInputs(profile.id),
-    // getUser is deduplicated per request, so this rides the same lookup
-    getUser().then((v) => (v ? getIsFollowing(v.id, profile.id) : false)),
+    getEquityInputs(row.id),
+    viewer ? getIsFollowing(viewer.id, row.id) : Promise.resolve(false),
   ]);
+  if (!data) notFound();
+  const { profile, valuation, rank, playerCount } = data;
   const isMe = viewer?.id === profile.id;
   // one instant for every time-dependent number this render produces
   const renderedAt = Date.now();

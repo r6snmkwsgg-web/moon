@@ -34,7 +34,7 @@ export interface Situation {
   culpritPct?: number;
   newsKind?: "new" | "churn" | "expansion" | "contraction" | "call" | "buyback" | null;
   price: number;
-  /** This account's OWN fair value — the formula through their error. */
+  /** This account's own number for the name — their read of the tape, through their error. */
   fair: number;
   mrr: number;
   /** Where the name is in its cycle, read off the tape. */
@@ -73,7 +73,7 @@ const T: Record<string, string[]> = {
   "value/buy": [
     "{sym} is {edge}% under my number. revenue does not lie, hype does.",
     "paying {price} for a business i have at {fair}. i will take that trade every day.",
-    "mrr is the anchor and the anchor is above the price. adding {sym}.",
+    "revenue is up and the price has not moved. adding {sym}.",
     "{sym} at {edge}% below where i have it is the only thing on the board that is cheap.",
     "nobody is looking at {sym}. that is the whole thesis.",
     "{mrr} a month and the market has it at {price}. fine, mine.",
@@ -85,7 +85,7 @@ const T: Record<string, string[]> = {
     "sold {sym}. the price got ahead of the revenue and that always ends the same way.",
     "trimming {sym} into strength. i have it at {fair}, this is not that.",
     "{sym} at {price} is a gift from momentum traders. accepted.",
-    "my anchor is {fair}. out of {sym} until it remembers.",
+    "i have {sym} at {fair}. out until it remembers.",
   ],
   "momentum/buy": [
     "{sym} up {h1}% on the hour. trend is the friend, in.",
@@ -103,7 +103,7 @@ const T: Record<string, string[]> = {
   ],
   "news/buy": [
     "new logo just printed on {sym}. buying the news.",
-    "{sym} added a customer. real revenue moving the real anchor, adding.",
+    "{sym} added a customer. real revenue, real print, adding.",
     "expansion on {sym}. existing customers paying more is the best signal there is.",
     "{sym} is signing customers while the board sleeps. in.",
   ],
@@ -111,7 +111,7 @@ const T: Record<string, string[]> = {
     "churn just printed on {sym}. not sticking around to see if it is the first of many.",
     "downgrade on {sym}. lightening up until the next report.",
     "{sym} lost a customer. the tape will forget in an hour, i will not.",
-    "sold {sym} on the churn. revenue is the anchor and it just moved the wrong way.",
+    "sold {sym} on the churn. revenue just moved the wrong way and i do not argue with revenue.",
   ],
   "noise/buy": [
     "vibes.",
@@ -268,7 +268,7 @@ const HOOKS: Record<Stage, string[]> = {
 const WHYS = [
   "im {pnl} on my bag.",
   "{held} of my own money says so.",
-  "my fair is {fair}, the tape says {price}.",
+  "i have it at {fair}, the tape says {price}.",
   "{holders} holders and counting.",
   "not advice. size accordingly.",
   "could be wrong. usually am, early.",
@@ -326,7 +326,7 @@ const STAGE_TAKES: Record<Stage, string[]> = {
   quiet: [
     "nobody is talking about {sym}. {mrr} a month, {holders} holders. that is the setup.",
     "{sym} is boring and boring compounds.",
-    "quiet on {sym}. my fair is {fair}, price is {price}, i can wait.",
+    "quiet on {sym}. i have it at {fair}, price is {price}, i can wait.",
     "{sym} does nothing all day and i sleep fine.",
     "the {sym} chart is flat and the revenue is not. one of those will move.",
   ],

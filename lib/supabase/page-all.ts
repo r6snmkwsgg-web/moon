@@ -11,6 +11,15 @@
  */
 export const PAGE_SIZE = 1000;
 
+/** Pages fetched together once the first one comes back full. */
+const FANOUT = 4;
+
+/**
+ * The first page says whether there is more; after that, pages come in
+ * FANOUT at a time, so five thousand holdings are two round trips, not
+ * five in a row. A short page ends the walk; anything requested past it
+ * is empty and dropped.
+ */
 export async function pageAll<T>(
   make: (
     from: number,
@@ -18,13 +27,27 @@ export async function pageAll<T>(
   ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   pageSize = PAGE_SIZE
 ): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await make(from, from + pageSize - 1);
-    if (error) throw new Error(error.message);
-    const rows = data ?? [];
-    out.push(...rows);
-    if (rows.length < pageSize) break;
+  const first = await make(0, pageSize - 1);
+  if (first.error) throw new Error(first.error.message);
+  const out: T[] = [...(first.data ?? [])];
+  if (out.length < pageSize) return out;
+  for (let from = pageSize; ; from += FANOUT * pageSize) {
+    const pages = await Promise.all(
+      Array.from({ length: FANOUT }, (_, i) =>
+        make(from + i * pageSize, from + (i + 1) * pageSize - 1)
+      )
+    );
+    let short = false;
+    for (const { data, error } of pages) {
+      if (error) throw new Error(error.message);
+      const rows = data ?? [];
+      out.push(...rows);
+      if (rows.length < pageSize) {
+        short = true;
+        break;
+      }
+    }
+    if (short) break;
   }
   return out;
 }

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fmtMoney, fmtPct } from "@/lib/format";
-import { fairPrice } from "@/lib/pricing";
 import Link from "next/link";
 import LogoTile from "@/components/LogoTile";
 import ChangePct from "@/components/ChangePct";
@@ -276,15 +275,11 @@ export default function EquityPanel({
         if (e.at < geo.t0 || e.at > geo.t1) continue;
         const held = stateAt(e.at).shares.get(h.symbol) ?? 0;
         if (held <= 0) continue; // it moved the market, not your money
-        const impact =
-          held *
-          (fairPrice(e.mrr, h.multiple, h.outstanding) -
-            fairPrice(e.prevMrr, h.multiple, h.outstanding));
         marks.push({
           x: geo.x(e.at),
           y: geo.y(valueAt(e.at)),
           up: e.mrr >= e.prevMrr,
-          title: `$${h.symbol} revenue ${fmtMoney(e.prevMrr)} → ${fmtMoney(e.mrr)}/mo · ${impact >= 0 ? "+" : "−"}${fmtMoney(Math.abs(impact))} to you`,
+          title: `$${h.symbol} revenue ${fmtMoney(e.prevMrr)} → ${fmtMoney(e.mrr)}/mo · you held ${held.toLocaleString("en-US")} shs`,
         });
       }
     }

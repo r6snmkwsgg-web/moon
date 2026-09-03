@@ -23,8 +23,7 @@ import { latestEventMrr } from "@/lib/pulse";
 import { isBotProfile, startingCashFor } from "@/lib/bot-roster";
 import type { DailyRevenue } from "@/lib/surprise";
 import { STARTING_CASH } from "@/lib/config";
-import { getRevenueEvents } from "@/lib/pulse";
-import type { EquityHolding, EquityTrade } from "@/lib/equity";
+import { thinSeries, type EquityHolding, type EquityTrade } from "@/lib/equity";
 import { computeXp } from "@/lib/xp";
 import type {
   ChartEvent,
@@ -300,6 +299,45 @@ const FLOW_TICK_WINDOW_MS = 2 * 86_400_000;
 /** Hard ceiling on what gets shipped to the browser. */
 const MAX_SERIES_POINTS = 2600;
 
+/** The recorded prices a series is built from — fetched once, built anywhere. */
+export interface SeriesRows {
+  snapshots: { day: string; price: number }[];
+  /** Time order, oldest first. */
+  trades: { price: number; created_at: string }[];
+  ticks: { at: string; price: number }[];
+}
+
+/** Every recorded price on one name, in one round trip. */
+export async function fetchSeriesRows(admin: SupabaseClient, tickerId: string): Promise<SeriesRows> {
+  const [snapsRes, tradesRes, ticksRes] = await Promise.all([
+    admin.from("price_snapshots").select("day, price").eq("ticker_id", tickerId).order("day", { ascending: true }),
+    // the NEWEST two thousand. Ascending with a cap kept the OLDEST, so a
+    // busy name's recent prints fell off its own chart once it had printed
+    // more than that.
+    admin
+      .from("trades")
+      .select("price, created_at")
+      .eq("ticker_id", tickerId)
+      .order("created_at", { ascending: false })
+      .limit(2000),
+    admin
+      .from("flow_ticks")
+      .select("at, price")
+      .eq("ticker_id", tickerId)
+      .gte("at", new Date(Date.now() - FLOW_TICK_WINDOW_MS).toISOString())
+      .order("at", { ascending: true })
+      .limit(1200),
+  ]);
+  return {
+    snapshots: ((snapsRes.data ?? []) as { day: string; price: number }[]).map((s) => ({
+      day: s.day,
+      price: Number(s.price),
+    })),
+    trades: ((tradesRes.data ?? []) as { price: number; created_at: string }[]).reverse(),
+    ticks: (ticksRes.data ?? []) as { at: string; price: number }[],
+  };
+}
+
 export async function getPriceSeries(
   tickerId: string,
   symbol: string,
@@ -311,44 +349,34 @@ export async function getPriceSeries(
   drift = 0,
   listedAt?: number
 ): Promise<ChartPoint[]> {
-  const supabase = await createSupabaseServerClient();
-  const admin = createSupabaseAdminClient();
-  const [snapsRes, tradesRes, ticksRes] = await Promise.all([
-    supabase
-      .from("price_snapshots")
-      .select("day, price")
-      .eq("ticker_id", tickerId)
-      .order("day", { ascending: true }),
-    // trade rows are RLS-scoped to their owner → service role for prints
-    admin
-      .from("trades")
-      .select("price, created_at")
-      .eq("ticker_id", tickerId)
-      .order("created_at", { ascending: true })
-      .limit(2000),
-    supabase
-      .from("flow_ticks")
-      .select("at, price")
-      .eq("ticker_id", tickerId)
-      .gte("at", new Date(Date.now() - FLOW_TICK_WINDOW_MS).toISOString())
-      .order("at", { ascending: true })
-      .limit(1200),
-  ]);
+  const rows = await fetchSeriesRows(createSupabaseAdminClient(), tickerId);
+  return buildPriceSeries(rows, symbol, mrr, sentiment, multiple, shares, events, drift, listedAt);
+}
 
+/**
+ * The series from its rows — pure, so a page that already has the rows in
+ * hand builds it without another trip.
+ */
+export function buildPriceSeries(
+  rows: SeriesRows,
+  symbol: string,
+  mrr: number,
+  sentiment: number,
+  multiple?: number,
+  shares?: number,
+  events: RevenueEvent[] = [],
+  drift = 0,
+  listedAt?: number
+): ChartPoint[] {
   const now = Date.now();
   // every rule about which points are real, and in what order, lives in
   // mergeAnchors — pure and covered in tests/candles.test.ts
   const anchors = mergeAnchors({
-    snapshots: (snapsRes.data ?? []) as { day: string; price: number }[],
-    trades: ((tradesRes.data ?? []) as { price: number; created_at: string }[]).map(
-      (t) => ({ at: Date.parse(t.created_at), price: Number(t.price) })
-    ),
+    snapshots: rows.snapshots,
+    trades: rows.trades.map((t) => ({ at: Date.parse(t.created_at), price: Number(t.price) })),
     // the recorded walk — absent until 0007 is applied and the poller has run,
     // in which case the chart falls back to snapshots and prints as before
-    ticks: ((ticksRes.data ?? []) as { at: string; price: number }[]).map((k) => ({
-      at: Date.parse(k.at),
-      price: Number(k.price),
-    })),
+    ticks: rows.ticks.map((k) => ({ at: Date.parse(k.at), price: Number(k.price) })),
     now,
     live: flowPrice(symbol, mrr, sentiment, now, multiple, shares, events, drift),
     notBefore: listedAt,
@@ -404,6 +432,28 @@ export async function getPriceSeries(
     }
   }
   return series.slice(-MAX_SERIES_POINTS);
+}
+
+/**
+ * The landing hero's chart: the series and its story dots. The rows and the
+ * revenue news go out together, then the story reads off the series.
+ */
+export async function getHeroChart(q: TickerQuote): Promise<{ series: ChartPoint[]; events: ChartEvent[] }> {
+  const admin = createSupabaseAdminClient();
+  const [live, rows] = await Promise.all([getLiveRevenue(30 * 86_400_000), fetchSeriesRows(admin, q.ticker.id)]);
+  const series = buildPriceSeries(
+    rows,
+    q.ticker.symbol,
+    q.liveMrr,
+    Number(q.ticker.sentiment),
+    q.multiple,
+    q.shares,
+    live.get(q.ticker.id)?.events ?? [],
+    q.drift,
+    Date.parse(q.ticker.listed_at)
+  );
+  const events = await getHeroStory(q.ticker.id, series);
+  return { series, events };
 }
 
 /**
@@ -526,7 +576,6 @@ export async function getTickerPage(symbol: string): Promise<{
   holdersCount: number;
   watchersCount: number;
   series: ChartPoint[];
-  fairSeries: ChartPoint[];
   dayStats: DayStats;
   floatHeld: number; // shares currently held across all players
   /** Shares in the ten largest positions — the strip's "top 10 holding". */
@@ -550,73 +599,38 @@ export async function getTickerPage(symbol: string): Promise<{
   /** Shares the founder has retired, in total (0012). */
   buybacks: { shares: number; total: number; count: number; lastAt: string | null };
 } | null> {
-  const supabase = await createSupabaseServerClient();
-
-  const { data: ticker } = await supabase
-    .from("tickers")
-    .select("*")
-    .ilike("symbol", symbol)
-    .maybeSingle();
+  // shared with the metadata lookup and the viewer's own rows — one read
+  const ticker = await getTickerRow(symbol);
   if (!ticker) return null;
-
-  const [mrrRes, snapsRes, liveAll] = await Promise.all([
-    supabase
-      .from("mrr_updates")
-      .select("*")
-      .eq("ticker_id", ticker.id)
-      .order("month", { ascending: true }),
-    supabase
-      .from("price_snapshots")
-      .select("*")
-      .eq("ticker_id", ticker.id)
-      .order("day", { ascending: true }),
-    // 30 days of revenue changes: enough to redraw every step on the chart
-    getLiveRevenue(30 * 86_400_000),
-  ]);
-
-  const live = liveAll.get(ticker.id);
-  const revenueEvents = live?.events ?? [];
-  const mrrHistory = (mrrRes.data ?? []) as MrrUpdate[];
-  const snapshots = (snapsRes.data ?? []) as PriceSnapshot[];
-  const history: RevenuePoint[] = mrrHistory.map((u) => ({
-    month: u.month,
-    mrr: Number(u.mrr),
-  }));
-  const latestMrr = history.length ? Number(history[history.length - 1].mrr) : 0;
-
-  const quote = buildQuote(
-    ticker as Ticker,
-    history,
-    snapshots.filter((s) => s.day >= isoDaysAgo(SPARK_DAYS)),
-    live
-  );
 
   // Cross-user reads (counts, prints, positions) run with the service role.
   const admin = createSupabaseAdminClient();
+  const nowMs = Date.now();
   // "today" is the market's day, the same one the portfolio chart draws —
   // today's range and today's volume have to reset when the day does
-  const todayStart = new Date(marketDayStart(Date.now())).toISOString();
+  const todayStart = new Date(marketDayStart(nowMs)).toISOString();
+  // Everything the page needs, in one round trip. This was three in a row
+  // — the ticker, then its revenue, then everything else — and each one
+  // crossed the continent before the next could start.
   const [
+    mrrRes,
+    snapsRes,
+    liveAll,
     holdersRes,
     watchersRes,
     heldRes,
-    todayTradesRes,
-    allTradesRes,
-    series,
-    flowRes,
+    tapeRes,
+    ticksRes,
     callsRes,
     dividendRes,
     buybacksRes,
   ] = await Promise.all([
-    admin
-      .from("holdings")
-      .select("*", { count: "exact", head: true })
-      .eq("ticker_id", ticker.id)
-      .gt("shares", 0),
-    admin
-      .from("watchlists")
-      .select("*", { count: "exact", head: true })
-      .eq("ticker_id", ticker.id),
+    admin.from("mrr_updates").select("*").eq("ticker_id", ticker.id).order("month", { ascending: true }),
+    admin.from("price_snapshots").select("*").eq("ticker_id", ticker.id).order("day", { ascending: true }),
+    // 30 days of revenue changes: enough to redraw every step on the chart
+    getLiveRevenue(30 * 86_400_000),
+    admin.from("holdings").select("*", { count: "exact", head: true }).eq("ticker_id", ticker.id).gt("shares", 0),
+    admin.from("watchlists").select("*", { count: "exact", head: true }).eq("ticker_id", ticker.id),
     // every position, biggest first — a thousand accounts can all hold one name
     pageAll<{ shares: number }>((f, t) =>
       admin
@@ -627,37 +641,24 @@ export async function getTickerPage(symbol: string): Promise<{
         .order("shares", { ascending: false })
         .range(f, t)
     ).then((data) => ({ data })),
+    // the newest two thousand prints, once: the chart's anchors and its
+    // volume, today's range and the day's order flow all read from them.
+    // (Three queries used to fetch overlapping slices of the same rows, and
+    // the chart's slice was the OLDEST two thousand — a busy name lost its
+    // recent prints off its own chart once it had printed more than that.)
     admin
       .from("trades")
-      .select("price, shares, total")
+      .select("side, price, shares, total, user_id, created_at")
       .eq("ticker_id", ticker.id)
-      .gte("created_at", todayStart),
-    // every print, for the chart's volume histogram at any granularity
-    admin
-      .from("trades")
-      .select("shares, created_at")
-      .eq("ticker_id", ticker.id)
-      .order("created_at", { ascending: true })
-      .limit(2000),
-    getPriceSeries(
-      ticker.id,
-      (ticker as Ticker).symbol,
-      quote.liveMrr,
-      Number((ticker as Ticker).sentiment),
-      quote.multiple,
-      quote.shares,
-      revenueEvents,
-      quote.drift,
-      Date.parse((ticker as Ticker).listed_at)
-    ),
-    // the last day's order flow, for the window stats (5M / 1H / 4H / 1D)
-    admin
-      .from("trades")
-      .select("side, total, user_id, created_at")
-      .eq("ticker_id", ticker.id)
-      .gte("created_at", new Date(Date.now() - 86_400_000).toISOString())
       .order("created_at", { ascending: false })
       .limit(2000),
+    admin
+      .from("flow_ticks")
+      .select("at, price")
+      .eq("ticker_id", ticker.id)
+      .gte("at", new Date(nowMs - FLOW_TICK_WINDOW_MS).toISOString())
+      .order("at", { ascending: true })
+      .limit(1200),
     // the founder's moves (0012) — each reads as empty until the migration runs
     admin
       .from("calls")
@@ -674,6 +675,49 @@ export async function getTickerPage(symbol: string): Promise<{
       .maybeSingle(),
     admin.from("buybacks").select("shares, total, created_at").eq("ticker_id", ticker.id).order("created_at", { ascending: false }).limit(500),
   ]);
+
+  const live = liveAll.get(ticker.id);
+  const revenueEvents = live?.events ?? [];
+  const mrrHistory = (mrrRes.data ?? []) as MrrUpdate[];
+  const snapshots = (snapsRes.data ?? []) as PriceSnapshot[];
+  const history: RevenuePoint[] = mrrHistory.map((u) => ({ month: u.month, mrr: Number(u.mrr) }));
+  const quote = buildQuote(ticker, history, snapshots.filter((s) => s.day >= isoDaysAgo(SPARK_DAYS)), live);
+
+  // the tape, newest first as fetched; time order where the chart wants it
+  const tape = (
+    (tapeRes.data ?? []) as {
+      side: "buy" | "sell";
+      price: number;
+      shares: number;
+      total: number;
+      user_id: string;
+      created_at: string;
+    }[]
+  ).map((r) => ({
+    side: r.side,
+    price: Number(r.price),
+    shares: Number(r.shares),
+    total: Number(r.total),
+    userId: r.user_id,
+    at: Date.parse(r.created_at),
+    created_at: r.created_at,
+  }));
+  const tapeAsc = [...tape].reverse();
+  const series = buildPriceSeries(
+    {
+      snapshots: snapshots.map((s) => ({ day: s.day, price: Number(s.price) })),
+      trades: tapeAsc.map((t) => ({ price: t.price, created_at: t.created_at })),
+      ticks: (ticksRes.data ?? []) as { at: string; price: number }[],
+    },
+    ticker.symbol,
+    quote.liveMrr,
+    Number(ticker.sentiment),
+    quote.multiple,
+    quote.shares,
+    revenueEvents,
+    quote.drift,
+    Date.parse(ticker.listed_at)
+  );
   const calls: TickerCall[] = ((callsRes.data ?? []) as Record<string, unknown>[]).map((c) => {
     const pr = (c.profiles ?? {}) as { display_name?: string; username?: string | null };
     return {
@@ -703,33 +747,18 @@ export async function getTickerPage(symbol: string): Promise<{
     count: buybackRows.length,
     lastAt: buybackRows[0]?.created_at ?? null,
   };
-  const flow24h = (
-    (flowRes.data ?? []) as {
-      side: "buy" | "sell";
-      total: number;
-      user_id: string;
-      created_at: string;
-    }[]
-  ).map((t) => ({
-    side: t.side,
-    total: Number(t.total),
-    userId: t.user_id,
-    at: Date.parse(t.created_at),
-  }));
-
-  const tradePoints = (
-    (allTradesRes.data ?? []) as { shares: number; created_at: string }[]
-  ).map((t) => ({ t: Date.parse(t.created_at), shares: Number(t.shares) }));
+  // the last day's order flow, for the window stats (5M / 1H / 4H / 1D)
+  const flow24h = tape
+    .filter((t) => t.at >= nowMs - 86_400_000)
+    .map(({ side, total, userId, at }) => ({ side, total, userId, at }));
+  // every print, for the chart's volume histogram at any granularity
+  const tradePoints = tapeAsc.map((t) => ({ t: t.at, shares: t.shares }));
 
   const heldRows = (heldRes.data ?? []) as { shares: number }[];
   const floatHeld = heldRows.reduce((sum, h) => sum + Number(h.shares), 0);
   const topTenShares = heldRows.slice(0, 10).reduce((sum, h) => sum + Number(h.shares), 0);
 
-  const todayTrades = (todayTradesRes.data ?? []) as {
-    price: number;
-    shares: number;
-    total: number;
-  }[];
+  const todayTrades = tape.filter((t) => t.at >= Date.parse(todayStart));
   const prevSnap = [...snapshots]
     .reverse()
     .find((s) => s.day < todayStart.slice(0, 10));
@@ -753,17 +782,6 @@ export async function getTickerPage(symbol: string): Promise<{
     trades: todayTrades.length,
   };
 
-  // same rule as the price series: today's row is rewritten all day, so its
-  // 06:00 pin is fiction. The live fair value is appended instead.
-  const fairToday = new Date().toISOString().slice(0, 10);
-  const fairSeries: ChartPoint[] = snapshots
-    .filter((s) => s.day < fairToday)
-    .map((s) => ({
-      t: Date.parse(`${s.day}T06:00:00Z`),
-      price: Number(s.fair_price),
-    }));
-  fairSeries.push({ t: Date.now(), price: quote.fairPrice });
-
   return {
     quote,
     mrrHistory,
@@ -771,7 +789,6 @@ export async function getTickerPage(symbol: string): Promise<{
     holdersCount: holdersRes.count ?? 0,
     watchersCount: watchersRes.count ?? 0,
     series,
-    fairSeries,
     dayStats,
     floatHeld,
     topTenShares,
@@ -1187,21 +1204,43 @@ export interface TickerPost {
   likedByMe: boolean;
 }
 
+/**
+ * How much floor a name has: every print ever, and every thesis — the
+ * ones posted straight to the floor and the ones written on a print. The
+ * tab labels, so the count is the history and not the page.
+ */
+export async function getFloorCounts(tickerId: string): Promise<{ trades: number; theses: number }> {
+  const admin = createSupabaseAdminClient();
+  const [tradesRes, notedRes, postsRes] = await Promise.all([
+    admin.from("trades").select("*", { count: "exact", head: true }).eq("ticker_id", tickerId),
+    admin.from("trades").select("*", { count: "exact", head: true }).eq("ticker_id", tickerId).not("note", "is", null),
+    admin.from("posts").select("*", { count: "exact", head: true }).eq("ticker_id", tickerId),
+  ]);
+  return {
+    trades: tradesRes.count ?? 0,
+    theses: (notedRes.count ?? 0) + (postsRes.count ?? 0),
+  };
+}
+
 /** Discussion thread for one ticker, each post carrying its author's live position. */
 export async function getTickerPosts(
   tickerId: string,
   livePrice: number,
   limit = 30,
-  viewerId?: string | null
+  viewerId?: string | null,
+  /** Only posts before this instant — paging back through the floor. */
+  before?: string | null
 ): Promise<TickerPost[]> {
   try {
     const admin = createSupabaseAdminClient();
-    const { data } = await admin
+    let query = admin
       .from("posts")
       .select("*, profiles(*)")
       .eq("ticker_id", tickerId)
       .order("created_at", { ascending: false })
       .limit(limit);
+    if (before) query = query.lt("created_at", before);
+    const { data } = await query;
     const rows = (data ?? []) as Array<Record<string, unknown>>;
     if (rows.length === 0) return [];
 
@@ -1394,45 +1433,76 @@ export async function getEquityInputs(userId: string): Promise<{
     ...tradeRows.map((t) => t.ticker_id),
   ]);
 
-  // every name at once — this walked them one by one, two round trips
-  // each, and a six-name book was twelve in a row before the curve drew
-  const holdings = (
-    await Promise.all(
-      [...touched].map(async (id): Promise<EquityHolding | null> => {
-        const quote = byId.get(id);
-        if (!quote) return null;
-        const events = await getRevenueEvents(admin, id, 30 * 86_400_000);
-        const series = await getPriceSeries(
-          id,
-          quote.ticker.symbol,
-          quote.liveMrr,
-          Number(quote.ticker.sentiment),
-          quote.multiple,
-          quote.shares,
-          events,
-          quote.drift,
-          Date.parse(quote.ticker.listed_at)
-        );
-        return {
-          symbol: quote.ticker.symbol,
-          shares: heldNow.get(id) ?? 0,
-          mrr: quote.liveMrr,
-          sentiment: Number(quote.ticker.sentiment),
-          multiple: quote.multiple,
-          outstanding: quote.shares,
-          series,
-          events,
-          drift: quote.drift,
-          name: quote.ticker.name,
-          logoUrl: quote.ticker.logo_url,
-          avgCost: Number(costOf.get(id) ?? 0),
-          dayChange: quote.dayChange,
-          weekChange: quote.weekChange,
-          spark: quote.spark,
-        };
-      })
-    )
-  ).filter((h): h is EquityHolding => h !== null);
+  // every name at once, in one round trip: the revenue news for all of
+  // them in one query, the recorded prices per name beside it. (This
+  // walked them one by one, two round trips each, and a six-name book was
+  // twelve in a row before the curve drew.)
+  const ids = [...touched].filter((id) => byId.has(id));
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const [rowsPer, eventsRes] = await Promise.all([
+    Promise.all(ids.map((id) => fetchSeriesRows(admin, id))),
+    ids.length
+      ? admin
+          .from("revenue_events")
+          .select("ticker_id, at, prev_mrr, mrr, prev_subscriptions")
+          .in("ticker_id", ids)
+          .gte("at", since)
+          .order("at", { ascending: false })
+          .limit(4000)
+      : Promise.resolve({ data: null }),
+  ]);
+  const eventsOf = new Map<string, RevenueEvent[]>();
+  for (const r of (
+    (eventsRes.data ?? []) as {
+      ticker_id: string;
+      at: string;
+      prev_mrr: number;
+      mrr: number;
+      prev_subscriptions: number | null;
+    }[]
+  ).reverse()) {
+    const l = eventsOf.get(r.ticker_id) ?? [];
+    l.push({ at: Date.parse(r.at), mrr: Number(r.mrr), prevMrr: Number(r.prev_mrr), catchUp: r.prev_subscriptions === null });
+    eventsOf.set(r.ticker_id, l);
+  }
+  const now = Date.now();
+  const holdings: EquityHolding[] = ids.map((id, i) => {
+    const quote = byId.get(id)!;
+    const events = eventsOf.get(id) ?? [];
+    // at the resolution the curve can show — a whole book at full detail
+    // was a megabyte and a half of page
+    const series = thinSeries(
+      buildPriceSeries(
+        rowsPer[i],
+        quote.ticker.symbol,
+        quote.liveMrr,
+        Number(quote.ticker.sentiment),
+        quote.multiple,
+        quote.shares,
+        events,
+        quote.drift,
+        Date.parse(quote.ticker.listed_at)
+      ),
+      now
+    );
+    return {
+      symbol: quote.ticker.symbol,
+      shares: heldNow.get(id) ?? 0,
+      mrr: quote.liveMrr,
+      sentiment: Number(quote.ticker.sentiment),
+      multiple: quote.multiple,
+      outstanding: quote.shares,
+      series,
+      events,
+      drift: quote.drift,
+      name: quote.ticker.name,
+      logoUrl: quote.ticker.logo_url,
+      avgCost: Number(costOf.get(id) ?? 0),
+      dayChange: quote.dayChange,
+      weekChange: quote.weekChange,
+      spark: quote.spark,
+    };
+  });
 
   const symbolOf = new Map(quotes.map((q) => [q.ticker.id, q.ticker.symbol]));
   const trades: EquityTrade[] = tradeRows
@@ -1629,21 +1699,17 @@ export async function getPublicProfile(
   username: string
 ): Promise<PublicProfileData | null> {
   const admin = createSupabaseAdminClient();
-  // the lookup and the whole board's valuations (for the rank) do not need
-  // each other — one round trip, not two
-  const [{ data: profile }, all] = await Promise.all([
-    admin.from("profiles").select("*").ilike("username", username).maybeSingle(),
-    getAllValuations(),
-  ]);
+  // the row is cached per request — the page and the metadata have already
+  // read it — so this resolves at once, and the valuations and the history
+  // go out together behind it
+  const profile = await getProfileRow(username);
   if (!profile) return null;
+  const [all, { data: history }] = await Promise.all([
+    getAllValuations(),
+    admin.from("portfolio_snapshots").select("*").eq("user_id", profile.id).order("day", { ascending: true }),
+  ]);
   const idx = all.findIndex((v) => v.profile.id === profile.id);
   if (idx === -1) return null;
-
-  const { data: history } = await admin
-    .from("portfolio_snapshots")
-    .select("*")
-    .eq("user_id", profile.id)
-    .order("day", { ascending: true });
 
   return {
     profile: profile as Profile,
@@ -2075,20 +2141,27 @@ export async function getRecapStats(): Promise<RecapStats> {
  * the last moment a 404 status can still be set. head:true means Postgres
  * counts rather than returning the row.
  */
-export async function tickerExists(symbol: string): Promise<boolean> {
+/**
+ * One ticker by symbol, once per request: the metadata, the page and the
+ * viewer's own rows all ask, and they all get the same read.
+ */
+export const getTickerRow = cache(async (symbol: string): Promise<Ticker | null> => {
   const admin = createSupabaseAdminClient();
-  const { count } = await admin
-    .from("tickers")
-    .select("*", { count: "exact", head: true })
-    .ilike("symbol", symbol);
-  return (count ?? 0) > 0;
+  const { data } = await admin.from("tickers").select("*").ilike("symbol", symbol).maybeSingle();
+  return (data as Ticker | null) ?? null;
+});
+
+export async function tickerExists(symbol: string): Promise<boolean> {
+  return (await getTickerRow(symbol)) !== null;
 }
 
-export async function profileExists(username: string): Promise<boolean> {
+/** One profile by username, once per request — the same idea. */
+export const getProfileRow = cache(async (username: string): Promise<Profile | null> => {
   const admin = createSupabaseAdminClient();
-  const { count } = await admin
-    .from("profiles")
-    .select("*", { count: "exact", head: true })
-    .ilike("username", username);
-  return (count ?? 0) > 0;
+  const { data } = await admin.from("profiles").select("*").ilike("username", username).maybeSingle();
+  return (data as Profile | null) ?? null;
+});
+
+export async function profileExists(username: string): Promise<boolean> {
+  return (await getProfileRow(username)) !== null;
 }

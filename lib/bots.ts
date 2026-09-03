@@ -24,7 +24,6 @@ import { actChance, myFairValue, timeOfDayFactor, type Persona } from "@/lib/per
 import { pageAll } from "@/lib/supabase/page-all";
 import { CALL_DISCOUNT, CALL_NEWS_MS, credibility, type CallOutcome } from "@/lib/calls";
 import {
-  fairPrice,
   floatOf,
   positionLimit,
   settledPrice,
@@ -33,6 +32,7 @@ import {
   type TradeSide,
 } from "@/lib/pricing";
 import { latestEventMrr } from "@/lib/pulse";
+import { referencePrice, type DailyClose } from "@/lib/reference";
 import { composeThesis, stageOf, type Situation } from "@/lib/theses";
 import { placeOrder } from "@/lib/trade";
 
@@ -42,6 +42,12 @@ export { BOTS, isBotUsername } from "@/lib/bot-roster";
 export interface TickerView {
   symbol: string;
   price: number;
+  /**
+   * What the name is worth, to this account. Not the formula — nobody on
+   * the floor can see it. It is where the tape has closed this week,
+   * restated at today's revenue (lib/reference), through this account's
+   * own error (lib/personas myFairValue).
+   */
   fair: number;
   float: number;
   /** Shares held across every account. */
@@ -228,9 +234,9 @@ export function personaConviction(
   c: number;
   reason: Reason;
 } {
-  // nobody trades the formula: they trade their own read of it, which is
-  // wrong by a personal, persistent amount — so accounts disagree, some buy
-  // what others sell, and none of them knows exactly when
+  // nobody trades the anchor — nobody can see it. They trade their own read
+  // of the tape, which is wrong by a personal, persistent amount — so
+  // accounts disagree, some buy what others sell, and none knows when
   const v: TickerView = { ...view, fair: myFairValue(p, view.symbol, view.fair, now) };
   let total = 0;
   let best: Reason = "noise";
@@ -348,7 +354,7 @@ export function decide(
       ? Math.max(p.thesisRate, v.culprit ? 0.85 : 0.6)
       : p.thesisRate;
   if (rng.unit() < rate) {
-    // the note cites this account's own fair value, not the formula's
+    // the note cites this account's own number for the name
     const mine = { ...v, fair: myFairValue(p, v.symbol, v.fair, Date.now()) };
     note = composeThesis(p, situationFor(mine, side, reason, p), rng);
   }
@@ -493,6 +499,8 @@ export async function runBotRound(
   const hourAgo = new Date(now - 3_600_000).toISOString();
   const quarterAgo = new Date(now - 15 * 60_000).toISOString();
   const dayAgo = new Date(now - 86_400_000).toISOString().slice(0, 10);
+  const today = new Date(now).toISOString().slice(0, 10);
+  const weekAgo = new Date(now - 8 * 86_400_000).toISOString().slice(0, 10);
   const newsSince = new Date(now - 4 * 3_600_000).toISOString();
   const herdSince = now - 30 * 60_000;
   const blameSince = new Date(now - 30 * 60_000).toISOString();
@@ -508,6 +516,7 @@ export async function runBotRound(
     { data: ticksAgo },
     { data: ticksQuarterAgo },
     { data: snaps },
+    { data: weekSnaps },
     { data: recentPrints },
     { data: recentCalls },
     { data: recentBuybacks },
@@ -543,6 +552,15 @@ export async function runBotRound(
       .order("at", { ascending: false })
       .limit(1000),
     admin.from("price_snapshots").select("ticker_id, price").eq("day", dayAgo),
+    // the week's closes, with the revenue behind each — the value read is
+    // built from these and nothing else (lib/reference)
+    admin
+      .from("price_snapshots")
+      .select("ticker_id, day, price, mrr")
+      .gte("day", weekAgo)
+      .lt("day", today)
+      .order("day", { ascending: true })
+      .limit(2000),
     // what everyone printed in the last half hour — the herd signal, and
     // the name on the move
     admin
@@ -614,6 +632,12 @@ export async function runBotRound(
   for (const s of (snaps ?? []) as { ticker_id: string; price: number }[]) {
     priceDayAgo.set(s.ticker_id, Number(s.price));
   }
+  const closesOf = new Map<string, DailyClose[]>();
+  for (const s of (weekSnaps ?? []) as { ticker_id: string; price: number; mrr: number | null }[]) {
+    const l = closesOf.get(s.ticker_id) ?? [];
+    l.push({ price: Number(s.price), mrr: Number(s.mrr ?? 0) });
+    closesOf.set(s.ticker_id, l);
+  }
   const prints: RecentPrint[] = ((recentPrints ?? []) as Record<string, unknown>[]).map((t) => {
     const pr = (t.profiles ?? {}) as { display_name?: string; username?: string | null; is_bot?: boolean | null };
     return {
@@ -679,7 +703,8 @@ export async function runBotRound(
         id,
         symbol: String(t.symbol),
         price,
-        fair: fairPrice(mrr, multiple, float),
+        // the read everyone works from: the tape, not the anchor
+        fair: referencePrice(closesOf.get(id) ?? [], mrr, ago24h && ago24h > 0 ? ago24h : price),
         float,
         floatHeld: floatHeld.get(id) ?? 0,
         change1h: ago1h && ago1h > 0 ? price / ago1h - 1 : 0,

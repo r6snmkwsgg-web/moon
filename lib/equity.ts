@@ -36,6 +36,39 @@ export interface EquityHolding {
   spark: number[];
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * A series at the resolution the equity curve can show. A ticker's own
+ * chart wants every five-minute tick; the equity page draws a whole book
+ * on one line, and shipping ten names at full detail was a megabyte and a
+ * half of page. Today keeps every point, the last week keeps one per half
+ * hour, the last month one per three hours, and older history one per
+ * twelve — the LAST recorded point of each bucket, so every value kept is
+ * a value that happened and nothing is invented.
+ */
+export function thinSeries(series: ChartPoint[], now: number): ChartPoint[] {
+  const out: ChartPoint[] = [];
+  let lastKey = "";
+  for (const p of series) {
+    const age = now - p.t;
+    const w =
+      age <= DAY_MS ? 0 : age <= 7 * DAY_MS ? 30 * 60_000 : age <= 30 * DAY_MS ? 3 * 3_600_000 : 12 * 3_600_000;
+    const key = w === 0 ? `p${p.t}` : `${w}:${Math.floor(p.t / w)}`;
+    if (out.length === 0) {
+      // the first recorded point is where the curve starts — always kept
+      out.push(p);
+      continue;
+    }
+    if (key === lastKey) out[out.length - 1] = p;
+    else {
+      out.push(p);
+      lastKey = key;
+    }
+  }
+  return out;
+}
+
 /** Price functions per symbol — the same ones the curve is built from. */
 export function makePricesAt(
   holdings: EquityHolding[]

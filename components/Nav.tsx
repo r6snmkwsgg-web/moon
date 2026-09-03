@@ -2,8 +2,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Bell, LogOut, Plus } from "lucide-react";
 import { isAdminUser } from "@/lib/auth";
+import { Suspense } from "react";
 import { createSupabaseServerClient, getUser } from "@/lib/supabase/server";
-import { getUnreadCount } from "@/lib/data";
+import { AlertsBadge } from "@/components/UnreadBadge";
 import NavLinks from "@/components/NavLinks";
 import MobileSearch from "@/components/MobileSearch";
 import SearchBar from "@/components/SearchBar";
@@ -18,7 +19,6 @@ async function signOut() {
 
 export default async function Nav() {
   const user = await getUser();
-  const unread = user ? await getUnreadCount(user.id) : 0;
 
   return (
     <header className="sticky top-0 z-20 border-b border-terminal-line bg-terminal-bg/85 backdrop-blur">
@@ -44,11 +44,10 @@ export default async function Nav() {
               className="relative hidden rounded px-2 py-1.5 text-terminal-muted hover:text-terminal-text sm:block"
             >
               <Bell size={15} aria-label="Alerts" />
-              {unread > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-terminal-down px-1 font-mono text-[9px] font-bold text-white">
-                  {unread > 9 ? "9+" : unread}
-                </span>
-              )}
+              {/* the count streams in behind the shell */}
+              <Suspense fallback={null}>
+                <AlertsBadge userId={user.id} />
+              </Suspense>
             </Link>
           )}
 

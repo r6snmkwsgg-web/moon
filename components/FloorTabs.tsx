@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Filter } from "lucide-react";
 import type { FeedTrade, TickerPost } from "@/lib/data";
@@ -9,15 +9,42 @@ import { publishFills, useLiveFills, type LiveFill } from "@/lib/live";
 import TradesList from "@/components/TradesList";
 import ThesesPane from "@/components/ThesesPane";
 
-// remembered per ticker: a whale-watch on one name must not silently empty
-// the next name's floor, where every print is smaller
-const storageKey = (symbol: string) => `sx:floor-min-size:${symbol}`;
+/** Rows per page when scrolling back through the history. */
+const PAGE = 60;
+
+type Tab = "trades" | "theses";
+
+/** What has been paged in below the server's rows, per list. */
+interface Older {
+  trades: FeedTrade[];
+  theses: FeedTrade[];
+  posts: TickerPost[];
+}
+const NONE: Older = { trades: [], theses: [], posts: [] };
+const OPEN = { trades: false, theses: false, posts: false };
+
+function oldestOf(rows: { created_at: string }[]): string | null {
+  let best: string | null = null;
+  for (const r of rows) if (best === null || r.created_at < best) best = r.created_at;
+  return best;
+}
+
+function dedupe<T extends { id: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
+}
 
 /**
  * The floor's two tabs — the tape and the theses — with one filter over
  * both: the size behind what you are reading. A print filters on its own
  * notional; a thesis on the poster's live position in the name. So ">$10K"
  * is "what are the whales saying", and "All" is everyone.
+ *
+ * Nothing here ever goes away. The server sends the newest page; the poll
+ * adds what prints while the page is open; and scrolling to the bottom
+ * pages back through the whole history, one page at a time, until the
+ * first print on the name. A thesis written on a trade stays on the floor
+ * whether or not its author is still in the name.
  */
 export default function FloorTabs({
   trades,
@@ -25,6 +52,8 @@ export default function FloorTabs({
   theses,
   symbol,
   tickerId,
+  price = 0,
+  counts,
   signedIn,
   viewerId,
   serverMin = null,
@@ -33,8 +62,12 @@ export default function FloorTabs({
   posts: TickerPost[];
   theses: FeedTrade[];
   symbol: string;
-  /** For the poll — the tape route takes the id. */
+  /** For the poll and the paging — the tape route takes the id. */
   tickerId?: string;
+  /** The live price — a paged-in post's position is valued at it. */
+  price?: number;
+  /** How many prints and theses the name has in total — the tab labels. */
+  counts?: { trades: number; theses: number };
   signedIn: boolean;
   viewerId: string | null;
   /** The filter the server already applied to these rows (from the URL). */
@@ -42,41 +75,21 @@ export default function FloorTabs({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [tab, setTab] = useState<"trades" | "theses">("trades");
+  const [tab, setTab] = useState<Tab>("trades");
   const [min, setMin] = useState<number | null>(serverMin);
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
 
-  // remembered per browser — a whale-watcher stays a whale-watcher
   // The filter is applied where the rows are — in the query — so a choice
   // goes into the URL and the floor re-renders with every print over the
-  // size, not just the ones that happened to be in the last sixty. The
-  // client filter below still applies instantly to what is on screen.
+  // size. It lives in the URL and nowhere else: a fresh visit starts at
+  // "All", so a filter picked last week cannot quietly hide today's floor.
   const navigate = (v: number | null) => {
     router.replace(v === null ? pathname : `${pathname}?min=${v}`, { scroll: false });
   };
-  useEffect(() => {
-    if (serverMin !== null) return; // the URL already says
-    try {
-      const raw = localStorage.getItem(storageKey(symbol));
-      if (raw !== null && raw !== "") {
-        const v = Number(raw);
-        setMin(v);
-        navigate(v);
-      }
-    } catch {
-      // storage unavailable
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol]);
   const choose = (v: number | null) => {
     setMin(v);
     setOpen(false);
-    try {
-      localStorage.setItem(storageKey(symbol), v === null ? "" : String(v));
-    } catch {
-      // storage unavailable
-    }
     navigate(v);
   };
 
@@ -134,6 +147,82 @@ export default function FloorTabs({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickerId, symbol]);
 
+  // ── paging back through the history ────────────────────────────────────
+  const [older, setOlder] = useState<Older>(NONE);
+  const [done, setDone] = useState(OPEN);
+  const [loading, setLoading] = useState(false);
+  // the pages were fetched under one filter; a new filter starts over
+  useEffect(() => {
+    setOlder(NONE);
+    setDone(OPEN);
+  }, [serverMin, tickerId]);
+
+  const fetchPage = useCallback(
+    async (kind: "trades" | "theses" | "posts", before: string | null) => {
+      const qs = new URLSearchParams({ ticker: tickerId ?? "", kind, limit: String(PAGE) });
+      if (before) qs.set("before", before);
+      if (serverMin !== null && serverMin > 0) qs.set("min", String(serverMin));
+      if (kind === "posts") qs.set("price", String(price));
+      const res = await fetch(`/api/tape?${qs}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`tape ${res.status}`);
+      return (await res.json()) as { trades?: FeedTrade[]; posts?: TickerPost[] };
+    },
+    [tickerId, serverMin, price]
+  );
+
+  const loadMore = useCallback(async () => {
+    if (loading || !tickerId) return;
+    const wants =
+      tab === "trades" ? !done.trades : !done.theses || !done.posts;
+    if (!wants) return;
+    setLoading(true);
+    try {
+      if (tab === "trades") {
+        const before = oldestOf([...trades, ...older.trades]);
+        const { trades: rows = [] } = await fetchPage("trades", before);
+        setOlder((o) => ({ ...o, trades: dedupe([...o.trades, ...rows]) }));
+        if (rows.length < PAGE) setDone((d) => ({ ...d, trades: true }));
+      } else {
+        // the two lists on the theses tab page on their own clocks
+        await Promise.all([
+          done.theses
+            ? null
+            : fetchPage("theses", oldestOf([...theses, ...older.theses])).then(({ trades: rows = [] }) => {
+                setOlder((o) => ({ ...o, theses: dedupe([...o.theses, ...rows]) }));
+                if (rows.length < PAGE) setDone((d) => ({ ...d, theses: true }));
+              }),
+          done.posts
+            ? null
+            : fetchPage("posts", oldestOf([...posts, ...older.posts])).then(({ posts: rows = [] }) => {
+                setOlder((o) => ({ ...o, posts: dedupe([...o.posts, ...rows]) }));
+                if (rows.length < PAGE) setDone((d) => ({ ...d, posts: true }));
+              }),
+        ]);
+      }
+    } catch {
+      // the next scroll tries again
+    } finally {
+      setLoading(false);
+    }
+  }, [loading, tickerId, tab, done, trades, older, theses, posts, fetchPage]);
+
+  // the bottom of the list asks for the next page as it comes into view
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const root = scrollRef.current;
+    const target = sentinelRef.current;
+    if (!root || !target) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) void loadMore();
+      },
+      { root, rootMargin: "120px 0px" }
+    );
+    io.observe(target);
+    return () => io.disconnect();
+  }, [loadMore]);
+
   const allTrades = useMemo(() => {
     const serverIds = new Set(trades.map((t) => t.id));
     const fresh = liveFills.filter(
@@ -164,19 +253,32 @@ export default function FloorTabs({
       likedByMe: false,
       buyback: false,
     }));
-    return [...rows, ...trades];
-  }, [liveFills, trades]);
+    // newest first: the live rows, the server's page, then the pages scrolled in
+    return dedupe([...rows, ...trades, ...older.trades]);
+  }, [liveFills, trades, older.trades]);
   // a live print with a note is a thesis too
   const allTheses = useMemo(() => {
     const serverIds = new Set(theses.map((t) => t.id));
-    const live = allTrades.filter((t) => t.note && !serverIds.has(t.id) && !trades.some((s) => s.id === t.id));
-    return [...live, ...theses];
-  }, [allTrades, theses, trades]);
+    const live = allTrades.filter(
+      (t) => t.note && !serverIds.has(t.id) && !trades.some((s) => s.id === t.id) && !older.trades.some((s) => s.id === t.id)
+    );
+    return dedupe([...live, ...theses, ...older.theses]);
+  }, [allTrades, theses, trades, older.trades, older.theses]);
+  const allPosts = useMemo(() => dedupe([...posts, ...older.posts]), [posts, older.posts]);
   const shownTrades = useMemo(() => allTrades.filter((t) => passesMinSize(t.total, min)), [allTrades, min]);
-  const shownPosts = useMemo(() => posts.filter((p) => passesMinSize(p.positionValue, min)), [posts, min]);
+  const shownPosts = useMemo(() => allPosts.filter((p) => passesMinSize(p.positionValue, min)), [allPosts, min]);
   const shownTheses = useMemo(() => allTheses.filter((t) => passesMinSize(t.total, min)), [allTheses, min]);
 
-  const tabCls = (k: "trades" | "theses") =>
+  // the label counts the whole history, plus what has printed since the
+  // page loaded; under a filter it counts what the filter lets through
+  const liveExtra = allTrades.length - trades.length - older.trades.length;
+  const tradesCount = min === null && counts ? counts.trades + Math.max(0, liveExtra) : shownTrades.length;
+  const liveTheses = allTheses.length - theses.length - older.theses.length;
+  const thesesCount =
+    min === null && counts ? counts.theses + Math.max(0, liveTheses) : shownPosts.length + shownTheses.length;
+  const more = tab === "trades" ? !done.trades : !done.theses || !done.posts;
+
+  const tabCls = (k: Tab) =>
     `microlabel px-3 py-2.5 transition-colors ${
       tab === k ? "!text-terminal-text" : "hover:!text-terminal-text"
     }`;
@@ -185,10 +287,10 @@ export default function FloorTabs({
     <section className="panel">
       <div className="relative flex items-center border-b border-terminal-line">
         <button type="button" onClick={() => setTab("trades")} className={tabCls("trades")}>
-          Trades · {shownTrades.length}
+          Trades · {tradesCount.toLocaleString("en-US")}
         </button>
         <button type="button" onClick={() => setTab("theses")} className={tabCls("theses")}>
-          Theses · {shownPosts.length + shownTheses.length}
+          Theses · {thesesCount.toLocaleString("en-US")}
         </button>
         <button
           type="button"
@@ -247,15 +349,16 @@ export default function FloorTabs({
         <p className="flex items-center justify-between gap-2 border-b border-terminal-line/60 px-3 py-1 font-mono text-[10px] text-terminal-muted">
           <span>
             {tab === "trades" ? "prints" : "theses backed by"} over {minSizeLabel(min).replace("Min size (>", "").replace(")", "")}
-            {" · "}last 200 on the tape
+            {" · "}scroll for older
           </span>
           <button type="button" onClick={() => choose(null)} className="text-terminal-accent hover:underline">
             show all
           </button>
         </p>
       )}
-      {/* the lists scroll inside the panel, so the floor keeps its height */}
-      <div className="max-h-[560px] overflow-y-auto">
+      {/* the lists scroll inside the panel, so the floor keeps its height;
+          the bottom of the scroll pages the history in */}
+      <div ref={scrollRef} className="max-h-[560px] overflow-y-auto">
         {tab === "trades" ? (
           <>
             <TradesList
@@ -270,9 +373,9 @@ export default function FloorTabs({
             )}
           </>
         ) : (
-          shownPosts.length + shownTheses.length === 0 && posts.length + theses.length > 0 ? (
+          shownPosts.length + shownTheses.length === 0 && allPosts.length + allTheses.length > 0 ? (
             <Hidden
-              count={posts.length + theses.length}
+              count={allPosts.length + allTheses.length}
               min={min}
               onClear={() => choose(null)}
               what="theses"
@@ -286,6 +389,17 @@ export default function FloorTabs({
               signedIn={signedIn}
             />
           )
+        )}
+        <div ref={sentinelRef} aria-hidden="true" className="h-px" />
+        {tickerId && (more || loading) && (
+          <button
+            type="button"
+            onClick={() => void loadMore()}
+            disabled={loading}
+            className="w-full border-t border-terminal-line/40 px-3 py-2 text-center font-mono text-[11px] text-terminal-muted transition-colors hover:text-terminal-text disabled:opacity-60"
+          >
+            {loading ? "loading…" : "older"}
+          </button>
         )}
       </div>
     </section>

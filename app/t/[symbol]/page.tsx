@@ -3,9 +3,11 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   getTickerPage,
+  getTickerRow,
   getVoteGauge,
   tickerExists,
 } from "@/lib/data";
+import type { Ticker } from "@/lib/types";
 import { getUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { currentMonthISO, fmtCompact, fmtMoney, fmtMonth } from "@/lib/format";
 import { APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
@@ -63,6 +65,89 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+/** What the viewer has in this name — their own rows only (RLS applies). */
+interface Own {
+  cash: number | null;
+  author: { name: string; username: string | null } | null;
+  sharesHeld: number;
+  avgCost: number;
+  realized: number;
+  history: OwnPrint[];
+  delistRequested: boolean;
+  watching: boolean;
+  myVote: 1 | -1 | null;
+}
+
+const NOBODY: Own = {
+  cash: null,
+  author: null,
+  sharesHeld: 0,
+  avgCost: 0,
+  realized: 0,
+  history: [],
+  delistRequested: false,
+  watching: false,
+  myVote: null,
+};
+
+type OwnTradeRow = { side: "buy" | "sell"; shares: number; price: number; total: number; created_at: string };
+
+async function loadOwn(userId: string, ticker: Ticker, isFounder: boolean): Promise<Own> {
+  const supabase = await createSupabaseServerClient();
+  const [profileRes, holdingRes, myTradesRes, delistRes, watchRes, voteRes] = await Promise.all([
+    supabase.from("profiles").select("cash, display_name, username").eq("id", userId).maybeSingle(),
+    supabase.from("holdings").select("shares, avg_cost").eq("user_id", userId).eq("ticker_id", ticker.id).maybeSingle(),
+    // every print of mine in this name, for the P&L already booked
+    supabase
+      .from("trades")
+      .select("side, shares, price, total, created_at")
+      .eq("user_id", userId)
+      .eq("ticker_id", ticker.id)
+      .order("created_at", { ascending: true })
+      .limit(2000),
+    isFounder
+      ? supabase.from("delist_requests").select("id").eq("ticker_id", ticker.id).eq("user_id", userId).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase.from("watchlists").select("ticker_id").eq("ticker_id", ticker.id).eq("user_id", userId).maybeSingle(),
+    supabase.from("ticker_votes").select("vote").eq("ticker_id", ticker.id).eq("user_id", userId).maybeSingle(),
+  ]);
+  const rows = (myTradesRes.data ?? []) as OwnTradeRow[];
+  return {
+    cash: profileRes.data ? Number(profileRes.data.cash) : null,
+    author: profileRes.data
+      ? {
+          name: String(profileRes.data.display_name ?? "you"),
+          username: (profileRes.data.username as string | null) ?? null,
+        }
+      : null,
+    sharesHeld: holdingRes.data ? Number(holdingRes.data.shares) : 0,
+    avgCost: holdingRes.data ? Number(holdingRes.data.avg_cost) : 0,
+    history: rows
+      .map((tr) => ({
+        side: tr.side,
+        shares: Number(tr.shares),
+        price: Number(tr.price),
+        total: Number(tr.total),
+        at: Date.parse(tr.created_at),
+      }))
+      .reverse(),
+    realized: realizedPnl(
+      rows.map((tr) => ({
+        t: Date.parse(tr.created_at),
+        symbol: ticker.symbol,
+        side: tr.side,
+        shares: Number(tr.shares),
+        price: Number(tr.price),
+        total: Number(tr.total),
+        note: null,
+      }))
+    ),
+    delistRequested: Boolean(delistRes.data),
+    watching: Boolean(watchRes.data),
+    myVote: voteRes.data ? (Number(voteRes.data.vote) as 1 | -1) : null,
+  };
+}
+
 function nextReportLabel(latestMonth: string): string {
   const d = new Date(latestMonth);
   d.setUTCMonth(d.getUTCMonth() + 1);
@@ -74,7 +159,20 @@ export default async function TickerPage({ params, searchParams }: Props) {
   // the floor's size filter — applied in the query, so it is a URL, not a state
   const minSize = minParam && Number(minParam) > 0 ? Number(minParam) : null;
   // the viewer and the ticker load together — one round trip, not two
-  const [data, user] = await Promise.all([getTickerPage(symbol), getUser()]);
+  // the row is shared with the metadata lookup — already in hand — and the
+  // viewer verifies locally, so neither is a round trip
+  const sym = symbol.toUpperCase(); // the metadata's key too, so the read is shared
+  const ticker = await getTickerRow(sym);
+  if (!ticker) notFound();
+  const user = await getUser();
+  const isFounder = user !== null && ticker.claimed_by === user.id;
+  // the page, the gauge and the viewer's own rows all go out together —
+  // this was three round trips in a row, each of them across the continent
+  const [data, gauge, own] = await Promise.all([
+    getTickerPage(sym),
+    getVoteGauge(ticker.id),
+    user ? loadOwn(user.id, ticker, isFounder) : Promise.resolve(NOBODY),
+  ]);
   if (!data) notFound();
   // one instant for every time-dependent number this render produces
   const renderedAt = Date.now();
@@ -96,117 +194,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
     flow24h,
   } = data;
   const t = quote.ticker;
-  const isFounder = user !== null && t.claimed_by === user.id;
-
-  // the gauge does not depend on the viewer, so it loads beside the viewer's own rows
-  const gaugeP = getVoteGauge(t.id);
-
-  // Signed-in extras (own rows only — RLS applies).
-  let cash: number | null = null;
-  let author: { name: string; username: string | null } | null = null;
-  let sharesHeld = 0;
-  let avgCost = 0;
-  let realized = 0;
-  let history: OwnPrint[] = [];
-  let delistRequested = false;
-  let watching = false;
-  let myVote: 1 | -1 | null = null;
-  if (user) {
-    const supabase = await createSupabaseServerClient();
-    const [profileRes, holdingRes, myTradesRes, delistRes, watchRes, voteRes] =
-      await Promise.all([
-        supabase
-          .from("profiles")
-          .select("cash, display_name, username")
-          .eq("id", user.id)
-          .maybeSingle(),
-        supabase
-          .from("holdings")
-          .select("shares, avg_cost")
-          .eq("user_id", user.id)
-          .eq("ticker_id", t.id)
-          .maybeSingle(),
-        // every print of mine in this name, for the P&L already booked
-        supabase
-          .from("trades")
-          .select("side, shares, price, total, created_at")
-          .eq("user_id", user.id)
-          .eq("ticker_id", t.id)
-          .order("created_at", { ascending: true })
-          .limit(2000),
-        isFounder
-          ? supabase
-              .from("delist_requests")
-              .select("id")
-              .eq("ticker_id", t.id)
-              .eq("user_id", user.id)
-              .maybeSingle()
-          : Promise.resolve({ data: null }),
-        supabase
-          .from("watchlists")
-          .select("ticker_id")
-          .eq("ticker_id", t.id)
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        supabase
-          .from("ticker_votes")
-          .select("vote")
-          .eq("ticker_id", t.id)
-          .eq("user_id", user.id)
-          .maybeSingle(),
-      ]);
-    cash = profileRes.data ? Number(profileRes.data.cash) : null;
-    author = profileRes.data
-      ? {
-          name: String(profileRes.data.display_name ?? "you"),
-          username: (profileRes.data.username as string | null) ?? null,
-        }
-      : null;
-    sharesHeld = holdingRes.data ? Number(holdingRes.data.shares) : 0;
-    avgCost = holdingRes.data ? Number(holdingRes.data.avg_cost) : 0;
-    history = (
-      (myTradesRes.data ?? []) as {
-        side: "buy" | "sell";
-        shares: number;
-        price: number;
-        total: number;
-        created_at: string;
-      }[]
-    )
-      .map((tr) => ({
-        side: tr.side,
-        shares: Number(tr.shares),
-        price: Number(tr.price),
-        total: Number(tr.total),
-        at: Date.parse(tr.created_at),
-      }))
-      .reverse();
-    realized = realizedPnl(
-      (
-        (myTradesRes.data ?? []) as {
-          side: "buy" | "sell";
-          shares: number;
-          price: number;
-          total: number;
-          created_at: string;
-        }[]
-      ).map((tr) => ({
-        t: Date.parse(tr.created_at),
-        symbol: t.symbol,
-        side: tr.side,
-        shares: Number(tr.shares),
-        price: Number(tr.price),
-        total: Number(tr.total),
-        note: null,
-      }))
-    );
-    delistRequested = Boolean(delistRes.data);
-    watching = Boolean(watchRes.data);
-    myVote = voteRes.data ? (Number(voteRes.data.vote) as 1 | -1) : null;
-  }
-
-  // the strip over the chart: what fomo-style pages put first
-  const gauge = await gaugeP;
+  const { cash, author, sharesHeld, avgCost, realized, history, delistRequested, watching, myVote } = own;
   const topTen = topTenShares;
   const topTenPct = quote.shares > 0 ? Math.min(100, (topTen / quote.shares) * 100) : 0;
   const vol24h = flow24h.reduce((sum, p) => sum + p.total, 0);
@@ -308,7 +296,6 @@ export default async function TickerPage({ params, searchParams }: Props) {
               quote.revenueSource === "payments" ? "Revenue / mo" : "MRR",
               quote.liveMrr > 0 ? fmtCompact(quote.liveMrr) : "—",
             ],
-            ["Multiple", `${quote.multiple.toFixed(1)}×`],
             ["Holders", holdersCount.toLocaleString("en-US")],
             ["Top 10 holding", `${topTenPct.toFixed(topTenPct >= 10 ? 0 : 1)}%`],
           ] as [string, React.ReactNode][]
@@ -333,7 +320,6 @@ export default async function TickerPage({ params, searchParams }: Props) {
             mrr={quote.liveMrr}
             sentiment={Number(t.sentiment)}
             series={series}
-            fairPrice={quote.fairPrice}
             multiple={quote.multiple}
             shares={quote.shares}
             events={revenueEvents}

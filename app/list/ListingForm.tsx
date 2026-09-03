@@ -10,12 +10,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import {
-  ARR_MULTIPLE,
-  fairPrice,
-  shareCountFor,
-  TARGET_OPENING_PRICE,
-} from "@/lib/pricing";
+import { TARGET_OPENING_PRICE } from "@/lib/pricing";
 import { fmtCompact, fmtPrice } from "@/lib/format";
 import LogoTile from "@/components/LogoTile";
 import { listStartup, uploadLogo, type ListingResult } from "./actions";
@@ -194,7 +189,7 @@ export default function ListingForm({
       ? "Restricted keys start with rk_live_ — that's the one to paste."
       : null;
 
-  // ── the celebration: MRR → fair value → opening price ────────────────────
+  // ── the celebration: MRR → opening price ─────────────────────────────────
   if (state.ok) {
     const o = state.ok;
     const post = `Just IPO'd $${o.symbol} on SAAS EXCHANGE — my real Stripe-verified MRR sets the price, traders fight over 10,000 fake shares. ${typeof window !== "undefined" ? window.location.origin : ""}/t/${o.symbol}`;
@@ -208,8 +203,8 @@ export default function ListingForm({
             className="fade-up text-xs text-terminal-muted"
             style={{ animationDelay: "0.5s" }}
           >
-            fair value = {ARR_MULTIPLE}× ARR ÷ your{" "}
-            {o.shares.toLocaleString("en-US")}-share float (ARR = MRR × 12)
+            your revenue set the opening price, spread over a{" "}
+            {o.shares.toLocaleString("en-US")}-share float
           </p>
           <p
             className="fade-up font-mono text-3xl font-bold text-terminal-up"
@@ -630,15 +625,11 @@ export default function ListingForm({
 
           <p className="rounded-md bg-terminal-raise/60 px-3 py-2 text-[11px] leading-relaxed text-terminal-muted">
             On launch we verify the key, compute your MRR from active
-            subscriptions, and set your opening price at fair value —{" "}
-            {ARR_MULTIPLE}× ARR spread over the shares you issue. Like a real
+            subscriptions, and set your opening price from it. Like a real
             IPO, the share count is picked so the first print lands near{" "}
-            {fmtPrice(TARGET_OPENING_PRICE)}: {fmtCompact(1000)} MRR opens at{" "}
-            {fmtPrice(fairPrice(1000, ARR_MULTIPLE, shareCountFor(1000)))} on a{" "}
-            {shareCountFor(1000).toLocaleString("en-US")}-share float,{" "}
-            {fmtCompact(10000)} at{" "}
-            {fmtPrice(fairPrice(10000, ARR_MULTIPLE, shareCountFor(10000)))} on{" "}
-            {shareCountFor(10000).toLocaleString("en-US")}.
+            {fmtPrice(TARGET_OPENING_PRICE)} — more revenue means a bigger
+            float, not a bigger number on the first candle. From there the
+            market decides.
           </p>
 
           {state.error && (

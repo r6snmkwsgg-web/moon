@@ -2,11 +2,9 @@ import Link from "next/link";
 import { Bell, Zap } from "lucide-react";
 import {
   getEarningsWire,
-  getHeroStory,
-  getLiveRevenue,
+  getHeroChart,
   getMarket,
   getMissedToday,
-  getPriceSeries,
   getRecentTrades,
   getTradeCountFor,
 } from "@/lib/data";
@@ -37,15 +35,6 @@ function timeAgo(iso: string): string {
 export default async function ExchangePage() {
   const [market, user] = await Promise.all([getMarket(), getUser()]);
 
-  const [wire, tapeTrades, missed, tradeCount, liveRevenue] = await Promise.all([
-    getEarningsWire(3),
-    user ? getRecentTrades(6) : Promise.resolve([]),
-    user ? getMissedToday(market, user.id) : Promise.resolve(null),
-    user ? getTradeCountFor(user.id) : Promise.resolve(0),
-    // the hero's news, fetched alongside the rest rather than after it
-    user ? Promise.resolve(null) : getLiveRevenue(30 * 86_400_000),
-  ]);
-
   // The landing hero leads with the top GAINER so first impressions aren't a
   // cliff-dive (unless the whole board is red — then honesty wins).
   const live = [...market].filter((q) => q.spark.length > 2);
@@ -57,29 +46,18 @@ export default async function ExchangePage() {
   const featured =
     topGainer && topGainer.dayChange > 0 ? topGainer : biggest[0];
 
-  // Dense series + real story dots for the hero (signed-out only).
-  const [heroSeries, heroEvents] = !user && featured
-    ? await (async () => {
-        // The same anchor, weather and news the board row uses. This used to
-        // pass the last monthly REPORT and no drift, so the hero quoted the
-        // un-weathered price of a ticker the board, two scrolls down, had 25%
-        // lower — two prices for one stock on one page.
-        const live = liveRevenue ?? new Map();
-        const series = await getPriceSeries(
-          featured.ticker.id,
-          featured.ticker.symbol,
-          featured.liveMrr,
-          Number(featured.ticker.sentiment),
-          featured.multiple,
-          featured.shares,
-          live.get(featured.ticker.id)?.events ?? [],
-          featured.drift,
-          Date.parse(featured.ticker.listed_at)
-        );
-        const events = await getHeroStory(featured.ticker.id, series);
-        return [series, events] as const;
-      })()
-    : [[], []];
+  // everything else goes out together — the hero's chart included, which
+  // used to wait for this batch and then take two more trips of its own
+  const [wire, tapeTrades, missed, tradeCount, hero] = await Promise.all([
+    getEarningsWire(3),
+    user ? getRecentTrades(6) : Promise.resolve([]),
+    user ? getMissedToday(market, user.id) : Promise.resolve(null),
+    user ? getTradeCountFor(user.id) : Promise.resolve(0),
+    // Dense series + real story dots for the hero (signed-out only).
+    !user && featured ? getHeroChart(featured) : Promise.resolve({ series: [], events: [] }),
+  ]);
+  const heroSeries = hero.series;
+  const heroEvents = hero.events;
 
   // the right rail's second panel: the day's three best and three worst
   const gainers = movers.slice(0, 3);
@@ -295,13 +273,13 @@ export default async function ExchangePage() {
               ],
               [
                 "02",
-                "Revenue sets the anchor",
-                "One open formula: fair value = annual revenue × a multiple the market earns — 2.5× at par, more for a long steady record, less for a spike. Monthly reports are earnings day.",
+                "Revenue is gravity",
+                "Real Stripe revenue moves the price the minute it lands — a new customer is a green candle, a churn is a red one. Monthly reports are earnings day, and nobody gets to see the anchor.",
               ],
               [
                 "03",
                 "You trade the hype",
-                "$10,000 of play money. Buys push prices up, hype decays 10% nightly, revenue is gravity. The leaderboard is forever.",
+                "$10,000 of play money. Buys push prices up, sells push them down, hype fades overnight. The leaderboard is forever.",
               ],
             ].map(([num, title, body]) => (
               <div key={num} className="panel space-y-1.5 p-5">

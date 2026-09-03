@@ -85,11 +85,10 @@ function fmtWhen(t: number, range: ChartRange): string {
  * to wherever you're pointing, change re-computes from the window's open.
  *
  * variant="hero"  — naked, edge-to-edge, docked readout card (the landing fold)
- * variant="panel" — panel chrome, axes, fair-value overlay, event markers
+ * variant="panel" — panel chrome, axes, event markers
  */
 export default function InteractiveChart({
   series,
-  fair,
   events = [],
   symbol,
   href,
@@ -100,7 +99,6 @@ export default function InteractiveChart({
   baselineLabel,
 }: {
   series: ChartPoint[];
-  fair?: ChartPoint[];
   events?: ChartEvent[];
   symbol: string;
   href?: string;
@@ -137,9 +135,8 @@ export default function InteractiveChart({
       before.length > 0
         ? [{ t: cutoff, price: before[before.length - 1].price }, ...inWin]
         : inWin;
-    const fairWin = (fair ?? []).filter((p) => p.t >= cutoff);
-    return { pts, fairWin, cutoff, now };
-  }, [series, fair, range]);
+    return { pts, cutoff, now };
+  }, [series, range]);
 
   const { pts } = windowed;
   const idle = scrub === null || scrub >= pts.length;
@@ -174,7 +171,6 @@ export default function InteractiveChart({
 
     const values = [
       ...pts.map((p) => p.price),
-      ...windowed.fairWin.map((p) => p.price),
       ...(baseline !== undefined ? [baseline] : []),
     ].filter((v) => Number.isFinite(v));
     let vMin = Math.min(...values);
@@ -187,7 +183,7 @@ export default function InteractiveChart({
     const y = (v: number) =>
       padT + (1 - (v - vMin) / (vMax - vMin || 1)) * (h - padT - padB);
     return { w, h, padL, padR, padT, padB, x, y, vMin, vMax, t0, t1 };
-  }, [dims, pts, windowed.fairWin, variant]);
+  }, [dims, pts, variant]);
 
   const onPointer = useCallback(
     (e: React.PointerEvent) => {
@@ -312,22 +308,6 @@ export default function InteractiveChart({
                 strokeWidth="1"
                 strokeDasharray="3 4"
                 opacity="0.55"
-              />
-            )}
-
-            {windowed.fairWin.length > 1 && (
-              <path
-                d={monotonePath(
-                  windowed.fairWin.map((p) => ({
-                    x: geo.x(p.t),
-                    y: geo.y(p.price),
-                  }))
-                )}
-                fill="none"
-                stroke={AMBER}
-                strokeWidth="1.5"
-                strokeDasharray="5 4"
-                opacity="0.7"
               />
             )}
 
@@ -528,23 +508,6 @@ export default function InteractiveChart({
       >
         {chartBody}
       </div>
-      {fair && fair.length > 1 && (
-        <div className="mt-1.5 flex flex-wrap gap-4 px-1 text-[11px] text-terminal-muted">
-          <span className="flex items-center gap-1.5">
-            <span
-              className="inline-block h-0.5 w-4 rounded-full"
-              style={{ background: color }}
-            />
-            price (play money)
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-0.5 w-4 rounded-full border-t border-dashed border-terminal-amber bg-transparent" />
-            <span className="text-terminal-amber">
-              fair value · ARR × multiple ÷ 10k shares
-            </span>
-          </span>
-        </div>
-      )}
     </div>
   );
 }
