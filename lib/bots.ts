@@ -32,7 +32,7 @@ import {
   type TradeSide,
 } from "@/lib/pricing";
 import { latestEventMrr } from "@/lib/pulse";
-import { composeThesis, type Situation } from "@/lib/theses";
+import { composeThesis, stageOf, type Situation } from "@/lib/theses";
 import { placeOrder } from "@/lib/trade";
 
 export { BOTS, isBotUsername } from "@/lib/bot-roster";
@@ -56,6 +56,10 @@ export interface TickerView {
   avgCost: number;
   /** A leader this bot follows holds the name — their conviction is borrowed. */
   leaderHolds: boolean;
+  /** That leader, by tape name, for the line that credits them. */
+  leaderName?: string | null;
+  /** Accounts holding the name. */
+  holders?: number;
   /** The biggest print behind the last half hour's move, if one is big enough to blame. */
   culprit?: Culprit | null;
   /** What the accounts this bot follows just did here: +1 per buy, −1 per sell. */
@@ -345,7 +349,7 @@ export function decide(
   if (rng.unit() < rate) {
     // the note cites this account's own fair value, not the formula's
     const mine = { ...v, fair: myFairValue(p, v.symbol, v.fair, Date.now()) };
-    note = composeThesis(p, situationFor(mine, side, reason), rng);
+    note = composeThesis(p, situationFor(mine, side, reason, p), rng);
   }
   return { symbol: v.symbol, side, shares, note, reason };
 }
@@ -353,13 +357,20 @@ export function decide(
 function situationFor(
   v: TickerView,
   side: "buy" | "sell" | null,
-  reason: Reason | "take"
+  reason: Reason | "take",
+  p?: Persona
 ): Situation {
   const freshest = [...v.news].sort((a, b) => a.ageMs - b.ageMs)[0];
   return {
     symbol: v.symbol,
     side,
     reason,
+    stage: stageOf(v.change24h, v.change1h, v.change15m),
+    pnlPct: v.held > 0 && v.avgCost > 0 ? (v.price / v.avgCost - 1) * 100 : null,
+    heldValue: v.held * v.price,
+    leader: v.leaderName ?? null,
+    holders: v.holders ?? 0,
+    isLeader: Boolean(p?.leader),
     edgePct: v.price > 0 ? (v.fair / v.price - 1) * 100 : 0,
     change1hPct: v.change1h * 100,
     change24hPct: v.change24h * 100,
@@ -561,6 +572,14 @@ export async function runBotRound(
     mine.set(`${h.user_id}/${h.ticker_id}`, Number(h.shares));
     myAvg.set(`${h.user_id}/${h.ticker_id}`, Number((h as { avg_cost?: number }).avg_cost ?? 0));
   }
+  // how many accounts hold each name
+  const holdersOf = new Map<string, number>();
+  for (const [k, n] of mine) {
+    if (n <= 0) continue;
+    const tid = k.slice(k.indexOf("/") + 1);
+    holdersOf.set(tid, (holdersOf.get(tid) ?? 0) + 1);
+  }
+  const nameOf = new Map(population.map((a) => [a.username, a.persona.name]));
   // which names each leader is in — followers borrow that conviction
   const leaderHoldings = new Map<string, Set<string>>();
   for (const a of population) {
@@ -648,11 +667,15 @@ export async function runBotRound(
     board.map((v) => {
       let herd = 0;
       let leaderHolds = false;
+      let leaderName: string | null = null;
       for (const u of a.persona.follows) {
         for (const pr of printsBy.get(u) ?? []) {
           if (pr.tickerId === v.id) herd += (pr.side === "buy" ? 1 : -1) * pr.weight;
         }
-        if (leaderHoldings.get(u)?.has(v.id)) leaderHolds = true;
+        if (leaderHoldings.get(u)?.has(v.id)) {
+          leaderHolds = true;
+          leaderName ??= nameOf.get(u) ?? u;
+        }
       }
       return {
         symbol: v.symbol,
@@ -668,6 +691,8 @@ export async function runBotRound(
         held: mine.get(`${a.id}/${v.id}`) ?? 0,
         avgCost: myAvg.get(`${a.id}/${v.id}`) ?? 0,
         leaderHolds,
+        leaderName,
+        holders: holdersOf.get(v.id) ?? 0,
         herd,
         mrr: v.mrr,
       };
@@ -772,7 +797,8 @@ export async function runBotRound(
     if (!v) continue;
     const tickerId = board.find((b) => b.symbol === v.symbol)?.id;
     if (!tickerId) continue;
-    const body = composeThesis(account.persona, situationFor(v, null, "take"), rng);
+    const own = { ...v, fair: myFairValue(account.persona, v.symbol, v.fair, now) };
+    const body = composeThesis(account.persona, situationFor(own, null, "take", account.persona), rng);
     const edge = v.fair / v.price - 1;
     const stance = edge > 0.08 ? 1 : edge < -0.08 ? -1 : null;
     const { error } = await admin.from("posts").insert({ ticker_id: tickerId, user_id: account.id, body, stance });

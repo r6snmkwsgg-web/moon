@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeThesis, inVoice, type Situation } from "@/lib/theses";
+import { composeThesis, inVoice, stageOf, type Situation } from "@/lib/theses";
 import { generatePersona, seededRng, type Voice } from "@/lib/personas";
 
 const sit = (over: Partial<Situation> = {}): Situation => ({
@@ -106,5 +106,50 @@ describe("naming the rugger", () => {
     const line = composeThesis(analyst, { ...rugged, culprit: null }, seeded(3));
     expect(line).not.toMatch(/someone rugged|@/);
     expect(line.length).toBeGreaterThan(10);
+  });
+});
+
+describe("a thousand voices", () => {
+  it("the same moment reads differently from three hundred accounts", () => {
+    const rng = seededRng("variety");
+    const lines = new Set<string>();
+    for (let i = 0; i < 300; i++) {
+      const p = generatePersona("v", i);
+      lines.add(
+        composeThesis(
+          p,
+          sit({ side: null, reason: "take", stage: "run", pnlPct: 12, heldValue: 2_400, holders: 41, leader: i % 3 ? "Trendsurfer" : null }),
+          rng
+        )
+      );
+    }
+    expect(lines.size).toBeGreaterThan(220);
+    for (const l of lines) {
+      expect(l).not.toMatch(/\{/);
+      expect(l.length).toBeLessThanOrEqual(280);
+    }
+  });
+
+  it("a leader calls the name; a follower credits the leader", () => {
+    const leader = { ...generatePersona("v", 11), leader: true, voice: "analyst" as Voice };
+    const calls = new Set<string>();
+    for (let i = 0; i < 40; i++) {
+      calls.add(composeThesis(leader, sit({ side: "buy", reason: "value", edgePct: 15, holders: 30 }), seededRng(`c${i}`)));
+    }
+    expect([...calls].some((l) => /target|top pick|calling it|loaded|follow me|put \$SNDR on your screen|new position/i.test(l))).toBe(true);
+    const follower = { ...generatePersona("v", 12), voice: "analyst" as Voice };
+    const credits = new Set<string>();
+    for (let i = 0; i < 60; i++) {
+      credits.add(composeThesis(follower, sit({ side: null, reason: "take", leader: "Trendsurfer", stage: "run" }), seededRng(`f${i}`)));
+    }
+    expect([...credits].some((l) => l.includes("Trendsurfer"))).toBe(true);
+  });
+
+  it("reads the stage off the tape", () => {
+    expect(stageOf(0.3, 0.01, 0)).toBe("euphoria");
+    expect(stageOf(0.1, 0, 0)).toBe("run");
+    expect(stageOf(-0.25, -0.05, -0.04)).toBe("capitulation");
+    expect(stageOf(-0.1, 0, 0)).toBe("bleed");
+    expect(stageOf(0.02, 0.01, 0)).toBe("quiet");
   });
 });
