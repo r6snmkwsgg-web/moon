@@ -147,14 +147,91 @@ export default function FloorTabs({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickerId, symbol]);
 
-  // ── paging back through the history ────────────────────────────────────
+  // what has been paged in below the server's rows, and whether there is more
   const [older, setOlder] = useState<Older>(NONE);
   const [done, setDone] = useState(OPEN);
   const [loading, setLoading] = useState(false);
+
+  // Nothing shown is ever dropped. The server's page is the newest sixty
+  // at each refresh, so on a busy name the sixty-first print — the one you
+  // were reading — used to fall off the list every thirty seconds. Every
+  // row that has ever reached this page (a server page, a paged-in page,
+  // a live print) is kept here and merged with the next, newest first; a
+  // server row wins over a live copy of the same print, since it carries
+  // the hearts and the buyback flag, and a placeholder for your own fill
+  // steps aside once the real print arrives.
+  const knownTrades = useRef(new Map<string, FeedTrade>());
+  const knownTheses = useRef(new Map<string, FeedTrade>());
+  const knownPosts = useRef(new Map<string, TickerPost>());
+  const byNewest = (a: { created_at: string }, b: { created_at: string }) =>
+    b.created_at.localeCompare(a.created_at);
+
+  const allTrades = useMemo(() => {
+    const known = knownTrades.current;
+    for (const t of [...older.trades, ...trades]) known.set(t.id, t);
+    // a live placeholder matched by a real print goes
+    for (const f of liveFills) {
+      if (!f.id.startsWith("live-")) continue;
+      const matched = trades.some(
+        (t) =>
+          t.side === f.side &&
+          t.shares === f.shares &&
+          (t.username ?? null) === (f.username ?? null) &&
+          Math.abs(Date.parse(t.created_at) - Date.parse(f.created_at)) < 120_000
+      );
+      if (matched) known.delete(f.id);
+    }
+    for (const f of liveFills) {
+      if (known.has(f.id)) continue;
+      if (f.id.startsWith("live-")) {
+        const matched = trades.some(
+          (t) =>
+            t.side === f.side &&
+            t.shares === f.shares &&
+            (t.username ?? null) === (f.username ?? null) &&
+            Math.abs(Date.parse(t.created_at) - Date.parse(f.created_at)) < 120_000
+        );
+        if (matched) continue;
+      }
+      known.set(f.id, {
+        id: f.id,
+        side: f.side,
+        shares: f.shares,
+        price: f.price,
+        total: f.total,
+        created_at: f.created_at,
+        trader: f.trader,
+        username: f.username,
+        symbol: f.symbol,
+        note: f.note ?? null,
+        bot: f.bot ?? false,
+        likes: 0,
+        likedByMe: false,
+        buyback: false,
+      });
+    }
+    return [...known.values()].sort(byNewest);
+  }, [liveFills, trades, older.trades]);
+  // a live print with a note is a thesis too
+  const allTheses = useMemo(() => {
+    const known = knownTheses.current;
+    for (const t of [...older.theses, ...theses]) known.set(t.id, t);
+    for (const t of allTrades) if (t.note && !known.has(t.id)) known.set(t.id, t);
+    return [...known.values()].sort(byNewest);
+  }, [allTrades, theses, older.theses]);
+  const allPosts = useMemo(() => {
+    const known = knownPosts.current;
+    for (const p of [...older.posts, ...posts]) known.set(p.id, p);
+    return [...known.values()].sort(byNewest);
+  }, [posts, older.posts]);
+  // ── paging back through the history ────────────────────────────────────
   // the pages were fetched under one filter; a new filter starts over
   useEffect(() => {
     setOlder(NONE);
     setDone(OPEN);
+    knownTrades.current.clear();
+    knownTheses.current.clear();
+    knownPosts.current.clear();
   }, [serverMin, tickerId]);
 
   const fetchPage = useCallback(
@@ -178,7 +255,7 @@ export default function FloorTabs({
     setLoading(true);
     try {
       if (tab === "trades") {
-        const before = oldestOf([...trades, ...older.trades]);
+        const before = oldestOf(allTrades.filter((t) => !t.id.startsWith("live-")));
         const { trades: rows = [] } = await fetchPage("trades", before);
         setOlder((o) => ({ ...o, trades: dedupe([...o.trades, ...rows]) }));
         if (rows.length < PAGE) setDone((d) => ({ ...d, trades: true }));
@@ -187,13 +264,13 @@ export default function FloorTabs({
         await Promise.all([
           done.theses
             ? null
-            : fetchPage("theses", oldestOf([...theses, ...older.theses])).then(({ trades: rows = [] }) => {
+            : fetchPage("theses", oldestOf(allTheses.filter((t) => !t.id.startsWith("live-")))).then(({ trades: rows = [] }) => {
                 setOlder((o) => ({ ...o, theses: dedupe([...o.theses, ...rows]) }));
                 if (rows.length < PAGE) setDone((d) => ({ ...d, theses: true }));
               }),
           done.posts
             ? null
-            : fetchPage("posts", oldestOf([...posts, ...older.posts])).then(({ posts: rows = [] }) => {
+            : fetchPage("posts", oldestOf(allPosts)).then(({ posts: rows = [] }) => {
                 setOlder((o) => ({ ...o, posts: dedupe([...o.posts, ...rows]) }));
                 if (rows.length < PAGE) setDone((d) => ({ ...d, posts: true }));
               }),
@@ -204,7 +281,7 @@ export default function FloorTabs({
     } finally {
       setLoading(false);
     }
-  }, [loading, tickerId, tab, done, trades, older, theses, posts, fetchPage]);
+  }, [loading, tickerId, tab, done, allTrades, allTheses, allPosts, fetchPage]);
 
   // the bottom of the list asks for the next page as it comes into view
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -223,59 +300,19 @@ export default function FloorTabs({
     return () => io.disconnect();
   }, [loadMore]);
 
-  const allTrades = useMemo(() => {
-    const serverIds = new Set(trades.map((t) => t.id));
-    const fresh = liveFills.filter(
-      (f) =>
-        !serverIds.has(f.id) &&
-        !trades.some(
-          (t) =>
-            f.id.startsWith("live-") &&
-            t.side === f.side &&
-            t.shares === f.shares &&
-            (t.username ?? null) === (f.username ?? null) &&
-            Math.abs(Date.parse(t.created_at) - Date.parse(f.created_at)) < 120_000
-        )
-    );
-    const rows: FeedTrade[] = fresh.map((f) => ({
-      id: f.id,
-      side: f.side,
-      shares: f.shares,
-      price: f.price,
-      total: f.total,
-      created_at: f.created_at,
-      trader: f.trader,
-      username: f.username,
-      symbol: f.symbol,
-      note: f.note ?? null,
-      bot: f.bot ?? false,
-      likes: 0,
-      likedByMe: false,
-      buyback: false,
-    }));
-    // newest first: the live rows, the server's page, then the pages scrolled in
-    return dedupe([...rows, ...trades, ...older.trades]);
-  }, [liveFills, trades, older.trades]);
-  // a live print with a note is a thesis too
-  const allTheses = useMemo(() => {
-    const serverIds = new Set(theses.map((t) => t.id));
-    const live = allTrades.filter(
-      (t) => t.note && !serverIds.has(t.id) && !trades.some((s) => s.id === t.id) && !older.trades.some((s) => s.id === t.id)
-    );
-    return dedupe([...live, ...theses, ...older.theses]);
-  }, [allTrades, theses, trades, older.trades, older.theses]);
-  const allPosts = useMemo(() => dedupe([...posts, ...older.posts]), [posts, older.posts]);
   const shownTrades = useMemo(() => allTrades.filter((t) => passesMinSize(t.total, min)), [allTrades, min]);
   const shownPosts = useMemo(() => allPosts.filter((p) => passesMinSize(p.positionValue, min)), [allPosts, min]);
   const shownTheses = useMemo(() => allTheses.filter((t) => passesMinSize(t.total, min)), [allTheses, min]);
 
-  // the label counts the whole history, plus what has printed since the
-  // page loaded; under a filter it counts what the filter lets through
-  const liveExtra = allTrades.length - trades.length - older.trades.length;
-  const tradesCount = min === null && counts ? counts.trades + Math.max(0, liveExtra) : shownTrades.length;
-  const liveTheses = allTheses.length - theses.length - older.theses.length;
+  // the label counts the whole history as of the last refresh, plus what
+  // has printed since; under a filter it counts what the filter lets through
+  const serverNewest = trades[0]?.created_at ?? "";
+  const liveExtra = allTrades.filter((t) => t.created_at > serverNewest).length;
+  const tradesCount = min === null && counts ? counts.trades + liveExtra : shownTrades.length;
+  const newestThesis = [theses[0]?.created_at ?? "", posts[0]?.created_at ?? ""].sort().reverse()[0];
+  const liveTheses = allTheses.filter((t) => t.created_at > newestThesis).length;
   const thesesCount =
-    min === null && counts ? counts.theses + Math.max(0, liveTheses) : shownPosts.length + shownTheses.length;
+    min === null && counts ? counts.theses + liveTheses : shownPosts.length + shownTheses.length;
   const more = tab === "trades" ? !done.trades : !done.theses || !done.posts;
 
   const tabCls = (k: Tab) =>
