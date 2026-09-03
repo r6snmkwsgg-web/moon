@@ -241,13 +241,18 @@ async function placeOrderOnce(
   // re-read and re-priced. Concurrent orders on one ticker serialise on this
   // line, each filling off the curve the one before it left.
   const s0 = Number(ticker.sentiment);
-  const { data: claimed, error: claimErr } = await admin
+  // the float is part of the claim too: a split landing between the read
+  // and here would leave this order sized in the old unit
+  let claim = admin
     .from("tickers")
     .update({ sentiment: fill.newSentiment })
     .eq("id", ticker.id)
     .gte("sentiment", s0 - CLAIM_EPS)
-    .lte("sentiment", s0 + CLAIM_EPS)
-    .select("id");
+    .lte("sentiment", s0 + CLAIM_EPS);
+  if (ticker.shares_outstanding !== null && ticker.shares_outstanding !== undefined) {
+    claim = claim.eq("shares_outstanding", ticker.shares_outstanding);
+  }
+  const { data: claimed, error: claimErr } = await claim.select("id");
   if (claimErr) return { ok: false, error: "Trade failed.", status: 500 };
   if (!claimed || claimed.length === 0) return "moved";
 

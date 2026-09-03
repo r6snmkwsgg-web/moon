@@ -27,6 +27,9 @@ export interface Ticker {
   drift_at?: string | null;
   // 0010_social_proof — the company's site, shown on the About card
   website?: string | null;
+  // 0011_splits — the float follows demand; the log of every restatement
+  split_at?: string | null;
+  splits?: { at: string; factor: number; price: number }[] | null;
 }
 
 export interface MrrUpdate {

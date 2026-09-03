@@ -97,6 +97,7 @@ export default function AboutCard({
   );
   const changes = windowChanges(priceAt, renderedAt, earliest);
   const isDemo = Boolean(ticker.fixture);
+  const lastSplit = ticker.splits && ticker.splits.length > 0 ? ticker.splits[ticker.splits.length - 1] : null;
   const revenueLabel =
     revenueSource === "payments"
       ? "Revenue / mo"
@@ -202,6 +203,15 @@ export default function AboutCard({
         <Row label="Float">
           {shares.toLocaleString("en-US")} shs ·{" "}
           {Math.min(100, Math.round((floatHeld / shares) * 100))}% held
+          {lastSplit && (
+            <span
+              className="ml-1 text-terminal-muted"
+              title="The float grows with demand and shrinks at the floor; every holder keeps the same value"
+            >
+              · {lastSplit.factor >= 1 ? `${lastSplit.factor}:1 split` : `1:${Math.round(1 / lastSplit.factor)} reverse`}{" "}
+              {new Date(lastSplit.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </span>
+          )}
         </Row>
         <Row label="Next earnings">
           {nextEarningsAt ? (

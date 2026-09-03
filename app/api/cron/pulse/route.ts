@@ -4,6 +4,7 @@ import { pollRevenuePulse } from "@/lib/pulse";
 import { advanceMarketFlow } from "@/lib/flow";
 import { runDemoPulse } from "@/lib/demo-pulse";
 import { runBotRound } from "@/lib/bots";
+import { runSplits } from "@/lib/splits";
 import { stripeVerificationConfigured } from "@/lib/stripe";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,15 @@ export async function GET(request: Request) {
   }
   const result = await pollRevenuePulse(admin, { force: true });
 
+  // the float follows demand — a crowded or expensive name splits, a penny
+  // one consolidates — before the traders read the board
+  let splits: unknown = null;
+  try {
+    splits = await runSplits(admin);
+  } catch (e) {
+    splits = { error: e instanceof Error ? e.message : String(e) };
+  }
+
   // The market playing out: demo listings get their revenue pulse, then the
   // AI traders read the board and trade. Neither may take the heartbeat down
   // with it. MARKET_BOTS=off pauses both without a deploy.
@@ -57,5 +67,5 @@ export async function GET(request: Request) {
       bots = { error: e instanceof Error ? e.message : String(e) };
     }
   }
-  return NextResponse.json({ ok: true, flow, ...result, demo, bots });
+  return NextResponse.json({ ok: true, flow, ...result, splits, demo, bots });
 }
