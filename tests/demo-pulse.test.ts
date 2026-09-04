@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DEMO_BAND,
-  DEMO_EVENTS_PER_DAY,
+  DEMO_MIN_EVENTS_PER_DAY,
   demoEventChance,
+  demoEventsPerDay,
   guessSubscribers,
   nextDemoEvent,
 } from "@/lib/demo-pulse";
@@ -14,9 +15,16 @@ function seq(...units: number[]): FlowRandom {
 }
 
 describe("the demo pulse", () => {
-  it("fires two or three times a day per listing, in five-minute rolls", () => {
-    expect(demoEventChance() * 288).toBeCloseTo(DEMO_EVENTS_PER_DAY, 10);
-    expect(demoEventChance()).toBeLessThan(0.01);
+  it("fires as often as the customer base moves, not on one rate for the board", () => {
+    // the thing that looked wrong: 1,168 customers and 38 got the same day
+    expect(demoEventsPerDay(1168)).toBeGreaterThan(4 * demoEventsPerDay(120));
+    expect(demoEventsPerDay(1168)).toBeGreaterThan(10);
+    expect(demoEventsPerDay(120)).toBeLessThan(3);
+    // nothing goes completely quiet
+    expect(demoEventsPerDay(0)).toBe(DEMO_MIN_EVENTS_PER_DAY);
+    // and the per-round chance is that rate over a minute of cron, not five
+    expect(demoEventChance(1168) * 1440).toBeCloseTo(demoEventsPerDay(1168), 10);
+    expect(demoEventChance(1168)).toBeLessThan(0.05);
   });
 
   it("a signup adds a customer's worth of MRR and a customer", () => {
@@ -76,17 +84,21 @@ describe("the demo pulse", () => {
     expect(down!.mrr).toBeLessThan(10_000);
   });
 
-  it("is steered back into its band: too rich churns, too poor signs up", () => {
-    const rich = nextDemoEvent(
-      { mrr: 10_000 * DEMO_BAND.ceil * 1.01, subs: 100, reportedMrr: 10_000 },
-      seq(0.95, 0.5) // would be a signup, is forced to a churn
-    );
-    expect(rich?.kind).toBe("churn");
-    const poor = nextDemoEvent(
-      { mrr: 10_000 * DEMO_BAND.floor * 0.99, subs: 100, reportedMrr: 10_000 },
-      seq(0.05, 0.5) // would be a churn, is forced to a signup
-    );
-    expect(poor?.kind).toBe("new");
+  it("leans back into its band, harder the further out — but is not a wall", () => {
+    const over = (x: number) => 10_000 * DEMO_BAND.ceil * x;
+    const at = (mrr: number, ...draws: number[]) =>
+      nextDemoEvent({ mrr, subs: 100, reportedMrr: 10_000 }, seq(...draws))?.kind;
+    // a step over the ceiling: the lean is about a third, so a low draw pulls back
+    expect(at(over(1.01), 0.95, 0.2, 0.5)).toBe("churn");
+    // ...and a high one lets a company having a good month carry on having it.
+    // This is the case that used to be impossible: past the ceiling, EVERY
+    // event was a churn, so a listing that had simply run ahead of its last
+    // report printed nothing but churn until it came back down.
+    expect(at(over(1.01), 0.95, 0.6, 0.5)).toBe("new");
+    // far out, the pull is near certain
+    expect(at(over(1.5), 0.95, 0.8, 0.5)).toBe("churn");
+    // and it works the same way downward
+    expect(at(10_000 * DEMO_BAND.floor * 0.99, 0.05, 0.2, 0.5)).toBe("new");
   });
 
   it("guesses a believable customer count for a business with no record", () => {

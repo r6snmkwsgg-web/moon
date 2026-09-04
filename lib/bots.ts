@@ -164,7 +164,12 @@ export interface BotOrder {
 export const MAX_TRADES_PER_ROUND = 600;
 
 /** Standalone theses per round, board-wide. */
-export const MAX_POSTS_PER_ROUND = 12;
+// These three ceilings are per ROUND, and a round is now a minute rather
+// than five. Left at their old numbers they stopped being safety rails and
+// became the actual rate: the floor was printing 720 theses an hour, every
+// one of them the cap being hit. Restated so a day looks like the day they
+// were sized for.
+export const MAX_POSTS_PER_ROUND = 4;
 /** Tickers filling at once in a round. */
 // Orders on ONE ticker must serialise — each fills off the curve the one
 // before it left — but different tickers never contend, so this should be
@@ -212,9 +217,9 @@ export const FOLLOW_ALERT_USD = 500;
 /** The floor talks twice as much as the personas' own rate says — thirty listings is a lot of floor. */
 export const POST_SCALE = 2;
 /** Hearts the population leaves on the floor per round, at most. */
-export const MAX_LIKES_PER_ROUND = 20;
+export const MAX_LIKES_PER_ROUND = 6;
 /** Votes the population casts on the community gauges per round, at most. */
-export const MAX_VOTES_PER_ROUND = 40;
+export const MAX_VOTES_PER_ROUND = 10;
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
@@ -1044,7 +1049,8 @@ export async function runBotRound(
     // talk — that is the wall of "wtf" after a rug
     const hit = shaken.filter((v) => (mine0.get(`${account.id}/${v.id}`) ?? 0) > 0);
     const venting = hit.length > 0 && rng.unit() < SHAKE_POST[account.persona.hold];
-    if (!venting && rng.unit() >= (account.persona.postRate * POST_SCALE * hour) / 288) continue;
+    const postChance = (account.persona.postRate * POST_SCALE * hour * intervalMs) / 86_400_000;
+    if (!venting && rng.unit() >= postChance) continue;
     const views = viewsFor(account);
     // vent about the hit name; else talk about what you hold, else about whatever is most mispriced
     const held = views.filter((v) => v.held > 0);

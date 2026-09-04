@@ -13,6 +13,7 @@
  * hands in.
  */
 import type { BotStyle } from "@/lib/bot-roster";
+import { PULSE_INTERVAL_MS } from "@/lib/pricing";
 
 export type Voice = "degen" | "analyst" | "terse" | "emoji" | "founder";
 export type Hold = "paper" | "swing" | "diamond";
@@ -292,12 +293,10 @@ export function timeOfDayFactor(t: number): number {
 export const WAKE_SCALE = 55;
 
 /**
- * How often a round actually runs — the pulse cron in vercel.json. A wake
- * roll is per round, so this is the only thing that turns a daily rate into
- * a per-round chance; when the cadence changes, change it here rather than
- * leaving actChance quietly modelling the old one.
+ * How often a round actually runs. A wake roll is per round, so this is the
+ * only thing that turns a daily rate into a per-round chance.
  */
-export const ROUND_INTERVAL_MS = 60_000;
+export const ROUND_INTERVAL_MS = PULSE_INTERVAL_MS;
 /** Paper hands check the chart more often than diamond hands do. */
 export const HOLD_TEMPO: Record<Hold, number> = { paper: 1.4, swing: 1, diamond: 0.7 };
 

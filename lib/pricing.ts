@@ -388,6 +388,17 @@ export interface Fill {
 export const FLOW_TICK_MS = 5 * 60_000;
 
 /**
+ * How often the pulse cron actually fires (vercel.json). Distinct from
+ * FLOW_TICK_MS, which is how often the drift walk takes a STEP — the walk
+ * is self-limiting and does not care how often it is asked.
+ *
+ * Anything that turns a per-day rate into a per-round chance reads this.
+ * Two of them were quietly modelling a five-minute cron after it went to a
+ * minute; one constant is how that stops happening again.
+ */
+export const PULSE_INTERVAL_MS = 60_000;
+
+/**
  * Bound on the weather, in LOG space: e^±0.9 is 0.4x to 2.5x fair value.
  *
  * This is a hard wall, not the working range — the walk's own spread is

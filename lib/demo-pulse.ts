@@ -15,17 +15,11 @@
  * other connected ticker are never touched: their events are real.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { cryptoRandom, FLOW_TICK_MS, type FlowRandom } from "@/lib/flow";
+import { cryptoRandom, type FlowRandom } from "@/lib/flow";
+import { PULSE_INTERVAL_MS } from "@/lib/pricing";
 import { latestEventMrr } from "@/lib/pulse";
 import { recordTickerSnapshot } from "@/lib/snapshot";
 
-/** Roughly two or three a day per listing — the cadence PRL actually shows. */
-export const DEMO_EVENTS_PER_DAY = 2.5;
-
-/** Chance of an event in one interval of the poller. */
-export function demoEventChance(intervalMs = FLOW_TICK_MS): number {
-  return (DEMO_EVENTS_PER_DAY * intervalMs) / 86_400_000;
-}
 
 export type DemoKind = "new" | "churn" | "expansion" | "contraction";
 
@@ -66,6 +60,48 @@ export const WAVE_MAX = 5;
 export const EVENT_CAP = 0.12;
 
 /**
+ * How much of a customer base does something in a month — signs up, churns,
+ * upgrades, downgrades. Self-serve SMB SaaS at these prices runs somewhere
+ * between a tenth and a fifth of its logos through one of those.
+ */
+export const MONTHLY_CUSTOMER_TURNOVER = 0.18;
+
+/**
+ * Customers per event, on average, given that WAVE_CHANCE of them are waves
+ * of 2..WAVE_MAX. Events are what the tape shows; customers are what the
+ * turnover is measured in, so the rate has to divide by this.
+ */
+export const AVG_WAVE = 1 - WAVE_CHANCE + WAVE_CHANCE * ((2 + WAVE_MAX) / 2);
+
+/**
+ * How much livelier than a real business the board runs. A real $17k SaaS
+ * with 400 customers genuinely only sees a couple of these a day, which is
+ * accurate and reads as dead — the same trade we already made on the tape.
+ */
+export const DEMO_TEMPO = 3;
+
+/** Nothing goes completely silent, however few customers it has. */
+export const DEMO_MIN_EVENTS_PER_DAY = 1;
+
+/**
+ * Events a day for a business with this many customers.
+ *
+ * This used to be a flat 2.5 for every listing on the board, which is the
+ * thing that looked wrong: a company with 1,168 customers and one with 38
+ * had exactly the same amount happen to them. Churn and signups scale with
+ * how many people you have; nothing else does.
+ */
+export function demoEventsPerDay(subs: number): number {
+  const customersPerDay = (Math.max(0, subs) * MONTHLY_CUSTOMER_TURNOVER) / 30;
+  return Math.max(DEMO_MIN_EVENTS_PER_DAY, (customersPerDay / AVG_WAVE) * DEMO_TEMPO);
+}
+
+/** Chance of an event in one interval of the poller. */
+export function demoEventChance(subs: number, intervalMs = PULSE_INTERVAL_MS): number {
+  return Math.min(0.5, (demoEventsPerDay(subs) * intervalMs) / 86_400_000);
+}
+
+/**
  * One more month-of-a-small-SaaS step, forward this time. A customer is worth
  * roughly the average one with spread; the walk is steered back toward its
  * band rather than allowed to escape it, so a listing is still a believable
@@ -79,9 +115,16 @@ export function nextDemoEvent(state: DemoState, rng: FlowRandom): DemoEvent | nu
   let roll = rng.unit();
   const floor = state.reportedMrr * DEMO_BAND.floor;
   const ceil = state.reportedMrr * DEMO_BAND.ceil;
+  // Outside the band the odds tilt back toward it, and tilt harder the
+  // further out it has got. This used to be a wall — one step past the
+  // ceiling and EVERY event was a churn, which is what a listing that had
+  // simply had a good month looked like from the outside. A company on a
+  // run can still sign someone; it just has further to fall.
   if (state.reportedMrr > 0) {
-    if (running > ceil) roll = 0.05; // force a churn: too far above the band
-    else if (running < floor) roll = 0.9; // force a signup: too far below
+    const over = running > ceil ? (running - ceil) / ceil : 0;
+    const under = running < floor ? (floor - running) / floor : 0;
+    if (over > 0 && rng.unit() < Math.min(0.85, 0.35 + over * 2)) roll = 0.05;
+    else if (under > 0 && rng.unit() < Math.min(0.85, 0.35 + under * 2)) roll = 0.9;
   }
   const kind: DemoKind =
     roll < 0.18
@@ -146,7 +189,7 @@ export async function runDemoPulse(
 ): Promise<DemoPulseResult> {
   const now = opts.now ?? Date.now();
   const rng = opts.rng ?? cryptoRandom();
-  const chance = demoEventChance(opts.intervalMs ?? FLOW_TICK_MS);
+  const intervalMs = opts.intervalMs ?? PULSE_INTERVAL_MS;
   const out: DemoPulseResult = { checked: 0, events: [] };
 
   const [{ data: tickers }, { data: conns }, { data: reports }, latest] =
@@ -174,13 +217,16 @@ export async function runDemoPulse(
   }[]) {
     if (!t.fixture || t.stripe_verified || connected.has(t.id)) continue;
     out.checked++;
-    if (rng.unit() >= chance) continue;
 
+    // how busy this listing is depends on how many customers it has, so the
+    // roll has to come after we know — it used to be one rate for the board
     const last = latest.get(t.id);
     const reportedMrr = reported.get(t.id) ?? 0;
     const mrr = last?.mrr ?? reportedMrr;
     if (!(mrr > 0)) continue;
     const subs = last?.subscriptions ?? guessSubscribers(mrr, rng);
+    if (rng.unit() >= demoEventChance(subs, intervalMs)) continue;
+
     const ev = nextDemoEvent({ mrr, subs, reportedMrr }, rng);
     if (!ev) continue;
 
