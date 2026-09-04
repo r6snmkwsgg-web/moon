@@ -50,6 +50,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
+    shares: result.shares,
     price: result.price,
     total: result.total,
     cash: result.cash,

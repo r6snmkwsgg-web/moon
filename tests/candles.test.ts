@@ -459,3 +459,29 @@ describe("openingTimeframe", () => {
     }
   });
 });
+
+describe("buildCandles on a ticker listed today", () => {
+  it("still draws on a frame wider than the ticker's whole life", async () => {
+    const { buildCandles, TIMEFRAMES } = await import("@/lib/candles");
+    const now = Date.UTC(2026, 8, 4, 12, 30);
+    const listedAnHourAgo = now - 3_600_000;
+    // a frame whose bucket is wider than the ticker is old
+    for (const tf of TIMEFRAMES.filter((f) => f.ms >= 12 * 3_600_000)) {
+      const candles = buildCandles({
+        priceAt: () => 10,
+        tf,
+        now,
+        earliest: listedAnHourAgo,
+      });
+      expect(candles.length, `${tf.label} rendered nothing`).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("still clamps to the listing on a frame the ticker outlives", async () => {
+    const { buildCandles, TIMEFRAMES } = await import("@/lib/candles");
+    const now = Date.UTC(2026, 8, 4, 12, 30);
+    const tf = TIMEFRAMES[0];
+    const candles = buildCandles({ priceAt: () => 10, tf, now, earliest: now - 400 * tf.ms });
+    expect(candles.length).toBeLessThanOrEqual(tf.bars);
+  });
+});

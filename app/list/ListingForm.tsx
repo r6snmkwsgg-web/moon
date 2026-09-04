@@ -609,10 +609,14 @@ export default function ListingForm({
               ["Name", name.trim()],
               ["Pitch", pitch.trim()],
               ["Founder", `@${handle.trim().replace(/^@/, "")}`],
-              [
-                "Stripe key",
-                `rk_…${stripeKey.trim().slice(-4)} (read-only, encrypted)`,
-              ],
+              ...(stripeKey.trim()
+                ? [
+                    [
+                      "Stripe key",
+                      `rk_…${stripeKey.trim().slice(-4)} (read-only, encrypted)`,
+                    ] as [string, string],
+                  ]
+                : [["Stripe", "Connected — read-only access"] as [string, string]]),
             ].map(([k, v]) => (
               <div key={k} className="flex gap-3">
                 <dt className="w-24 shrink-0 text-xs text-terminal-muted">

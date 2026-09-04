@@ -6,7 +6,7 @@ import { setHandle, type HandleResult } from "./actions";
 
 const initialState: HandleResult = {};
 
-export default function HandleForm({ current }: { current: string }) {
+export default function HandleForm({ current, next = "/" }: { current: string; /** where to land once the handle is claimed */ next?: string }) {
   const [state, formAction, pending] = useActionState(setHandle, initialState);
 
   return (
@@ -30,11 +30,12 @@ export default function HandleForm({ current }: { current: string }) {
       {state.error && (
         <p className="text-xs text-terminal-down">{state.error}</p>
       )}
+      <input type="hidden" name="next" value={next} />
       <button type="submit" disabled={pending} className="btn-buy w-full">
         {pending ? "…" : "Claim it & hit the market"}
       </button>
       <p className="text-center text-[11px] text-terminal-muted">
-        <Link href="/" className="hover:text-terminal-text">
+        <Link href={next} className="hover:text-terminal-text">
           skip for now →
         </Link>
       </p>

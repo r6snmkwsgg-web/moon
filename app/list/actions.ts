@@ -140,6 +140,15 @@ export async function listStartup(
     return { error: "Couldn't compute MRR from Stripe — try again in a minute." };
   }
 
+  // A listing with no revenue has no price: it would IPO at $0.00 and the
+  // confetti screen would congratulate the founder on it.
+  if (!(mrr > 0)) {
+    return {
+      error:
+        "Stripe reports no active subscriptions on that account, so there is no revenue to price. List again once you have your first paying customer.",
+    };
+  }
+
   // day one: one month of record, so the ticker opens at the rookie multiple
   const openingMultiple = valuationMultiple([
     { month: currentMonthISO(), mrr },

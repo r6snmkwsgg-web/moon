@@ -163,6 +163,10 @@ export default function FloorTabs({
   const knownTrades = useRef(new Map<string, FeedTrade>());
   const knownTheses = useRef(new Map<string, FeedTrade>());
   const knownPosts = useRef(new Map<string, TickerPost>());
+  /** The oldest post the pager has READ. Under a size filter most rows are
+   *  dropped, so paging from the oldest row still on screen re-reads the
+   *  same window forever. */
+  const oldestScanned = useRef<string | null>(null);
   const byNewest = (a: { created_at: string }, b: { created_at: string }) =>
     b.created_at.localeCompare(a.created_at);
 
@@ -221,6 +225,17 @@ export default function FloorTabs({
   }, [allTrades, theses, older.theses]);
   const allPosts = useMemo(() => {
     const known = knownPosts.current;
+    // Reconcile, do not just accumulate. The server's page is authoritative
+    // over the window it covers, so anything inside that window which the
+    // server no longer returns has been deleted — otherwise deleting your
+    // own thesis left the row on the floor until a hard reload.
+    if (posts.length > 0) {
+      const oldest = posts[posts.length - 1].created_at;
+      const live = new Set(posts.map((p) => p.id));
+      for (const [id, p] of known) {
+        if (p.created_at >= oldest && !live.has(id)) known.delete(id);
+      }
+    }
     for (const p of [...older.posts, ...posts]) known.set(p.id, p);
     return [...known.values()].sort(byNewest);
   }, [posts, older.posts]);
@@ -232,6 +247,7 @@ export default function FloorTabs({
     knownTrades.current.clear();
     knownTheses.current.clear();
     knownPosts.current.clear();
+    oldestScanned.current = null;
   }, [serverMin, tickerId]);
 
   const fetchPage = useCallback(
@@ -242,7 +258,14 @@ export default function FloorTabs({
       if (kind === "posts") qs.set("price", String(price));
       const res = await fetch(`/api/tape?${qs}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`tape ${res.status}`);
-      return (await res.json()) as { trades?: FeedTrade[]; posts?: TickerPost[] };
+      return (await res.json()) as {
+        trades?: FeedTrade[];
+        posts?: TickerPost[];
+        /** posts read before the size filter — exhaustion keys off this, not
+         *  off how many survived it */
+        scanned?: number;
+        exhausted?: boolean;
+      };
     },
     [tickerId, serverMin, price]
   );
@@ -270,10 +293,13 @@ export default function FloorTabs({
               }),
           done.posts
             ? null
-            : fetchPage("posts", oldestOf(allPosts)).then(({ posts: rows = [] }) => {
-                setOlder((o) => ({ ...o, posts: dedupe([...o.posts, ...rows]) }));
-                if (rows.length < PAGE) setDone((d) => ({ ...d, posts: true }));
-              }),
+            : fetchPage("posts", oldestScanned.current ?? oldestOf(allPosts)).then(
+                ({ posts: rows = [], exhausted }) => {
+                  setOlder((o) => ({ ...o, posts: dedupe([...o.posts, ...rows]) }));
+                  if (rows.length > 0) oldestScanned.current = rows[rows.length - 1].created_at;
+                  if (exhausted) setDone((d) => ({ ...d, posts: true }));
+                }
+              ),
         ]);
       }
     } catch {
@@ -283,22 +309,39 @@ export default function FloorTabs({
     }
   }, [loading, tickerId, tab, done, allTrades, allTheses, allPosts, fetchPage]);
 
-  // the bottom of the list asks for the next page as it comes into view
+  // The bottom of the list asks for the next page as it comes into view.
+  //
+  // loadMore closes over the accumulated rows, so it is a new function on
+  // every render — and rebuilding the observer with it meant a fresh
+  // observer fired an immediate "is intersecting" callback on every render,
+  // including the one caused by the page it had just loaded. The floor paged
+  // itself to the beginning of time without anyone scrolling. The callback
+  // reads the latest loadMore through a ref instead, and the observer is
+  // built once per scroll container.
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = useRef(loadMore);
+  loadMoreRef.current = loadMore;
   useEffect(() => {
     const root = scrollRef.current;
     const target = sentinelRef.current;
     if (!root || !target) return;
+    let armed = false;
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting)) void loadMore();
+        // the observer always reports once on connect; that first report is
+        // the current state, not a scroll
+        if (!armed) {
+          armed = true;
+          return;
+        }
+        if (entries.some((e) => e.isIntersecting)) void loadMoreRef.current();
       },
       { root, rootMargin: "120px 0px" }
     );
     io.observe(target);
     return () => io.disconnect();
-  }, [loadMore]);
+  }, []);
 
   const shownTrades = useMemo(() => allTrades.filter((t) => passesMinSize(t.total, min)), [allTrades, min]);
   const shownPosts = useMemo(() => allPosts.filter((p) => passesMinSize(p.positionValue, min)), [allPosts, min]);
@@ -398,19 +441,21 @@ export default function FloorTabs({
       <div ref={scrollRef} className="max-h-[560px] overflow-y-auto">
         {tab === "trades" ? (
           <>
-            <TradesList
-              trades={shownTrades}
-              showSymbol={false}
-              signedIn={signedIn}
-              showNotes={false}
-              freshIds={freshIds}
-            />
-            {shownTrades.length === 0 && allTrades.length > 0 && (
+            {!(shownTrades.length === 0 && min !== null) && (
+              <TradesList
+                trades={shownTrades}
+                showSymbol={false}
+                signedIn={signedIn}
+                showNotes={false}
+                freshIds={freshIds}
+              />
+            )}
+            {shownTrades.length === 0 && min !== null && (
               <Hidden count={allTrades.length} min={min} onClear={() => choose(null)} what="prints" />
             )}
           </>
         ) : (
-          shownPosts.length + shownTheses.length === 0 && allPosts.length + allTheses.length > 0 ? (
+          shownPosts.length + shownTheses.length === 0 && min !== null ? (
             <Hidden
               count={allPosts.length + allTheses.length}
               min={min}
@@ -458,7 +503,9 @@ function Hidden({
   return (
     <p className="flex flex-wrap items-center justify-center gap-x-2 px-3 py-4 text-center font-mono text-[11px] text-terminal-muted">
       <span>
-        {count} {what} here, none over {minSizeLabel(min).replace("Min size (>", "").replace(")", "")}
+        {count > 0
+          ? `${count} ${what} here, none over ${minSizeLabel(min).replace("Min size (>", "").replace(")", "")}`
+          : `nothing over ${minSizeLabel(min).replace("Min size (>", "").replace(")", "")} on this name`}
       </span>
       <button type="button" onClick={onClear} className="text-terminal-accent hover:underline">
         show all

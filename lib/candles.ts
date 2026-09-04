@@ -409,6 +409,13 @@ export function buildCandles({
   let firstBucket = lastBucket - (width - 1) * tf.ms;
   if (earliest !== undefined) {
     firstBucket = Math.max(firstBucket, bucketOf(earliest));
+    // A ticker listed today has an `earliest` inside the current bucket, so
+    // on a 12h/1D/3D/1W frame first and last collapse to the same bucket and
+    // the chart renders zero candles — which the panel shows as "loading the
+    // tape…", forever. A frame always draws at least two buckets.
+    if (width >= 2 && firstBucket >= lastBucket) {
+      firstBucket = lastBucket - tf.ms;
+    }
   }
 
   const volume = new Map<number, number>();

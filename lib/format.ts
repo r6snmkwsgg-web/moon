@@ -40,6 +40,9 @@ export function fmtCompact(value: number): string {
 /** Signed percent from a fraction: 0.052 → "+5.2%". */
 export function fmtPct(fraction: number): string {
   const pct = fraction * 100;
+  // a move that rounds to nothing is nothing: "-0.0%" reads as a loss and
+  // "+0.0%" as a gain, and neither is true
+  if (Math.abs(pct) < 0.05) return "0.0%";
   const sign = pct > 0 ? "+" : "";
   return `${sign}${pct.toFixed(1)}%`;
 }

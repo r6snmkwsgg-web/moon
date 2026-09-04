@@ -1,5 +1,6 @@
 import Link from "next/link";
 import TimeAgo from "@/components/TimeAgo";
+import AiChip from "@/components/AiChip";
 import { Bell, Zap } from "lucide-react";
 import {
   getEarningsWire,
@@ -10,7 +11,7 @@ import {
   getTradeCountFor,
 } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
-import { fmtCompact, fmtPrice } from "@/lib/format";
+import { fmtCompact, fmtPrice, fmtShares } from "@/lib/format";
 import ChangePct from "@/components/ChangePct";
 import DayStrip from "@/components/DayStrip";
 import Dismissible from "@/components/Dismissible";
@@ -163,8 +164,9 @@ export default async function ExchangePage() {
                           <span className="truncate text-terminal-text">
                             {t.trader}
                           </span>
+                          <AiChip username={t.username} bot={t.bot} />
                           <span className="num text-terminal-muted">
-                            {t.shares.toLocaleString("en-US")}
+                            {fmtShares(t.shares)}
                           </span>
                           <span className="font-bold">${t.symbol}</span>
                           <span className="num ml-auto text-terminal-muted">

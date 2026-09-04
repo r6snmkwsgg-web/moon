@@ -59,7 +59,7 @@ const SORTS: Record<SortKey, (a: TickerQuote, b: TickerQuote) => number> = {
   price: (a, b) => b.price - a.price,
   day: (a, b) => b.dayChange - a.dayChange,
   week: (a, b) => b.weekChange - a.weekChange,
-  mrr: (a, b) => b.latestMrr - a.latestMrr,
+  mrr: (a, b) => b.liveMrr - a.liveMrr,
   symbol: (a, b) => a.ticker.symbol.localeCompare(b.ticker.symbol),
   new: (a, b) => b.ticker.listed_at.localeCompare(a.ticker.listed_at),
 };
@@ -72,10 +72,10 @@ const TRUSTS: { v: Trust; label: string }[] = [
 
 const MRRS: { v: MrrBand; label: string; test: (q: TickerQuote) => boolean }[] = [
   { v: "any", label: "Any", test: () => true },
-  { v: "micro", label: "< $1k", test: (q) => q.latestMrr < 1_000 },
-  { v: "small", label: "$1k–10k", test: (q) => q.latestMrr >= 1_000 && q.latestMrr < 10_000 },
-  { v: "mid", label: "$10k–50k", test: (q) => q.latestMrr >= 10_000 && q.latestMrr < 50_000 },
-  { v: "large", label: "$50k+", test: (q) => q.latestMrr >= 50_000 },
+  { v: "micro", label: "< $1k", test: (q) => q.liveMrr < 1_000 },
+  { v: "small", label: "$1k–10k", test: (q) => q.liveMrr >= 1_000 && q.liveMrr < 10_000 },
+  { v: "mid", label: "$10k–50k", test: (q) => q.liveMrr >= 10_000 && q.liveMrr < 50_000 },
+  { v: "large", label: "$50k+", test: (q) => q.liveMrr >= 50_000 },
 ];
 
 const MOVES: { v: Move; label: string; test: (q: TickerQuote) => boolean }[] = [
@@ -635,7 +635,7 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
                     <ChangePct value={q.weekChange} className="text-xs" />
                   </td>
                   <td className="num hidden px-3 py-2 text-right font-mono text-terminal-amber sm:table-cell">
-                    {fmtCompact(q.latestMrr)}
+                    {fmtCompact(q.liveMrr)}
                   </td>
                   <td className="num px-3 py-2 text-right font-mono text-terminal-muted">
                     {fmtCompact(q.marketCap)}

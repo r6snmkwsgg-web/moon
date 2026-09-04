@@ -780,11 +780,17 @@ export default function EquityPanel({
           {positions.length === 0 && (
             <tr>
               <td colSpan={8} className="px-3 py-10 text-center text-terminal-muted">
-                No positions yet — you have {fmtMoney(cash)} of the{" "}
-                {fmtMoney(startingCash)} starting stake.{" "}
-                <Link href="/" className="text-terminal-accent">
-                  Hit the exchange →
-                </Link>
+                {own ? (
+                  <>
+                    No positions yet — you have {fmtMoney(cash)} of the{" "}
+                    {fmtMoney(startingCash)} starting stake.{" "}
+                    <Link href="/" className="text-terminal-accent">
+                      Hit the exchange →
+                    </Link>
+                  </>
+                ) : (
+                  <>No open positions — all cash right now.</>
+                )}
               </td>
             </tr>
           )}

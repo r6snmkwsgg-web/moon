@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getUser } from "@/lib/supabase/server";
 import { getRecentTrades, getTickerPosts } from "@/lib/data";
+import { passesMinSize } from "@/lib/min-size";
 
 export const dynamic = "force-dynamic";
 
@@ -30,15 +32,27 @@ export async function GET(request: Request) {
   const sinceIso = iso(since);
   const beforeIso = iso(before);
   const noStore = { headers: { "Cache-Control": "no-store" } };
+  // The viewer, so a paged-in row knows which hearts are already theirs.
+  // Passing null here made every thesis you had liked come back hollow, and
+  // tapping it removed the like instead of adding one.
+  const viewer = await getUser().catch(() => null);
+  const viewerId = viewer?.id ?? null;
 
   if (kind === "posts") {
-    const posts = await getTickerPosts(ticker, price, limit, null, beforeIso);
-    return NextResponse.json({ posts, at: new Date().toISOString() }, noStore);
+    // A page is `limit` rows of history; the filter then decides how many of
+    // them show. Filtering after the slice is what made the pager walk the
+    // whole post history rendering nothing while the count climbed.
+    const raw = await getTickerPosts(ticker, price, limit, viewerId, beforeIso);
+    const posts = min ? raw.filter((p) => passesMinSize(p.positionValue, min)) : raw;
+    return NextResponse.json(
+      { posts, scanned: raw.length, exhausted: raw.length < limit, at: new Date().toISOString() },
+      noStore
+    );
   }
 
   const admin = createSupabaseAdminClient();
   const [trades, { data: row }] = await Promise.all([
-    getRecentTrades(limit, ticker, undefined, kind === "theses", null, min, sinceIso, beforeIso),
+    getRecentTrades(limit, ticker, undefined, kind === "theses", viewerId, min, sinceIso, beforeIso),
     // the curve rides along with the poll only
     beforeIso
       ? Promise.resolve({ data: null })

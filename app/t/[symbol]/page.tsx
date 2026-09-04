@@ -581,6 +581,9 @@ export default async function TickerPage({ params, searchParams }: Props) {
               <input
                 type="number"
                 name="dollars"
+                // a blank or sub-minimum amount used to reach the server and
+                // throw, which replaces the whole page with the error screen
+                required
                 min={10}
                 step={10}
                 placeholder="500"

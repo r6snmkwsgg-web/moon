@@ -3,7 +3,7 @@ import { AtSign, Globe, Search, Zap } from "lucide-react";
 import type { ChartPoint, Ticker } from "@/lib/types";
 import type { RevenueEvent } from "@/lib/pricing";
 import { makePriceAt } from "@/lib/candles";
-import { fmtCompact, fmtMoney, fmtPct } from "@/lib/format";
+import { fmtCompact, fmtMoney, fmtPct, fmtShares } from "@/lib/format";
 import CountdownChip from "@/components/CountdownChip";
 import WindowStats, { type FlowPrint, type WindowChange } from "@/components/WindowStats";
 
@@ -205,7 +205,7 @@ export default function AboutCard({
           </Row>
         )}
         <Row label="Float">
-          {shares.toLocaleString("en-US")} shs ·{" "}
+          {fmtShares(shares)} shs ·{" "}
           {Math.min(100, Math.round((floatHeld / shares) * 100))}% held
           {lastSplit && (
             <span
@@ -228,7 +228,7 @@ export default function AboutCard({
         {buybacks && buybacks.shares > 0 && (
           <Row label="Buybacks">
             <span title="Shares the founder bought with their own play money and retired">
-              {buybacks.shares.toLocaleString("en-US")} shs retired · {fmtMoney(buybacks.total, 0)}
+              {fmtShares(buybacks.shares)} shs retired · {fmtMoney(buybacks.total, 0)}
             </span>
           </Row>
         )}

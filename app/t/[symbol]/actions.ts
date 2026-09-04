@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getMarket } from "@/lib/data";
 import { placeOrder } from "@/lib/trade";
+import { roundShares } from "@/lib/pricing";
 import { GUIDANCE_STEPS } from "@/lib/calls";
 import { normaliseWebsite } from "@/lib/website";
 import { createSupabaseServerClient, getUser } from "@/lib/supabase/server";
@@ -262,7 +263,11 @@ export async function buyBack(formData: FormData) {
   // size the order off the live quote, then let placeOrder fill it honestly
   const quote = (await getMarket()).find((q) => q.ticker.id === ticker.id);
   if (!quote || !(quote.price > 0)) throw new Error("No price yet.");
-  const shares = Math.max(1, Math.floor(dollars / (quote.price * 1.05)));
+  // Shares divide (0013), so a buyback costs what was asked. This used to
+  // round up to a whole share, which meant the advertised $10 minimum
+  // debited $180 on a $180 stock.
+  const shares = roundShares(dollars / (quote.price * 1.05));
+  if (!(shares > 0)) throw new Error("That is too small to buy back at this price.");
   const result = await placeOrder(admin, { userId: user.id, symbol: ticker.symbol, side: "buy", shares });
   if (!result.ok) throw new Error(result.error);
   await result.settle();

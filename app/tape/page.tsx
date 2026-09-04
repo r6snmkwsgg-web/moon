@@ -1,5 +1,6 @@
 import Link from "next/link";
 import TimeAgo from "@/components/TimeAgo";
+import AiChip from "@/components/AiChip";
 import {
   getFeedEvents,
   getFollowedIds,
@@ -11,7 +12,7 @@ import { getUser } from "@/lib/supabase/server";
 import CopyTradeButton from "@/components/CopyTradeButton";
 import { Bell, ChartNoAxesColumn, Zap } from "lucide-react";
 import { changeFraction } from "@/lib/pricing";
-import { fmtCompact, fmtPct, fmtPrice } from "@/lib/format";
+import { fmtCompact, fmtPct, fmtPrice, fmtShares } from "@/lib/format";
 import ChangePct from "@/components/ChangePct";
 import TickerBadges from "@/components/TickerBadges";
 
@@ -106,11 +107,12 @@ export default async function FeedPage({
                   ) : (
                     <span className="font-mono font-semibold">{t.trader}</span>
                   )}
+                  <AiChip username={t.username} bot={t.bot} />
                   <span className="text-terminal-muted">
                     {t.side === "buy" ? "bought" : "sold"}
                   </span>
                   <span className="num font-mono">
-                    {t.shares.toLocaleString("en-US")}
+                    {fmtShares(t.shares)}
                   </span>
                   <Link
                     href={`/t/${t.symbol}`}

@@ -18,6 +18,7 @@ import {
   type TradeSide,
 } from "@/lib/pricing";
 import { anchorRevenue } from "@/lib/revenue";
+import { fmtShares } from "@/lib/format";
 import { recordTickerSnapshot } from "@/lib/snapshot";
 import { getRevenueEvents, latestEventMrr } from "@/lib/pulse";
 
@@ -33,6 +34,8 @@ export interface OrderInput {
 export type OrderResult =
   | {
       ok: true;
+      /** Shares actually filled, which can be less than the order asked for. */
+      shares: number;
       price: number;
       total: number;
       cash: number | null;
@@ -189,7 +192,7 @@ async function placeOrderOnce(
         status: 400,
         error:
           available > 0
-            ? `Only ${available.toLocaleString("en-US")} shares left in the float.`
+            ? `Only ${fmtShares(available)} shares left in the float.`
             : "The float is fully held — someone has to sell first.",
       };
     }
@@ -203,8 +206,8 @@ async function placeOrderOnce(
         status: 400,
         error:
           room > 0
-            ? `Position limit: one account can hold ${pct}% of the float (${limit.toLocaleString("en-US")} shs). You can buy ${room.toLocaleString("en-US")} more.`
-            : `You're at the position limit — ${pct}% of the float (${limit.toLocaleString("en-US")} shs).`,
+            ? `Position limit: one account can hold ${pct}% of the float (${fmtShares(limit)} shs). You can buy ${fmtShares(room)} more.`
+            : `You're at the position limit — ${pct}% of the float (${fmtShares(limit)} shs).`,
       };
     }
   }
@@ -371,7 +374,7 @@ async function placeOrderOnce(
           await notifyUsers(
             ids,
             "move",
-            `${me?.display_name ?? "Someone you follow"} ${side === "buy" ? "bought" : "sold"} ${shares.toLocaleString("en-US")} $${symbol} (~$${Math.round(fill.total).toLocaleString("en-US")})`
+            `${me?.display_name ?? "Someone you follow"} ${side === "buy" ? "bought" : "sold"} ${fmtShares(shares)} $${symbol} (~$${Math.round(fill.total).toLocaleString("en-US")})`
           );
         }
       } catch {
@@ -382,6 +385,9 @@ async function placeOrderOnce(
 
   return {
     ok: true,
+    /** What actually filled — never assume it is what was asked for: an
+     *  un-migrated ledger fills a fractional order floored to whole shares. */
+    shares,
     price: fill.avgPrice,
     total: fill.total,
     cash: (data as { cash?: number } | null)?.cash ?? null,

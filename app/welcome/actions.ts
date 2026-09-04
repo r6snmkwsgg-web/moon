@@ -61,5 +61,6 @@ export async function setHandle(
   }
 
   revalidatePath("/", "layout");
-  redirect("/");
+  const nextRaw = String(formData.get("next") ?? "/");
+  redirect(nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/");
 }

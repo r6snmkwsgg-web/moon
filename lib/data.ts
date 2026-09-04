@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { marketDayStart } from "@/lib/market-time";
+import { fmtShares } from "@/lib/format";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { pageAll } from "@/lib/supabase/page-all";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -535,7 +536,7 @@ export async function getHeroStory(
       events.push({
         t,
         price: priceAt(t),
-        label: `${Number(big.shares).toLocaleString("en-US")} shs printed`,
+        label: `${fmtShares(Number(big.shares))} shs printed`,
         tone: "trade",
       });
     }

@@ -240,6 +240,13 @@ export default function TradePanel({
   // size impact is measured against the settled price, the one it fills off
   const impact = quote && settled > 0 ? quote.avgPrice / settled - 1 : 0;
   const overCash = tab === "buy" && unit === "usd" && amount > purse + 0.005;
+  // The headline number is what you typed; `shares` is what will actually
+  // fill. On the buy/USD path the amber line below says when those differ —
+  // but a sell of more than you hold, or a share count you cannot afford,
+  // used to be clamped in silence, so the ticket read 500 and sold 12.
+  const asked = tab === "buy" && unit === "usd" ? null : roundShares(amount);
+  const clampedTo =
+    asked !== null && asked > shares + 0.00005 ? shares : null;
 
   // the position, marked
   const value = shownHeld * mark;
@@ -286,10 +293,12 @@ export default function TradePanel({
         setMessage(json.error ?? "Trade failed.");
       } else {
         setMessage(
-          `${side === "buy" ? "Bought" : "Sold"} ${fmtShares(shares)} × $${symbol} @ avg ${fmtPrice(json.price)}`
+          `${side === "buy" ? "Bought" : "Sold"} ${fmtShares(Number(json.shares ?? shares))} × $${symbol} @ avg ${fmtPrice(json.price)}`
         );
         setFilled(true);
         setTimeout(() => setFilled(false), 1200);
+        // what the ledger actually took, which is not always what was asked
+        const filledShares = Number(json.shares ?? shares);
         // a beat against a double-tap; the ticket is otherwise back at once
         setCooling(true);
         setTimeout(() => setCooling(false), 400);
@@ -299,7 +308,7 @@ export default function TradePanel({
             id: `live-${Date.now()}`,
             symbol,
             side,
-            shares,
+            shares: filledShares,
             price: Number(json.price),
             total: Number(json.total),
             trader: author?.name ?? "you",
@@ -309,7 +318,7 @@ export default function TradePanel({
         }
         // the ledger's own rule: a buy blends into the average cost, a sell
         // books the difference against it and leaves the average alone
-        const nextHeld = shownHeld + (side === "buy" ? shares : -shares);
+        const nextHeld = shownHeld + (side === "buy" ? filledShares : -filledShares);
         const nextAvg =
           side === "buy"
             ? (shownHeld * shownAvg + Number(json.total)) / Math.max(1e-9, nextHeld)
@@ -322,7 +331,7 @@ export default function TradePanel({
           avg: nextAvg,
           realized:
             shownRealized +
-            (side === "sell" ? Number(json.total) - shares * shownAvg : 0),
+            (side === "sell" ? Number(json.total) - filledShares * shownAvg : 0),
         });
         startRefresh(() => router.refresh());
       }
@@ -406,6 +415,13 @@ export default function TradePanel({
                 e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1").slice(0, 9)
               )
             }
+            onKeyDown={(e) => {
+              // a ticket you cannot send from the keyboard is not a ticket
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (!busy && shares > 0) void trade();
+              }
+            }}
             placeholder="0"
             aria-label={tab === "sell" || unit === "shares" ? "Shares" : "Amount"}
             className="num w-full bg-transparent font-mono text-2xl font-semibold text-terminal-text outline-none placeholder:text-terminal-muted/50"
@@ -486,7 +502,14 @@ export default function TradePanel({
             type="button"
             onClick={() =>
               setAmountText(
-                unit === "usd" ? String(Math.floor(purse)) : String(sharesFor(purse))
+                // to the cent, not the dollar: flooring to whole dollars
+                // stranded up to 99c, and under $1 it filled in a 0 that
+                // greyed out the very button meant to spend everything
+                unit === "usd"
+                  ? purse > 0
+                    ? String(Math.floor(purse * 100) / 100)
+                    : "0"
+                  : String(sharesFor(purse))
               )
             }
             title="The most your cash covers, slippage included"
@@ -520,6 +543,15 @@ export default function TradePanel({
       {overCash && (
         <p className="font-mono text-[11px] text-terminal-amber">
           that is more than your cash — sized to {fmtMoney(purse)}
+        </p>
+      )}
+      {clampedTo !== null && (
+        <p className="font-mono text-[11px] text-terminal-amber">
+          {tab === "sell"
+            ? `you hold ${fmtShares(shownHeld)} — selling all of it`
+            : clampedTo > 0
+              ? `sized down to ${fmtShares(clampedTo)} shs — that is what your cash and the float allow`
+              : "nothing to buy at that size — the float or your cash is the limit"}
         </p>
       )}
 

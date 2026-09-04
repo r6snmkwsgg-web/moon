@@ -13,9 +13,18 @@ export const metadata = { title: "Pick your handle" };
  * after account creation; it doubles as the handle editor later (linked
  * from the portfolio).
  */
-export default async function WelcomePage() {
+export default async function WelcomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
   const user = await getUser();
   if (!user) redirect("/login?next=/welcome");
+  // where they were headed when they were asked to sign in — a relative path
+  // only, so this can never bounce anyone off-site
+  const { next: nextParam } = await searchParams;
+  const next =
+    nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/";
 
   const supabase = await createSupabaseServerClient();
   const { data: profile } = await supabase
@@ -41,7 +50,7 @@ export default async function WelcomePage() {
       </div>
 
       <div className="panel p-4">
-        <HandleForm current={profile?.username ?? ""} />
+        <HandleForm current={profile?.username ?? ""} next={next} />
       </div>
 
       <p className="text-center text-[11px] text-terminal-muted/80">

@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import SearchBar from "@/components/SearchBar";
 
 /** Search on small screens: an icon that drops a full-width bar under the nav. */
 export default function MobileSearch() {
   const [open, setOpen] = useState(false);
+  // tapping a result navigates, but the drawer used to stay open on top of
+  // wherever you landed, covering the page
+  const pathname = usePathname();
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
 
   return (
     <>

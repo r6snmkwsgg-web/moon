@@ -14,6 +14,7 @@ import { getUser } from "@/lib/supabase/server";
 import { profileExists } from "@/lib/data";
 import { fmtMoney } from "@/lib/format";
 import { STARTING_CASH, APP_NAME, GUARDRAIL_TEXT, siteUrl } from "@/lib/config";
+import { startingCashFor } from "@/lib/bot-roster";
 import { MARKET_TZ_LABEL } from "@/lib/market-time";
 import EquityPanel from "@/components/EquityPanel";
 import AllocationDonut from "@/components/AllocationDonut";
@@ -113,7 +114,7 @@ export default async function ProfilePage({ params }: Props) {
             holdings={equity.holdings}
             trades={equity.trades}
             startedAt={equity.startedAt}
-            startingCash={STARTING_CASH}
+            startingCash={startingCashFor(profile.username, STARTING_CASH, profile.persona)}
             renderedAt={renderedAt}
             rank={rank}
             playerCount={playerCount}

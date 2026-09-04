@@ -52,10 +52,12 @@ export default async function NotificationsPage() {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from("notifications")
-    .select("*")
+    .select("*, tickers(symbol)")
     .order("created_at", { ascending: false })
     .limit(50);
-  const notifications = (data ?? []) as AppNotification[];
+  const notifications = (data ?? []) as (AppNotification & {
+    tickers?: { symbol: string } | null;
+  })[];
   const unread = notifications.filter((n) => !n.read).length;
 
   return (
@@ -87,7 +89,17 @@ export default async function NotificationsPage() {
                 <span aria-hidden="true" className="self-center">
                   <KindIcon kind={n.kind} />
                 </span>
-                <span className="min-w-0 flex-1">{n.title}</span>
+                {/* an alert that names a company should get you there */}
+                {n.tickers?.symbol ? (
+                  <Link
+                    href={`/t/${n.tickers.symbol}`}
+                    className="min-w-0 flex-1 hover:text-terminal-accent"
+                  >
+                    {n.title}
+                  </Link>
+                ) : (
+                  <span className="min-w-0 flex-1">{n.title}</span>
+                )}
                 <span className="font-mono text-[11px] text-terminal-muted">
                   <TimeAgo at={n.created_at} />
                 </span>

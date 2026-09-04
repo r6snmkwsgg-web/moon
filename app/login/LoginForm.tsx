@@ -66,8 +66,9 @@ export default function LoginForm() {
     }
 
     await claimInvite();
-    // brand-new account → claim a handle before hitting the market
-    router.push("/welcome");
+    // brand-new account → claim a handle before hitting the market, then on
+    // to wherever they were headed when they were asked to sign in
+    router.push(next === "/" ? "/welcome" : `/welcome?next=${encodeURIComponent(next)}`);
     router.refresh();
   }
 
