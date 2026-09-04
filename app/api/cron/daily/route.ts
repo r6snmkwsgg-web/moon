@@ -28,6 +28,15 @@ export const maxDuration = 60;
 const MOVE_ALERT_THRESHOLD = 0.1; // notify watchers/holders at ±10% on the day
 
 /**
+ * How long a plain print stays on the tape. The chart draws its shape from
+ * daily snapshots and the recorded walk, and a position is a holdings row,
+ * so an old print is only history — and at a print a second there is far
+ * too much of it to keep. Prints that carry a thesis are never dropped:
+ * those are somebody's writing.
+ */
+const TAPE_RETENTION_DAYS = 30;
+
+/**
  * Daily cron (vercel.json):
  *   1. decay every ticker's sentiment 10% toward zero (hype fades),
  *   2. snapshot today's price (what every chart reads),
@@ -174,12 +183,37 @@ export async function GET(request: Request) {
     const twoWeeks = new Date(Date.now() - 14 * 86400_000).toISOString();
     const month = new Date(Date.now() - 30 * 86400_000).toISOString();
     const week = new Date(Date.now() - 7 * 86400_000).toISOString();
+    const tapeCutoff = new Date(Date.now() - TAPE_RETENTION_DAYS * 86400_000).toISOString();
     const [ticks, oldAlerts, readAlerts] = await Promise.all([
       admin.from("flow_ticks").delete({ count: "exact" }).lt("at", twoWeeks),
       admin.from("notifications").delete({ count: "exact" }).lt("created_at", month),
       admin.from("notifications").delete({ count: "exact" }).eq("read", true).lt("created_at", week),
     ]);
-    pruned = { ticks: ticks.count ?? 0, alerts: (oldAlerts.count ?? 0) + (readAlerts.count ?? 0) };
+
+    // The tape itself. At a print a second the trades table grows about
+    // 150MB a day, so it cannot be kept forever — but a print is also the
+    // only record of what someone did, so nothing is dropped until the
+    // shape of that day is safe in the daily snapshots and the holdings.
+    // A thesis is writing, not a print: those rows stay.
+    let tape = 0;
+    for (let pass = 0; pass < 20; pass++) {
+      const { data: batch } = await admin
+        .from("trades")
+        .select("id")
+        .lt("created_at", tapeCutoff)
+        .is("note", null)
+        .limit(5000);
+      const ids = ((batch ?? []) as { id: string }[]).map((r) => r.id);
+      if (ids.length === 0) break;
+      const { count } = await admin.from("trades").delete({ count: "exact" }).in("id", ids);
+      tape += count ?? 0;
+      if (ids.length < 5000) break;
+    }
+    pruned = {
+      ticks: ticks.count ?? 0,
+      alerts: (oldAlerts.count ?? 0) + (readAlerts.count ?? 0),
+      tape,
+    };
   } catch (e) {
     pruned = { error: e instanceof Error ? e.message : String(e) };
   }

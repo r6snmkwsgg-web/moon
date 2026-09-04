@@ -9,7 +9,7 @@
     },
     {
       "path": "/api/cron/pulse",
-      "schedule": "*/5 * * * *"
+      "schedule": "* * * * *"
     }
   ]
 }

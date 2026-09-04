@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   actChance,
+  ROUND_INTERVAL_MS,
   WAKE_SCALE,
   HOLD_TEMPO,
   myFairValue,
@@ -102,8 +103,12 @@ describe("the clock", () => {
   it("turns a daily rate into a per-round chance", () => {
     const p = generatePersona("x", 1);
     const noon = Date.parse("2026-09-02T16:30:00Z");
+    const roundsPerDay = 86_400_000 / ROUND_INTERVAL_MS;
     const c = actChance({ ...p, activityPerDay: 2.88 }, noon);
-    expect(c).toBeCloseTo((2.88 / 288) * WAKE_SCALE * HOLD_TEMPO[p.hold] * timeOfDayFactor(noon), 10);
+    expect(c).toBeCloseTo(
+      (2.88 / roundsPerDay) * WAKE_SCALE * HOLD_TEMPO[p.hold] * timeOfDayFactor(noon),
+      10
+    );
     expect(actChance({ ...p, activityPerDay: 100_000 }, noon)).toBeLessThanOrEqual(0.95);
   });
 });

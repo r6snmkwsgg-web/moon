@@ -189,7 +189,12 @@ describe("decide", () => {
     const p = generatePersona("v", 42);
     const o = decide({ ...p, styles: { value: 1 } }, p.cash, [view({ price: 20, fair: 25 })], fixed(0.0));
     if (o) expect(o.shares * 20).toBeLessThanOrEqual(p.cash);
-    expect(MAX_TRADES_PER_ROUND).toBeLessThanOrEqual(60);
+    // The old ceiling of sixty was a budget guard: every fill cost six
+    // database round trips, so a round could not afford more. Batched
+    // (0014) a ticker's whole queue is one call, and this is a safety rail
+    // against a runaway rather than the thing that sets market volume.
+    expect(MAX_TRADES_PER_ROUND).toBeGreaterThan(60);
+    expect(MAX_TRADES_PER_ROUND).toBeLessThanOrEqual(5_000);
   });
 });
 

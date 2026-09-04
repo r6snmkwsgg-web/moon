@@ -20,12 +20,20 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { BOTS, type BotSpec, type BotStyle } from "@/lib/bot-roster";
 import { cryptoRandom, type FlowRandom } from "@/lib/flow";
-import { actChance, myFairValue, timeOfDayFactor, type Persona } from "@/lib/personas";
+import {
+  actChance,
+  myFairValue,
+  ROUND_INTERVAL_MS,
+  timeOfDayFactor,
+  type Persona,
+} from "@/lib/personas";
 import { pageAll } from "@/lib/supabase/page-all";
 import { CALL_DISCOUNT, CALL_NEWS_MS, credibility, type CallOutcome } from "@/lib/calls";
 import {
+  executionFillAt,
   floatOf,
   roundShares,
+  TRADE_IMPACT_FACTOR,
   positionLimit,
   settledPrice,
   valuationMultiple,
@@ -35,6 +43,7 @@ import {
 import { latestEventMrr } from "@/lib/pulse";
 import { referencePrice, type DailyClose } from "@/lib/reference";
 import { composeThesis, stageOf, type Situation } from "@/lib/theses";
+import { recordTickerSnapshot } from "@/lib/snapshot";
 import { placeOrder } from "@/lib/trade";
 
 export { BOTS, isBotUsername } from "@/lib/bot-roster";
@@ -148,14 +157,23 @@ export interface BotOrder {
 }
 
 /** Hard ceiling on prints per round, board-wide — a heartbeat, not a flood. */
-export const MAX_TRADES_PER_ROUND = 40;
+// A round used to cost six database round trips per trade, so forty was all
+// that fitted in the budget. Batched (0014) a ticker's whole queue is one
+// call, and the cron runs every minute, so this is now a safety rail rather
+// than the thing that decides how busy the market is.
+export const MAX_TRADES_PER_ROUND = 600;
 
 /** Standalone theses per round, board-wide. */
 export const MAX_POSTS_PER_ROUND = 12;
 /** Tickers filling at once in a round. */
-export const FILL_CONCURRENCY = 4;
+// Orders on ONE ticker must serialise — each fills off the curve the one
+// before it left — but different tickers never contend, so this should be
+// about the size of the board.
+export const FILL_CONCURRENCY = 20;
 /** How long a round may spend filling before it stops — the cron has sixty seconds for everything. */
-export const ROUND_BUDGET_MS = 30_000;
+// The cron fires every minute and the function may run for 60s, so a round
+// gets fifty and leaves the rest for the walk, the splits and the posts.
+export const ROUND_BUDGET_MS = 50_000;
 
 /** Below this, a bot has no view worth trading. */
 const MIN_CONVICTION = 0.15;
@@ -187,6 +205,9 @@ const PANIC = { paper: 1.2, swing: 0.6, diamond: 0.1 } as const;
 export const MAX_SHAKEN = 200;
 /** The smallest order worth printing, in dollars. */
 export const MIN_ORDER_USD = 1;
+
+/** A print this size is news to the trader's followers. */
+export const FOLLOW_ALERT_USD = 500;
 
 /** The floor talks twice as much as the personas' own rate says — thirty listings is a lot of floor. */
 export const POST_SCALE = 2;
@@ -488,13 +509,22 @@ async function loadPopulation(admin: SupabaseClient): Promise<Account[]> {
  */
 export async function runBotRound(
   admin: SupabaseClient,
-  opts: { now?: number; rng?: FlowRandom; maxTrades?: number; maxPosts?: number; budgetMs?: number } = {}
+  opts: {
+    now?: number;
+    rng?: FlowRandom;
+    maxTrades?: number;
+    maxPosts?: number;
+    budgetMs?: number;
+    /** how long since the last round — the wake roll is per round, not per minute */
+    intervalMs?: number;
+  } = {}
 ): Promise<BotRoundResult> {
   const now = opts.now ?? Date.now();
   const rng = opts.rng ?? cryptoRandom();
   const maxTrades = opts.maxTrades ?? MAX_TRADES_PER_ROUND;
   const maxPosts = opts.maxPosts ?? MAX_POSTS_PER_ROUND;
   const budgetMs = opts.budgetMs ?? ROUND_BUDGET_MS;
+  const intervalMs = opts.intervalMs ?? ROUND_INTERVAL_MS;
   const out: BotRoundResult = { bots: 0, awake: 0, attempted: 0, filled: 0, posted: 0, errors: [] };
 
   const population = await loadPopulation(admin);
@@ -503,7 +533,7 @@ export async function runBotRound(
 
   // who wakes up this round — decided before the board is read, since most
   // rounds most of a thousand accounts are asleep and the board is not free
-  const awake = population.filter((a) => rng.unit() < actChance(a.persona, now));
+  const awake = population.filter((a) => rng.unit() < actChance(a.persona, now, intervalMs));
 
   const hourAgo = new Date(now - 3_600_000).toISOString();
   const quarterAgo = new Date(now - 15 * 60_000).toISOString();
@@ -606,16 +636,16 @@ export async function runBotRound(
     news.set(e.ticker_id, l);
   }
   const floatHeld = new Map<string, number>();
-  const mine = new Map<string, number>(); // `${userId}/${tickerId}` → shares
+  const mine0 = new Map<string, number>(); // `${userId}/${tickerId}` → shares
   const myAvg = new Map<string, number>(); // `${userId}/${tickerId}` → avg cost
   for (const h of (holdings ?? []) as { user_id: string; ticker_id: string; shares: number }[]) {
     floatHeld.set(h.ticker_id, (floatHeld.get(h.ticker_id) ?? 0) + Number(h.shares));
-    mine.set(`${h.user_id}/${h.ticker_id}`, Number(h.shares));
+    mine0.set(`${h.user_id}/${h.ticker_id}`, Number(h.shares));
     myAvg.set(`${h.user_id}/${h.ticker_id}`, Number((h as { avg_cost?: number }).avg_cost ?? 0));
   }
   // how many accounts hold each name
   const holdersOf = new Map<string, number>();
-  for (const [k, n] of mine) {
+  for (const [k, n] of mine0) {
     if (n <= 0) continue;
     const tid = k.slice(k.indexOf("/") + 1);
     holdersOf.set(tid, (holdersOf.get(tid) ?? 0) + 1);
@@ -626,7 +656,7 @@ export async function runBotRound(
   for (const a of population) {
     if (!a.persona.leader) continue;
     const held = new Set<string>();
-    for (const [k, n] of mine) if (n > 0 && k.startsWith(`${a.id}/`)) held.add(k.slice(a.id.length + 1));
+    for (const [k, n] of mine0) if (n > 0 && k.startsWith(`${a.id}/`)) held.add(k.slice(a.id.length + 1));
     leaderHoldings.set(a.username, held);
   }
   const priceHourAgo = new Map<string, number>();
@@ -760,7 +790,7 @@ export async function runBotRound(
         change24h: v.change24h,
         culprit: v.culprit,
         news: v.news,
-        held: mine.get(`${a.id}/${v.id}`) ?? 0,
+        held: mine0.get(`${a.id}/${v.id}`) ?? 0,
         avgCost: myAvg.get(`${a.id}/${v.id}`) ?? 0,
         leaderHolds,
         leaderName,
@@ -793,7 +823,7 @@ export async function runBotRound(
       let chance = 0;
       for (const v of shaken) {
         const move = Math.max(Math.abs(v.change15m), Math.abs(v.change1h) / 1.6);
-        const held = mine.get(`${a.id}/${v.id}`) ?? 0;
+        const held = mine0.get(`${a.id}/${v.id}`) ?? 0;
         if (held > 0) {
           chance = Math.max(chance, SHAKE_WAKE[a.persona.hold] * Math.min(1, move / 0.12));
         } else if (v.change15m < 0 && ((a.persona.styles.value ?? 0) + (a.persona.styles.whale ?? 0)) > 0) {
@@ -818,31 +848,189 @@ export async function runBotRound(
     q.push(order);
     queues.set(order.o.symbol, q);
   }
-  const pending = [...queues.values()];
+  // ── the fills ──────────────────────────────────────────────────────────
+  //
+  // Every order used to go through placeOrder, which re-reads the ticker,
+  // its revenue record, its holdings, its Stripe connection, its events and
+  // its takings — all of which this round already has in hand. Six round
+  // trips a trade, forty trades, twenty-four seconds: the reason the market
+  // could not print more than forty trades in five minutes however many
+  // traders were awake.
+  //
+  // The round prices its own orders now, walking the same curve
+  // (executionFillAt) in the same sequence the ledger will apply them, and
+  // sends one call per ticker (execute_trades_batch, 0014). Orders on one
+  // ticker still fill in order, each off the curve the one before it left.
+  const byId = new Map(((tickers ?? []) as Record<string, unknown>[]).map((t) => [String(t.symbol), t]));
+  const viewBySymbol = new Map(board.map((v) => [v.symbol, v]));
+  const pending = [...queues.entries()];
   const deadline = Date.now() + budgetMs;
   const traded = new Set<string>();
+  /** Prints worth telling a follower about, gathered for one lookup at the end. */
+  const notable: { userId: string; name: string; side: TradeSide; shares: number; total: number; symbol: string; tickerId: string }[] = [];
+  /** Where each ticker's curve ended up, so one snapshot lands per ticker. */
+  const settledAt = new Map<string, { tickerId: string; sentiment: number; mrr: number }>();
+
   await Promise.all(
     Array.from({ length: FILL_CONCURRENCY }, async () => {
-      for (let q = pending.shift(); q; q = pending.shift()) {
-        for (const { account, o } of q) {
-          if (Date.now() > deadline) return;
-          out.attempted++;
-          const result = await placeOrder(
-            admin,
-            { userId: account.id, symbol: o.symbol, side: o.side, shares: o.shares, note: o.note ?? undefined },
-            { now }
+      for (let entry = pending.shift(); entry; entry = pending.shift()) {
+        if (Date.now() > deadline) return;
+        const [symbol, queue] = entry;
+        const row = byId.get(symbol);
+        const view = viewBySymbol.get(symbol);
+        if (!row || !view) continue;
+        const tickerId = String(row.id);
+        const float = view.float;
+        const record = history.get(tickerId) ?? [];
+        const multiple = valuationMultiple(record);
+        const events = news.get(tickerId) ?? [];
+        const drift = Number(row.drift ?? 0);
+
+        // price the queue against the curve, in order, exactly as the ledger
+        // will apply it — and drop anything the account cannot actually
+        // afford before it gets there, so a skip does not shift its
+        // neighbours' prices
+        let sentiment = Number(row.sentiment ?? 0);
+        const start = sentiment;
+        const cashLeft = new Map<string, number>();
+        const heldLeft = new Map<string, number>();
+        const priced: { user_id: string; side: TradeSide; shares: number; price: number; note: string | null }[] = [];
+        let held = view.floatHeld;
+
+        for (const { account, o } of queue) {
+          const cash = cashLeft.get(account.id) ?? account.cash;
+          const mine = heldLeft.get(account.id) ?? (mine0.get(`${account.id}/${tickerId}`) ?? 0);
+          let shares = o.shares;
+          if (o.side === "buy") {
+            const room = Math.max(0, positionLimit(float) - mine);
+            const left = Math.max(0, float - held);
+            shares = Math.min(shares, room, left);
+          } else {
+            shares = Math.min(shares, mine);
+          }
+          shares = roundShares(shares);
+          if (!(shares > 0)) continue;
+
+          const fill = executionFillAt(
+            symbol, view.mrr, sentiment, o.side, shares, now, multiple, float, events, drift
           );
-          if (!result.ok) {
-            out.errors.push(`${account.username} ${o.side} ${o.shares} ${o.symbol}: ${result.error}`);
+          if (!(fill.avgPrice > 0) || fill.total < MIN_ORDER_USD) continue;
+          if (o.side === "buy" && fill.total > cash) {
+            // size down to what the cash covers rather than skipping outright
+            const affordable = roundShares(shares * (cash / fill.total) * 0.99);
+            if (!(affordable > 0)) continue;
+            const refill = executionFillAt(
+              symbol, view.mrr, sentiment, o.side, affordable, now, multiple, float, events, drift
+            );
+            if (!(refill.avgPrice > 0) || refill.total < MIN_ORDER_USD || refill.total > cash) continue;
+            shares = affordable;
+            fill.avgPrice = refill.avgPrice;
+            fill.total = refill.total;
+            fill.newSentiment = refill.newSentiment;
+          }
+
+          cashLeft.set(account.id, o.side === "buy" ? cash - fill.total : cash + fill.total);
+          heldLeft.set(account.id, o.side === "buy" ? mine + shares : mine - shares);
+          held += o.side === "buy" ? shares : -shares;
+          sentiment = fill.newSentiment;
+          priced.push({
+            user_id: account.id,
+            side: o.side,
+            shares,
+            price: Number(fill.avgPrice.toFixed(6)),
+            note: o.note ?? null,
+          });
+          traded.add(account.id);
+          if (fill.total >= FOLLOW_ALERT_USD) {
+            notable.push({
+              userId: account.id, name: account.persona.name, side: o.side,
+              shares, total: fill.total, symbol, tickerId,
+            });
+          }
+        }
+        if (priced.length === 0) continue;
+        out.attempted += priced.length;
+
+        const { data, error } = await admin.rpc("execute_trades_batch", {
+          p_ticker_id: tickerId,
+          p_orders: priced,
+          p_sentiment_start: start,
+          p_impact_factor: TRADE_IMPACT_FACTOR,
+          p_float: float,
+        });
+        if (error) {
+          // 0014 not applied yet: fall back to the old one-trade-at-a-time
+          // path so a deploy that lands ahead of the migration keeps the
+          // market trading instead of stopping it dead. Slower, correct,
+          // and it stops running the moment the function exists.
+          if (/execute_trades_batch|schema cache|does not exist|42883|PGRST202/i.test(error.message)) {
+            for (const o of priced) {
+              if (Date.now() > deadline) break;
+              const one = await placeOrder(
+                admin,
+                { userId: o.user_id, symbol, side: o.side, shares: o.shares, note: o.note ?? undefined },
+                { now }
+              );
+              if (one.ok) {
+                await one.settle();
+                out.filled++;
+              } else {
+                out.errors.push(`${symbol} ${o.side} ${o.shares}: ${one.error}`);
+              }
+            }
             continue;
           }
-          await result.settle();
-          out.filled++;
-          traded.add(account.id);
+          out.errors.push(`${symbol} batch of ${priced.length}: ${error.message}`);
+          continue;
         }
+        const res = (data ?? {}) as { moved?: boolean; filled?: number; skipped?: number; sentiment?: number };
+        if (res.moved) {
+          // someone traded this name while we were pricing — leave it for
+          // the next round rather than overwrite their fill
+          out.errors.push(`${symbol}: curve moved, ${priced.length} orders deferred`);
+          continue;
+        }
+        out.filled += res.filled ?? 0;
+        if ((res.skipped ?? 0) > 0) out.errors.push(`${symbol}: ${res.skipped} skipped by the ledger`);
+        settledAt.set(symbol, { tickerId, sentiment: res.sentiment ?? sentiment, mrr: view.mrr });
       }
     })
   );
+
+  // one snapshot per ticker that traded, not one per trade
+  await Promise.all(
+    [...settledAt.values()].map((s) =>
+      recordTickerSnapshot(admin, s.tickerId, { mrr: s.mrr, sentiment: s.sentiment }).catch(() => {})
+    )
+  );
+
+  // and one followers lookup for the whole round, not two queries a trade
+  if (notable.length > 0) {
+    try {
+      const traders = [...new Set(notable.map((n) => n.userId))];
+      const { data: follows } = await admin
+        .from("follows")
+        .select("follower_id, followee_id")
+        .in("followee_id", traders);
+      const watchers = new Map<string, string[]>();
+      for (const f of ((follows ?? []) as { follower_id: string; followee_id: string }[])) {
+        watchers.set(f.followee_id, [...(watchers.get(f.followee_id) ?? []), f.follower_id]);
+      }
+      const { notifyUsers } = await import("@/lib/notify");
+      for (const n of notable) {
+        const ids = watchers.get(n.userId);
+        if (!ids || ids.length === 0) continue;
+        await notifyUsers(
+          ids,
+          "move",
+          `${n.name} ${n.side === "buy" ? "bought" : "sold"} ${n.shares.toLocaleString("en-US")} $${n.symbol} (~$${Math.round(n.total).toLocaleString("en-US")})`,
+          n.tickerId
+        );
+      }
+    } catch {
+      // follows table missing pre-migration — the prints still landed
+    }
+  }
 
   // A take does not need a trade. Anyone in the population can say
   // something this round, at their own rate and the hour's — it used to be
@@ -854,7 +1042,7 @@ export async function runBotRound(
     if (traded.has(account.id)) continue;
     // a holder of a name that just got hit does not wait for their turn to
     // talk — that is the wall of "wtf" after a rug
-    const hit = shaken.filter((v) => (mine.get(`${account.id}/${v.id}`) ?? 0) > 0);
+    const hit = shaken.filter((v) => (mine0.get(`${account.id}/${v.id}`) ?? 0) > 0);
     const venting = hit.length > 0 && rng.unit() < SHAKE_POST[account.persona.hold];
     if (!venting && rng.unit() >= (account.persona.postRate * POST_SCALE * hour) / 288) continue;
     const views = viewsFor(account);
@@ -933,7 +1121,7 @@ export async function runBotRound(
       ...((recentPosts ?? []) as Thesis[]).map((r) => ({ kind: "post" as const, ...r })),
       ...((recentNotes ?? []) as Thesis[]).map((r) => ({ kind: "trade" as const, ...r })),
     ].map((t) => {
-      const backing = (mine.get(`${t.user_id}/${t.ticker_id}`) ?? 0) * (priceOf.get(t.ticker_id) ?? 0);
+      const backing = (mine0.get(`${t.user_id}/${t.ticker_id}`) ?? 0) * (priceOf.get(t.ticker_id) ?? 0);
       const author = usernameOf.get(t.user_id);
       const leader = author ? leaderNames.has(author) : false;
       return { ...t, weight: Math.sqrt(1 + backing / 100) * (leader ? 3 : 1) };
@@ -943,7 +1131,7 @@ export async function runBotRound(
       if (liked >= MAX_LIKES_PER_ROUND) break;
       if (rng.unit() > 0.5) continue;
       const own = theses.filter(
-        (t) => t.user_id !== account.id && (mine.get(`${account.id}/${t.ticker_id}`) ?? 0) > 0
+        (t) => t.user_id !== account.id && (mine0.get(`${account.id}/${t.ticker_id}`) ?? 0) > 0
       );
       const total = own.reduce((a, t) => a + t.weight, 0);
       if (total <= 0) continue;

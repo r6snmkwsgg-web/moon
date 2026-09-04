@@ -284,14 +284,27 @@ export function timeOfDayFactor(t: number): number {
  * listing sees one trade an hour — an empty room. Everyone wakes this many
  * times more often than their activity says.
  */
-export const WAKE_SCALE = 4;
+// How much of the population is on the floor in a given round. The round
+// used to cost six database round trips per fill, so waking more accounts
+// than could be filled just built a queue that got truncated; batched
+// (0014) a ticker's whole queue is one call, so the floor can actually be
+// busy. Measured at a minute a round: ~225 of 1,012 awake, ~219 printed.
+export const WAKE_SCALE = 55;
+
+/**
+ * How often a round actually runs — the pulse cron in vercel.json. A wake
+ * roll is per round, so this is the only thing that turns a daily rate into
+ * a per-round chance; when the cadence changes, change it here rather than
+ * leaving actChance quietly modelling the old one.
+ */
+export const ROUND_INTERVAL_MS = 60_000;
 /** Paper hands check the chart more often than diamond hands do. */
 export const HOLD_TEMPO: Record<Hold, number> = { paper: 1.4, swing: 1, diamond: 0.7 };
 
 /** A leader is on the floor more than their activity says — that is how they lead. */
 export const LEADER_TEMPO = 1.5;
 
-export function actChance(p: Persona, t: number, intervalMs = 5 * 60_000): number {
+export function actChance(p: Persona, t: number, intervalMs = ROUND_INTERVAL_MS): number {
   return Math.min(
     0.95,
     (p.activityPerDay *
