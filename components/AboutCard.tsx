@@ -33,8 +33,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex items-baseline justify-between gap-3 py-[2px] text-[12px]">
       <span className="shrink-0 text-terminal-muted">{label}</span>
-      <span className="flex-1 border-b border-dotted border-terminal-line/70" />
-      <span className="num shrink-0 text-right font-mono text-terminal-text">
+      <span className="min-w-3 flex-1 border-b border-dotted border-terminal-line/70" />
+      {/* a long value wraps inside the card rather than running out of it */}
+      <span className="num min-w-0 text-right font-mono text-terminal-text">
         {children}
       </span>
     </div>
@@ -208,7 +209,7 @@ export default function AboutCard({
           {Math.min(100, Math.round((floatHeld / shares) * 100))}% held
           {lastSplit && (
             <span
-              className="ml-1 text-terminal-muted"
+              className="ml-1 inline-block text-terminal-muted"
               title="The float grows with demand and shrinks at the floor; every holder keeps the same value"
             >
               · {lastSplit.factor >= 1 ? `${lastSplit.factor}:1 split` : `1:${Math.round(1 / lastSplit.factor)} reverse`}{" "}
