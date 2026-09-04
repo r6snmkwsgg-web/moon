@@ -2,6 +2,8 @@
 
 import { useTransition } from "react";
 import Link from "next/link";
+import TimeAgo from "@/components/TimeAgo";
+import { fmtMarketDateTime } from "@/lib/market-time";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import type { FeedTrade, TickerPost } from "@/lib/data";
@@ -10,16 +12,6 @@ import { fmtMoney, fmtPrice, fmtShares } from "@/lib/format";
 import AiChip from "@/components/AiChip";
 import Tri from "@/components/Tri";
 import LikeButton from "@/components/LikeButton";
-
-function timeAgo(iso: string): string {
-  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
 
 type Item =
   | { kind: "post"; at: number; post: TickerPost }
@@ -127,9 +119,11 @@ export default function ThesesPane({
                   liked={it.post.likedByMe}
                   signedIn={signedIn}
                 />
-                <span className="font-mono text-[10px] text-terminal-muted">
-                  {timeAgo(it.post.created_at)}
-                </span>
+                <TimeAgo
+                  at={it.post.created_at}
+                  title={fmtMarketDateTime(Date.parse(it.post.created_at))}
+                  className="font-mono text-[10px] text-terminal-muted"
+                />
               </span>
               {viewerId === it.post.userId && (
                 <button
@@ -183,9 +177,11 @@ export default function ThesesPane({
                   liked={it.trade.likedByMe}
                   signedIn={signedIn}
                 />
-                <span className="font-mono text-[10px] text-terminal-muted">
-                  {timeAgo(it.trade.created_at)}
-                </span>
+                <TimeAgo
+                  at={it.trade.created_at}
+                  title={fmtMarketDateTime(Date.parse(it.trade.created_at))}
+                  className="font-mono text-[10px] text-terminal-muted"
+                />
               </span>
             </div>
           </li>

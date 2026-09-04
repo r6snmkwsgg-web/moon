@@ -32,7 +32,7 @@ export default function LikeButton({
   );
 
   // a real button, not a glyph: bordered, counted even at zero, red once yours
-  const cls = `inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] leading-none transition-colors ${
+  const cls = `inline-flex min-h-[26px] items-center gap-1 rounded border px-2 py-1 font-mono text-[11px] leading-none transition-colors ${
     state.liked
       ? "border-terminal-down/40 bg-terminal-down/10 text-terminal-down"
       : "border-terminal-line text-terminal-muted hover:border-terminal-text/40 hover:text-terminal-text"

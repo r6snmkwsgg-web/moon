@@ -1,4 +1,5 @@
 import Link from "next/link";
+import TimeAgo from "@/components/TimeAgo";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { Bell, TrendingUp, UserPlus, Zap } from "lucide-react";
@@ -22,16 +23,6 @@ async function markAllRead() {
     .eq("read", false);
   // the badge lives in the layout — every page carries it
   revalidatePath("/", "layout");
-}
-
-function timeAgo(iso: string): string {
-  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
 }
 
 function KindIcon({ kind }: { kind: AppNotification["kind"] }) {
@@ -98,7 +89,7 @@ export default async function NotificationsPage() {
                 </span>
                 <span className="min-w-0 flex-1">{n.title}</span>
                 <span className="font-mono text-[11px] text-terminal-muted">
-                  {timeAgo(n.created_at)}
+                  <TimeAgo at={n.created_at} />
                 </span>
               </li>
             ))}

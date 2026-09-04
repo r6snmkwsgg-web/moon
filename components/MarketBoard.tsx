@@ -350,7 +350,7 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
   ];
 
   return (
-    <section className="grid min-w-0 items-start gap-3 xl:grid-cols-[184px_1fr]">
+    <section className="grid grid-cols-1 min-w-0 items-start gap-3 xl:grid-cols-[184px_1fr]">
       {/* sector rail — the shelves */}
       <aside className="panel hidden self-start overflow-hidden xl:sticky xl:top-[68px] xl:block">
         <div className="microlabel border-b border-terminal-line px-2.5 py-2">

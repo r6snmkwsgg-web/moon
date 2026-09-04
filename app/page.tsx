@@ -1,4 +1,5 @@
 import Link from "next/link";
+import TimeAgo from "@/components/TimeAgo";
 import { Bell, Zap } from "lucide-react";
 import {
   getEarningsWire,
@@ -21,16 +22,6 @@ import WireBanner from "@/components/WireBanner";
 export const dynamic = "force-dynamic";
 
 const IPO_WINDOW_MS = 24 * 3600_000;
-
-function timeAgo(iso: string): string {
-  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
 
 export default async function ExchangePage() {
   const [market, user] = await Promise.all([getMarket(), getUser()]);
@@ -131,7 +122,7 @@ export default async function ExchangePage() {
           ) : (
             <DayStrip missed={missed} />
           )}
-          <div className="grid gap-4 lg:grid-cols-[1fr_290px] 2xl:grid-cols-[1fr_330px]">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_290px] 2xl:grid-cols-[1fr_330px]">
             <MarketBoard quotes={market} />
             <div className="space-y-4 self-start lg:sticky lg:top-[68px]">
               <section className="panel">
@@ -177,7 +168,7 @@ export default async function ExchangePage() {
                           </span>
                           <span className="font-bold">${t.symbol}</span>
                           <span className="num ml-auto text-terminal-muted">
-                            {timeAgo(t.created_at)}
+                            <TimeAgo at={t.created_at} />
                           </span>
                         </Link>
                       </li>

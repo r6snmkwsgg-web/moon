@@ -105,7 +105,7 @@ export default async function ProfilePage({ params }: Props) {
 
       </div>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[1fr_330px]">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[1fr_330px]">
         <div className="min-w-0 space-y-4">
           <EquityPanel
             dividends={equity.dividends}

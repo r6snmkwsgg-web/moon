@@ -1,4 +1,5 @@
 import Link from "next/link";
+import TimeAgo from "@/components/TimeAgo";
 import {
   getFeedEvents,
   getFollowedIds,
@@ -25,16 +26,6 @@ const FILTERS: { key: FeedFilter; label: string }[] = [
   { key: "earnings", label: "Earnings" },
   { key: "listings", label: "Listings" },
 ];
-
-function timeAgo(iso: string): string {
-  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
 
 export default async function FeedPage({
   searchParams,
@@ -86,7 +77,7 @@ export default async function FeedPage({
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_300px]">
         {/* the feed */}
         <section className="flex flex-col gap-2.5">
           {events.map((e, i) => {
@@ -138,7 +129,7 @@ export default async function FeedPage({
                       signedIn={signedIn}
                     />
                     <span className="font-mono text-[11px] text-terminal-muted">
-                      {timeAgo(t.created_at)}
+                      <TimeAgo at={t.created_at} suffix=" ago" />
                     </span>
                   </span>
                 </div>
@@ -191,7 +182,7 @@ export default async function FeedPage({
                       </span>
                     )}
                     <span className="ml-auto font-mono text-[11px] text-terminal-muted">
-                      {timeAgo(ev.at)}
+                      <TimeAgo at={ev.at} suffix=" ago" />
                     </span>
                   </div>
                   <div className="text-[11px] text-terminal-muted">
@@ -227,7 +218,7 @@ export default async function FeedPage({
                   {q.ticker.name} — {q.ticker.pitch}
                 </span>
                 <span className="ml-auto font-mono text-[11px] text-terminal-muted">
-                  {timeAgo(e.at)}
+                  <TimeAgo at={e.at} suffix=" ago" />
                 </span>
               </Link>
             );

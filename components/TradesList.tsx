@@ -1,18 +1,10 @@
 import Link from "next/link";
+import TimeAgo from "@/components/TimeAgo";
+import { fmtMarketDateTime } from "@/lib/market-time";
 import type { FeedTrade } from "@/lib/data";
 import { fmtMoney, fmtPrice, fmtShares } from "@/lib/format";
 import CopyTradeButton from "@/components/CopyTradeButton";
 import AiChip from "@/components/AiChip";
-
-function timeAgo(iso: string): string {
-  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
 
 /** A list of recent trades — the tape. Used globally and per ticker. */
 export default function TradesList({
@@ -99,9 +91,12 @@ export default function TradesList({
                 traderUsername={t.username}
                 signedIn={signedIn}
               />
-              <span className="font-mono text-[11px] text-terminal-muted">
-                {timeAgo(t.created_at)}
-              </span>
+              <TimeAgo
+                at={t.created_at}
+                suffix=" ago"
+                title={fmtMarketDateTime(Date.parse(t.created_at))}
+                className="font-mono text-[11px] text-terminal-muted"
+              />
             </span>
           </div>
           {showNotes && t.note && (

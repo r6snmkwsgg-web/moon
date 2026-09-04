@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { fmtShares } from "@/lib/format";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Check, Copy } from "lucide-react";
 
 /**
@@ -24,6 +24,7 @@ export default function CopyTradeButton({
   signedIn: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [state, setState] = useState<"idle" | "pending" | "done" | "error">(
     "idle"
   );
@@ -31,7 +32,9 @@ export default function CopyTradeButton({
 
   async function copy() {
     if (!signedIn) {
-      router.push(`/login?next=/tape`);
+      // back to the page you were reading, not to whichever page this
+      // button happened to be written for
+      router.push(`/login?next=${encodeURIComponent(pathname)}`);
       return;
     }
     setState("pending");
@@ -71,7 +74,7 @@ export default function CopyTradeButton({
         onClick={copy}
         disabled={state === "pending"}
         title={`Copy: ${side} ${fmtShares(shares)} $${symbol} at the current price`}
-        className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+        className={`inline-flex min-h-[26px] items-center gap-1 rounded border px-2 py-1 font-mono text-[10px] font-semibold transition-colors disabled:opacity-50 ${
           state === "done"
             ? "border-terminal-up/50 bg-terminal-up/10 text-terminal-up"
             : "border-terminal-line text-terminal-muted hover:border-terminal-accent/60 hover:text-terminal-accent"

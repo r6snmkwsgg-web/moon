@@ -25,6 +25,7 @@ import { pageAll } from "@/lib/supabase/page-all";
 import { CALL_DISCOUNT, CALL_NEWS_MS, credibility, type CallOutcome } from "@/lib/calls";
 import {
   floatOf,
+  roundShares,
   positionLimit,
   settledPrice,
   valuationMultiple,
@@ -184,6 +185,9 @@ const PANIC = { paper: 1.2, swing: 0.6, diamond: 0.1 } as const;
  * ticker's holders used it up before the next ticker's were even rolled.
  */
 export const MAX_SHAKEN = 200;
+/** The smallest order worth printing, in dollars. */
+export const MIN_ORDER_USD = 1;
+
 /** The floor talks twice as much as the personas' own rate says — thirty listings is a lot of floor. */
 export const POST_SCALE = 2;
 /** Hearts the population leaves on the floor per round, at most. */
@@ -333,19 +337,24 @@ export function decide(
     const room = Math.max(0, positionLimit(v.float) - v.held);
     const left = Math.max(0, v.float - v.floatHeld);
     // slack for the fill curve: a big order pays above the mark
-    const affordable = v.price > 0 ? Math.floor(cash / (v.price * 1.12)) : 0;
-    // a small account whose slice is less than one share still buys the one
-    // share it can afford — that is what a $40 account does with conviction
-    let want = Math.floor(notional / v.price);
-    if (want < 1 && affordable >= 1) want = 1;
-    shares = Math.min(want, room, left, affordable);
+    const affordable = v.price > 0 ? roundShares(cash / (v.price * 1.12)) : 0;
+    // Shares divide (0013), so a small account is no longer priced out of an
+    // expensive name: it buys the slice its cash covers. This used to floor
+    // to whole shares, which sidelined every account holding less than one
+    // share's worth of cash — permanently, since their cash never grows
+    // while they cannot trade.
+    shares = Math.min(roundShares(notional / v.price), room, left, affordable);
   } else {
     const appetite = SELL_APPETITE[p.hold] * (p.leader ? 0.5 : 1);
     const frac = clamp(Math.abs(c) * appetite, 0.1, 1);
     // a near-full sell is a full sell — nobody leaves seven shares behind
-    shares = frac >= 0.9 ? v.held : Math.min(v.held, Math.max(1, Math.round(v.held * frac)));
+    shares = frac >= 0.9 ? v.held : Math.min(v.held, roundShares(v.held * frac));
+    // nor a fraction of one worth less than a dollar
+    if ((v.held - shares) * v.price < MIN_ORDER_USD) shares = v.held;
   }
-  if (!(shares >= 1)) return null;
+  // an order has to be worth transacting: the ledger books to the cent, and
+  // a tape full of one-cent prints is not a tape
+  if (!(shares > 0) || shares * v.price < MIN_ORDER_USD) return null;
 
   let note: string | null = null;
   // a panic or a dip buy is worth saying out loud more often than a routine print

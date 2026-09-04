@@ -19,7 +19,7 @@ export default function Loading() {
           <SkeletonBlock key={i} className="h-14" />
         ))}
       </div>
-      <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
         <SkeletonChart height="h-[300px]" />
         <div className="space-y-3">
           <SkeletonBlock className="h-56" />

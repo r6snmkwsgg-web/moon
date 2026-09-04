@@ -52,7 +52,7 @@ export default async function Floor({
   ]);
   const posts = filtered ? allPosts.filter((p) => p.positionValue >= (min ?? 0)) : allPosts;
   return (
-    <div className="grid items-start gap-3 2xl:grid-cols-[minmax(0,1fr)_380px]">
+    <div className="grid grid-cols-1 items-start gap-3 2xl:grid-cols-[minmax(0,1fr)_380px]">
       <HoldersTable
         rows={holders.rows}
         total={holders.total}
@@ -82,7 +82,7 @@ export default async function Floor({
 /** What the floor looks like while it loads. */
 export function FloorSkeleton() {
   return (
-    <div className="grid items-start gap-3 2xl:grid-cols-[minmax(0,1fr)_380px]" aria-busy="true">
+    <div className="grid grid-cols-1 items-start gap-3 2xl:grid-cols-[minmax(0,1fr)_380px]" aria-busy="true">
       <div className="panel">
         <SkeletonBlock className="m-3 h-4 w-40" />
         <SkeletonRows rows={6} />

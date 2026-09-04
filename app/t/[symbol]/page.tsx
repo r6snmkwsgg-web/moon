@@ -312,7 +312,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
       <PulseKeeper symbol={t.symbol} />
 
       {/* split rail: the chart and the floor left, the ticket and the card right */}
-      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-3">
           <TradingChart
             heightClass="h-[340px] sm:h-[440px] lg:h-[540px] 2xl:h-[620px]"

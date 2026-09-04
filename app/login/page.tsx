@@ -33,7 +33,7 @@ export default async function LoginPage() {
   const totalCap = market.reduce((s, q) => s + q.marketCap, 0);
 
   return (
-    <div className="mx-auto grid max-w-4xl items-center gap-8 py-8 lg:grid-cols-[1fr_360px] lg:py-14">
+    <div className="mx-auto grid grid-cols-1 max-w-4xl items-center gap-8 py-8 lg:grid-cols-[1fr_360px] lg:py-14">
       {/* the pitch + form */}
       <div className="space-y-5">
         <div className="space-y-2">

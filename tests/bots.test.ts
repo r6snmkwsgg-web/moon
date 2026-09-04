@@ -121,6 +121,21 @@ describe("conviction, by style", () => {
 });
 
 describe("decide", () => {
+  it("can sell a position smaller than one share, and sweeps the dust", () => {
+    // a reverse split leaves fractions behind (0013), and a holder who cannot
+    // sell them is stuck in the name forever
+    const dear = view({ price: 40, fair: 25, held: 0.42 });
+    const o = decide(pure("value"), 1e6, [dear], fixed(0.0));
+    expect(o).not.toBeNull();
+    expect(o!.side).toBe("sell");
+    expect(o!.shares).toBeCloseTo(0.42, 4); // the whole thing — the remainder would be dust
+    // and a sell never exceeds the position, fraction or not
+    const big = view({ price: 40, fair: 25, held: 500.25 });
+    const p2 = decide(pure("value"), 1e6, [big], fixed(0.0));
+    expect(p2!.shares).toBeGreaterThan(0);
+    expect(p2!.shares).toBeLessThanOrEqual(500.25);
+  });
+
   it("sizes a buy to its OWN stake and conviction, never past cash, the limit or the float", () => {
     const v = view({ price: 20, fair: 25 }); // full conviction for value
     const o = decide(pure("value"), 10_000, [v], fixed(0.0));
@@ -128,12 +143,12 @@ describe("decide", () => {
     expect(o!.side).toBe("buy");
     // 35% of the stake at full conviction, scaled by the size draw (0.6 at unit 0)
     expect(o!.shares).toBe(Math.floor((10_000 * 0.35 * 1 * 0.6) / 20));
-    // a $60 account buys one share
-    expect(decide(pure("value"), 60, [v], fixed(0.0))!.shares).toBe(1);
-    // a $30 account cannot even do that at $20 with slack for the curve → still one
-    expect(decide(pure("value"), 30, [v], fixed(0.0))!.shares).toBe(1);
-    // a $10 account buys nothing
-    expect(decide(pure("value"), 10, [v], fixed(0.0))).toBeNull();
+    // shares divide, so a small account stakes its slice instead of being
+    // rounded up to a whole share it cannot really afford
+    expect(decide(pure("value"), 60, [v], fixed(0.0))!.shares).toBeCloseTo(0.63, 4);
+    expect(decide(pure("value"), 30, [v], fixed(0.0))!.shares).toBeCloseTo(0.315, 4);
+    // below a dollar of notional there is nothing worth printing
+    expect(decide(pure("value"), 4, [v], fixed(0.0))).toBeNull();
     // limit-bound
     expect(decide(pure("value"), 1e9, [view({ price: 20, fair: 25, held: positionLimit(25_000) })], fixed(0.0))).toBeNull();
     // float-bound
