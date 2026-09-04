@@ -82,7 +82,7 @@ async function placeOrderOnce(
   const now = opts.now ?? Date.now();
   const side = input.side;
   // to four places — a share is bought in pieces
-  const shares = roundShares(Number(input.shares));
+  let shares = roundShares(Number(input.shares));
   const symbol = String(input.symbol ?? "").toUpperCase();
   const note = String(input.note ?? "")
     .replace(/\s+/g, " ")
@@ -213,7 +213,7 @@ async function placeOrderOnce(
   // news, but not the sub-percent shimmer the tape draws on top. The shimmer
   // is a function of the clock, so a client could time it; leaving it out of
   // the fill is what makes timing it worth nothing.
-  const fill = executionFillAt(
+  let fill = executionFillAt(
     symbol,
     mrr,
     Number(ticker.sentiment),
@@ -262,7 +262,7 @@ async function placeOrderOnce(
   if (claimErr) return { ok: false, error: "Trade failed.", status: 500 };
   if (!claimed || claimed.length === 0) return "moved";
 
-  const { data, error } = await admin.rpc("execute_trade", {
+  let { data, error } = await admin.rpc("execute_trade", {
     p_user_id: input.userId,
     p_ticker_id: ticker.id,
     p_side: side,
@@ -270,6 +270,34 @@ async function placeOrderOnce(
     p_price: Number(fill.avgPrice.toFixed(6)),
     p_new_sentiment: fill.newSentiment,
   });
+  // A database that has not had 0013 applied still insists on whole shares.
+  // The ticket sizes a dollar amount in fractions, so EVERY buy entered in
+  // dollars would come back refused — the app would simply stop trading
+  // between the deploy and the migration. Round the order down instead and
+  // fill what the ledger will take; once 0013 lands this branch never runs.
+  if (error && /whole number/i.test(error.message)) {
+    const whole = Math.floor(shares);
+    if (whole >= 1) {
+      const wholeFill = executionFillAt(
+        symbol, mrr, Number(ticker.sentiment), side, whole, now, multiple, outstanding, events, Number(ticker.drift ?? 0)
+      );
+      const retry = await admin.rpc("execute_trade", {
+        p_user_id: input.userId,
+        p_ticker_id: ticker.id,
+        p_side: side,
+        p_shares: whole,
+        p_price: Number(wholeFill.avgPrice.toFixed(6)),
+        p_new_sentiment: wholeFill.newSentiment,
+      });
+      if (!retry.error) {
+        data = retry.data;
+        error = null;
+        shares = whole;
+        fill = wholeFill;
+        await admin.from("tickers").update({ sentiment: wholeFill.newSentiment }).eq("id", ticker.id);
+      }
+    }
+  }
   if (error) {
     // the ledger refused — give the curve back, unless someone has already
     // moved on from where we left it
@@ -284,7 +312,7 @@ async function placeOrderOnce(
       : error.message.includes("insufficient shares")
         ? "You don't hold that many shares."
         : error.message.includes("whole number")
-          ? "Whole shares only until the exchange's next update — try a round number."
+          ? "Whole shares only for now — size up to at least one."
           : error.message.includes("too small")
             ? "That's less than a cent — size up a little."
             : "Trade failed.";
