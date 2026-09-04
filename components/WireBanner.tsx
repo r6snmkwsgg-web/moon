@@ -59,7 +59,7 @@ export default function WireBanner({ events }: { events: EarningsEvent[] }) {
           )}
         </span>
         <span className="ml-auto whitespace-nowrap font-mono text-[11px] font-semibold text-terminal-amber">
-          the anchor just moved →
+          see what moved →
         </span>
       </Link>
     </Dismissible>

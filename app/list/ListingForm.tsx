@@ -192,7 +192,7 @@ export default function ListingForm({
   // ── the celebration: MRR → opening price ─────────────────────────────────
   if (state.ok) {
     const o = state.ok;
-    const post = `Just IPO'd $${o.symbol} on SAAS EXCHANGE — my real Stripe-verified MRR sets the price, traders fight over 10,000 fake shares. ${typeof window !== "undefined" ? window.location.origin : ""}/t/${o.symbol}`;
+    const post = `Just IPO'd $${o.symbol} on SAAS EXCHANGE — my real Stripe-verified MRR sets the price, traders fight over ${o.shares.toLocaleString("en-US")} fake shares. ${typeof window !== "undefined" ? window.location.origin : ""}/t/${o.symbol}`;
     return (
       <div className="space-y-4">
         <div className="panel space-y-3 border-terminal-up/40 bg-gradient-to-b from-terminal-up/10 to-transparent p-6 text-center">

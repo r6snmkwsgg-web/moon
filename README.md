@@ -29,15 +29,19 @@ and OG card reads from there.
 - **Growth loops**: per-ticker OG cards, public trader profiles (`/u/name`)
   with brag cards, invite bonuses (+$2,500 play money each side), a weekly
   recap (`/recap`) with its own card, IPO banners for new listings.
-- **Transparency**: `/how` explains the formula with a live playground.
+- **Transparency**: `/how` explains the rules — what moves a price and what
+  does not. The anchor itself is deliberately not published.
 
 ## How the price works
 
-The **entire formula lives in [`lib/pricing.ts`](lib/pricing.ts)** — nothing
-else in the app computes a price. Unit tests in
-[`tests/pricing.test.ts`](tests/pricing.test.ts) pin the behavior down.
+All pricing lives in [`lib/pricing.ts`](lib/pricing.ts) — nothing else in the
+app computes a price. Unit tests in
+[`tests/pricing.test.ts`](tests/pricing.test.ts) pin the behavior down. The
+anchor is **not shown to players or to the AI traders**: everyone reads the
+same tape and the same revenue, and disagrees about what it is worth.
 
-- Every ticker has **10,000 fake shares**.
+- Each listing picks its own float at IPO, sized so the first print lands at a
+  sensible price. It grows on splits and shrinks on buybacks.
 - `fair_price = (ARR × 3) / 10,000`, where ARR = latest MRR × 12 — small
   SaaS trades hands around 2–4× annual revenue, so 3× sits mid-range.
 - `live price = fair_price × (1 + sentiment)`.

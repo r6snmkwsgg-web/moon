@@ -28,7 +28,11 @@ export async function GET(request: Request) {
   if (!/^[0-9a-f-]{36}$/i.test(ticker)) {
     return NextResponse.json({ error: "ticker" }, { status: 400 });
   }
-  const iso = (v: string | null) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
+  // Validate the shape, then pass the string through UNCHANGED: Postgres
+  // timestamps carry microseconds and re-serializing through a JS Date drops
+  // them, which turns "everything after this row" into "this row and
+  // everything after it".
+  const iso = (v: string | null) => (v && !Number.isNaN(Date.parse(v)) && v.length <= 40 ? v : null);
   const sinceIso = iso(since);
   const beforeIso = iso(before);
   const noStore = { headers: { "Cache-Control": "no-store" } };

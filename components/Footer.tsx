@@ -12,7 +12,7 @@ export default function Footer() {
           <Wordmark compact />
           <nav className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px]">
             <Link href="/how" className="hover:text-terminal-text">
-              how pricing works
+              how the market works
             </Link>
             <Link href="/list" className="hover:text-terminal-text">
               list your startup

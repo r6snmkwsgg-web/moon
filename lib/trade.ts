@@ -18,7 +18,7 @@ import {
   type TradeSide,
 } from "@/lib/pricing";
 import { anchorRevenue } from "@/lib/revenue";
-import { fmtShares } from "@/lib/format";
+import { fmtMoney, fmtShares } from "@/lib/format";
 import { recordTickerSnapshot } from "@/lib/snapshot";
 import { getRevenueEvents, latestEventMrr } from "@/lib/pulse";
 
@@ -315,7 +315,7 @@ async function placeOrderOnce(
       : error.message.includes("insufficient shares")
         ? "You don't hold that many shares."
         : error.message.includes("whole number")
-          ? "Whole shares only for now — size up to at least one."
+          ? `Whole shares only until the exchange updates — the smallest order on $${symbol} is one share, about ${fmtMoney(fill.avgPrice / Math.max(shares, 1e-9))}.`
           : error.message.includes("too small")
             ? "That's less than a cent — size up a little."
             : "Trade failed.";

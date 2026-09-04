@@ -232,14 +232,17 @@ export function sharesForDollars(
     executionFillAt("", mrr, sentiment, "buy", n, t, multiple, outstanding, events, drift).total;
   let lo = 0;
   let hi = ceiling;
-  if (cost(hi) <= dollars) return roundShares(hi);
+  // DOWN to the precision, never up: rounding the ceiling up asks for more
+  // than the position limit or the float allows, and the order comes back
+  // rejected — which made "max" a dead end exactly when it matters
+  const k = 10 ** SHARE_PRECISION;
+  if (cost(hi) <= dollars) return Math.floor(hi * k) / k;
   for (let i = 0; i < 48; i++) {
     const mid = (lo + hi) / 2;
     if (cost(mid) <= dollars) lo = mid;
     else hi = mid;
   }
   // down to the precision, never up past the money
-  const k = 10 ** SHARE_PRECISION;
   return Math.floor(lo * k) / k;
 }
 

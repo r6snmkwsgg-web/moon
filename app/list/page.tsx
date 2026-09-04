@@ -18,7 +18,8 @@ export default async function ListPage() {
         <p className="mt-1 text-sm text-terminal-muted">
           Get a ticker on {APP_NAME} in about 60 seconds. Your MRR comes
           straight from Stripe — verified from day one, refreshed monthly,
-          never typed in. Traders get 10,000 fake shares of you to fight over.
+          never typed in. Traders fight over a fixed float of your shares — how many
+          depends on your revenue, so the first print lands at a sensible price.
         </p>
       </div>
 

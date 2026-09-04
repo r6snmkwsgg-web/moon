@@ -100,9 +100,25 @@ export default function FloorTabs({
   // carries the real rows, the live copies step aside.
   const liveFills = useLiveFills(symbol);
   const [freshIds, setFreshIds] = useState<Set<string>>(() => new Set());
+  // The newest print's timestamp, VERBATIM. Postgres keeps created_at to the
+  // microsecond (…:44.900744) and a JS Date only to the millisecond, so
+  // round-tripping it through toISOString() sent back …:44.900Z — which is
+  // strictly less than the row it came from. The poll asked for "anything
+  // after this" and got the same row again, every four seconds, forever:
+  // it re-flashed the top of the tape and pushed a duplicate of your own
+  // fill onto the list.
   const newest = useMemo(() => {
-    const times = [...trades, ...liveFills.filter((f) => !f.id.startsWith("live-"))].map((t) => Date.parse(t.created_at));
-    return times.length ? new Date(Math.max(...times)).toISOString() : null;
+    let best: string | null = null;
+    let bestMs = -Infinity;
+    for (const t of [...trades, ...liveFills.filter((f) => !f.id.startsWith("live-"))]) {
+      const ms = Date.parse(t.created_at);
+      if (!Number.isFinite(ms)) continue;
+      if (ms > bestMs || (ms === bestMs && best !== null && t.created_at > best)) {
+        bestMs = ms;
+        best = t.created_at;
+      }
+    }
+    return best;
   }, [trades, liveFills]);
   const newestRef = useRef(newest);
   newestRef.current = newest;

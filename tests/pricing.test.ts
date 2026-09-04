@@ -740,3 +740,16 @@ describe("fractional shares", () => {
     expect(roundShares(Number.NaN)).toBe(0);
   });
 });
+
+describe("sharesForDollars never overshoots its ceiling", () => {
+  it("stays at or under the room left, so max is not a rejected order", async () => {
+    const { sharesForDollars } = await import("@/lib/pricing");
+    // a ceiling that does not land on the 4-decimal grid — rounding it up
+    // asks for more than the position limit allows and the fill is refused
+    for (const ceiling of [999.54509, 3.99996, 0.12345, 250.00004]) {
+      const n = sharesForDollars(1e9, 10_000, 0, ceiling, 0, 2.5, 10_000, [], 0);
+      expect(n, `ceiling ${ceiling}`).toBeLessThanOrEqual(ceiling);
+      expect(n).toBeGreaterThan(0);
+    }
+  });
+});

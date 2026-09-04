@@ -650,7 +650,7 @@ export default function MarketBoard({ quotes }: { quotes: TickerQuote[] }) {
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     className="px-3 py-10 text-center text-sm text-terminal-muted"
                   >
                     {quotes.length === 0 ? (
