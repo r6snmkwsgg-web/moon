@@ -52,6 +52,10 @@ export default async function TickerTape() {
     <div
       className="overflow-hidden border-b border-terminal-line bg-terminal-panel/60"
       aria-hidden="true"
+      // aria-hidden takes the marquee out of the accessibility tree but not
+      // out of the tab order, which left forty silent dead stops between the
+      // nav and the page on every single screen
+      inert
     >
       <div className="tape-track flex py-1.5">
         {market.map((q) => (

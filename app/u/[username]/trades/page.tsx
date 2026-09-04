@@ -57,9 +57,9 @@ export default async function ProfileTradesPage({ params, searchParams }: Props)
             older →
           </Link>
         )}
-        {trades.length === 0 && (
+        {trades.length === 0 && beforeIso && (
           <p className="px-3 py-6 text-center text-sm text-terminal-muted">
-            {beforeIso ? "That is all of them." : "No prints yet."}
+            That is all of them.
           </p>
         )}
       </section>

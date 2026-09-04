@@ -50,7 +50,7 @@ export default function ThesesPane({
       <p className="px-3 py-6 text-center text-sm text-terminal-muted">
         {filtered
           ? "Nothing backed by that much yet — lower the filter."
-          : "No theses yet. Add one above, or attach one to your next trade."}
+          : "No theses yet — write one from the Thesis card in the rail, or attach one to your next trade."}
       </p>
     );
   }

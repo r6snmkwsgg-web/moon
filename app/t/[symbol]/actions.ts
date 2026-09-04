@@ -232,7 +232,16 @@ export async function postCall(formData: FormData) {
   await admin.from("posts").insert({
     ticker_id: ticker.id,
     user_id: user.id,
-    body: `📣 Earnings call — guiding ${guidance >= 0 ? "+" : ""}${Math.round(guidance * 100)}% next month: ${body}`.slice(0, 280),
+    // the floor's posts cap at 280; a 600-character call gets its opening
+    // line with an ellipsis rather than a sentence cut mid-word
+    body: (() => {
+      const head = `📣 Earnings call — guiding ${guidance >= 0 ? "+" : ""}${Math.round(guidance * 100)}% next month: `;
+      const room = 280 - head.length;
+      if (body.length <= room) return head + body;
+      const cut = body.slice(0, room - 1);
+      const lastSpace = cut.lastIndexOf(" ");
+      return head + (lastSpace > room * 0.6 ? cut.slice(0, lastSpace) : cut) + "…";
+    })(),
     stance: guidance > 0 ? 1 : guidance < 0 ? -1 : null,
   });
   revalidatePath(`/t/${ticker.symbol}`);

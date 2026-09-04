@@ -79,10 +79,14 @@ export default function ThesisCard({
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value.slice(0, MAX))}
-        onFocus={() => {
+        // Signed out this used to redirect on FOCUS, so a keyboard user
+        // could not tab past the composer without being thrown to /login.
+        // Reading is allowed; the sign-in prompt belongs on the attempt.
+        readOnly={!signedIn}
+        onClick={() => {
           if (!signedIn) router.push(`/login?next=/t/${symbol}`);
         }}
-        rows={1}
+        rows={3}
         placeholder={
           signedIn ? `Write a thesis on $${symbol}...` : `Sign in to write a thesis on $${symbol}`
         }

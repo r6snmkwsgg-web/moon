@@ -19,17 +19,20 @@ export default function Dismissible({
   label?: string;
   children: React.ReactNode;
 }) {
-  const [gone, setGone] = useState(false);
+  // `undefined` until the effect has read storage. Starting at `false`
+  // painted the banner you had already dismissed on every single visit,
+  // for the length of a round trip, before hiding it again.
+  const [gone, setGone] = useState<boolean | undefined>(undefined);
 
   useEffect(() => {
     try {
-      if (localStorage.getItem(KEY(id))) setGone(true);
+      setGone(Boolean(localStorage.getItem(KEY(id))));
     } catch {
-      // private mode / storage disabled — the banner just stays
+      setGone(false); // private mode / storage disabled — the banner stays
     }
   }, [id]);
 
-  if (gone) return null;
+  if (gone !== false) return null;
 
   return (
     <div className="relative">

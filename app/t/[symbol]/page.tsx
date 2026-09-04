@@ -25,6 +25,7 @@ import LiveQuote from "@/components/LiveQuote";
 import TradePanel, { type OwnPrint } from "@/components/TradePanel";
 import AboutCard from "@/components/AboutCard";
 import EarningsCallCard from "@/components/EarningsCallCard";
+import DelistRequest from "@/components/DelistRequest";
 import { GUIDANCE_STEPS } from "@/lib/calls";
 import ShareButton from "@/components/ShareButton";
 import ChangePct from "@/components/ChangePct";
@@ -480,6 +481,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
                     type="month"
                     name="month"
                     defaultValue={currentMonthISO().slice(0, 7)}
+                    // a future month would silently become the price anchor
+                    max={currentMonthISO().slice(0, 7)}
                     required
                     className="input mt-1"
                   />
@@ -637,15 +640,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 its data shortly.
               </p>
             ) : (
-              <form action={requestDelisting}>
-                <input type="hidden" name="ticker_id" value={t.id} />
-                <button
-                  type="submit"
-                  className="text-xs text-terminal-down underline-offset-2 hover:underline"
-                >
-                  Request delisting (removes this ticker and all its data)
-                </button>
-              </form>
+              <DelistRequest action={requestDelisting} tickerId={t.id} symbol={t.symbol} />
             )}
           </div>
         </section>
