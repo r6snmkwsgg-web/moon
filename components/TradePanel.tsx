@@ -12,9 +12,8 @@ import {
   MAX_POSITION_FRACTION,
   positionLimit,
   settledPrice,
-  SHARES_OUTSTANDING,
-} from "@/lib/pricing";
-import { fmtCountdown, fmtMoney, fmtPct, fmtPrice } from "@/lib/format";
+  SHARES_OUTSTANDING, roundShares, sharesForDollars } from "@/lib/pricing";
+import { fmtCountdown, fmtMoney, fmtPct, fmtPrice, fmtShares } from "@/lib/format";
 import LivePrice from "@/components/LivePrice";
 import { publishFill, useLiveSentiment } from "@/lib/live";
 
@@ -225,28 +224,19 @@ export default function TradePanel({
   const roomInFloat = Math.max(0, outstanding - floatHeld);
   const buyCeiling = Math.min(roomInLimit, roomInFloat);
 
-  /** The most shares a sum of money buys, walking the fill curve. */
-  function sharesFor(dollars: number): number {
-    if (!(dollars > 0) || mrr <= 0 || buyCeiling < 1) return 0;
-    let lo = 0;
-    let hi = buyCeiling;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      if (est("buy", mid).total <= dollars) lo = mid;
-      else hi = mid - 1;
-    }
-    return lo;
-  }
+  /** The most shares a sum of money buys, walking the fill curve — in pieces. */
+  const sharesFor = (dollars: number) =>
+    sharesForDollars(dollars, mrr, sentiment, buyCeiling, quoteT, multiple, outstanding, events, drift);
 
   const amount = Number(amountText) || 0;
   const purse = shownCash ?? 0;
   const shares =
     tab === "sell"
-      ? Math.min(Math.floor(amount), shownHeld)
+      ? Math.min(roundShares(amount), shownHeld)
       : unit === "usd"
         ? sharesFor(Math.min(amount, purse))
-        : Math.min(Math.floor(amount), buyCeiling, sharesFor(purse));
-  const quote = shares >= 1 ? est(tab, shares) : null;
+        : Math.min(roundShares(amount), buyCeiling, sharesFor(purse));
+  const quote = shares > 0 ? est(tab, shares) : null;
   // size impact is measured against the settled price, the one it fills off
   const impact = quote && settled > 0 ? quote.avgPrice / settled - 1 : 0;
   const overCash = tab === "buy" && unit === "usd" && amount > purse + 0.005;
@@ -265,14 +255,14 @@ export default function TradePanel({
   // stack returns, against the cost of those shares — and falls back to the
   // whole position when the ticket is empty or on the buy side.
   const exitShares =
-    tab === "sell" && shares >= 1 && shares < shownHeld ? shares : shownHeld;
+    tab === "sell" && shares > 0 && shares < shownHeld ? shares : shownHeld;
   const exit = exitShares > 0 ? est("sell", exitShares) : null;
   const exitCost = exitShares * shownAvg;
   const exitPnl = exit ? exit.total - exitCost : 0;
   const exitLabel =
     exitShares === shownHeld
       ? "sell all now"
-      : `sell ${exitShares.toLocaleString("en-US")} (${Math.round(
+      : `sell ${fmtShares(exitShares)} (${Math.round(
           (exitShares / shownHeld) * 100
         )}%) now`;
 
@@ -281,7 +271,7 @@ export default function TradePanel({
   const untilTick = nextTickAt !== null ? nextTickAt - quoteT : null;
 
   async function trade() {
-    if (shares < 1) return;
+    if (!(shares > 0)) return;
     const side = tab;
     setPending(true);
     setMessage(null);
@@ -296,7 +286,7 @@ export default function TradePanel({
         setMessage(json.error ?? "Trade failed.");
       } else {
         setMessage(
-          `${side === "buy" ? "Bought" : "Sold"} ${shares.toLocaleString("en-US")} × $${symbol} @ avg ${fmtPrice(json.price)}`
+          `${side === "buy" ? "Bought" : "Sold"} ${fmtShares(shares)} × $${symbol} @ avg ${fmtPrice(json.price)}`
         );
         setFilled(true);
         setTimeout(() => setFilled(false), 1200);
@@ -322,7 +312,7 @@ export default function TradePanel({
         const nextHeld = shownHeld + (side === "buy" ? shares : -shares);
         const nextAvg =
           side === "buy"
-            ? (shownHeld * shownAvg + Number(json.total)) / Math.max(1, nextHeld)
+            ? (shownHeld * shownAvg + Number(json.total)) / Math.max(1e-9, nextHeld)
             : nextHeld > 0
               ? shownAvg
               : 0;
@@ -349,12 +339,12 @@ export default function TradePanel({
   const label = pending
     ? "…"
     : tab === "buy"
-      ? buyCeiling < 1
-        ? roomInLimit < 1
+      ? buyCeiling < 0.0001
+        ? roomInLimit < 0.0001
           ? "At the position limit"
           : "Float fully held"
         : `Buy $${symbol}`
-      : shownHeld < 1
+      : shownHeld <= 0
         ? "Nothing to sell"
         : `Sell $${symbol}`;
 
@@ -441,8 +431,8 @@ export default function TradePanel({
         <div className="num mt-0.5 flex items-baseline justify-between font-mono text-[11px] text-terminal-muted">
           <span>
             {tab === "buy" && unit === "usd"
-              ? shares >= 1
-                ? `≈ ${shares.toLocaleString("en-US")} shs @ ${fmtPrice(quote!.avgPrice)} avg`
+              ? shares > 0
+                ? `≈ ${fmtShares(shares)} shs @ ${fmtPrice(quote!.avgPrice)} avg`
                 : "—"
               : quote
                 ? `≈ ${fmtMoney(quote.total)} @ ${fmtPrice(quote.avgPrice)} avg`
@@ -463,11 +453,9 @@ export default function TradePanel({
               <button
                 key={p}
                 type="button"
-                disabled={shownHeld < 1}
-                onClick={() =>
-                  setAmountText(String(Math.max(1, Math.floor((shownHeld * p) / 100))))
-                }
-                className={chipClass(shownHeld > 0 && shares === Math.max(1, Math.floor((shownHeld * p) / 100)))}
+                disabled={shownHeld <= 0}
+                onClick={() => setAmountText(String(roundShares((shownHeld * p) / 100)))}
+                className={chipClass(shownHeld > 0 && shares === roundShares((shownHeld * p) / 100))}
               >
                 {p}%
               </button>
@@ -509,7 +497,7 @@ export default function TradePanel({
         ) : (
           <button
             type="button"
-            disabled={shownHeld < 1}
+            disabled={shownHeld <= 0}
             onClick={() => setAmountText(String(shownHeld))}
             title="Everything you hold"
             className={chipClass(shownHeld > 0 && shares === shownHeld && amount === shownHeld)}
@@ -523,7 +511,7 @@ export default function TradePanel({
         <span>
           {tab === "buy"
             ? `${shownCash !== null ? fmtMoney(shownCash) : "—"} available`
-            : `${shownHeld.toLocaleString("en-US")} shs · ${fmtMoney(value)} available`}
+            : `${fmtShares(shownHeld)} shs · ${fmtMoney(value)} available`}
         </span>
         <span>
           mark <LivePrice value={mark} formatted={fmtPrice(mark)} />
@@ -537,7 +525,7 @@ export default function TradePanel({
 
       <button
         onClick={trade}
-        disabled={busy || shares < 1}
+        disabled={busy || !(shares > 0)}
         className={`${tab === "buy" ? "btn-buy" : "btn-sell"} w-full py-3 text-base`}
       >
         {label}
@@ -566,7 +554,7 @@ export default function TradePanel({
           </div>
           <div className="num mt-0.5 flex flex-wrap items-baseline justify-between gap-x-3 font-mono text-[11px] text-terminal-muted">
             <span>
-              {shownHeld.toLocaleString("en-US")} shs · {fmtMoney(value)} · avg{" "}
+              {fmtShares(shownHeld)} shs · {fmtMoney(value)} · avg{" "}
               {fmtPrice(shownAvg)}
             </span>
             {dayBasePrice > 0 && (
@@ -622,7 +610,7 @@ export default function TradePanel({
                     >
                       {h.side}
                     </span>{" "}
-                    {h.shares.toLocaleString("en-US")} @ {fmtPrice(h.price)}
+                    {fmtShares(h.shares)} @ {fmtPrice(h.price)}
                   </span>
                   <span className="text-terminal-muted">
                     {fmtMoney(h.total)} · {timeAgo(h.at, quoteT)} ago
@@ -648,7 +636,7 @@ export default function TradePanel({
       <p className="num font-mono text-[10px] text-terminal-muted/70">
         play money · float {outstanding.toLocaleString("en-US")} shs ·{" "}
         {Math.round(MAX_POSITION_FRACTION * 100)}% per account
-        {shownHeld > 0 && roomInLimit < 1 ? " · you are at the limit" : ""}
+        {shownHeld > 0 && roomInLimit < 0.0001 ? " · you are at the limit" : ""}
       </p>
     </div>
   );

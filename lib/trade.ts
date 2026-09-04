@@ -13,6 +13,7 @@ import {
   floatOf,
   MAX_POSITION_FRACTION,
   positionLimit,
+  roundShares,
   valuationMultiple,
   type TradeSide,
 } from "@/lib/pricing";
@@ -80,7 +81,8 @@ async function placeOrderOnce(
 ): Promise<OrderResult | "moved"> {
   const now = opts.now ?? Date.now();
   const side = input.side;
-  const shares = Number(input.shares);
+  // to four places — a share is bought in pieces
+  const shares = roundShares(Number(input.shares));
   const symbol = String(input.symbol ?? "").toUpperCase();
   const note = String(input.note ?? "")
     .replace(/\s+/g, " ")
@@ -89,8 +91,7 @@ async function placeOrderOnce(
   if (
     !symbol ||
     (side !== "buy" && side !== "sell") ||
-    !Number.isInteger(shares) ||
-    shares <= 0 ||
+    !(shares > 0) ||
     shares > 1_000_000
   ) {
     return { ok: false, error: "Invalid trade.", status: 400 };
@@ -231,6 +232,11 @@ async function placeOrderOnce(
       error: "This ticker has no MRR on record yet — it can't trade.",
     };
   }
+  // the ledger books totals to the cent; an order worth less than one would
+  // round to free stock
+  if (fill.total < 0.01) {
+    return { ok: false, status: 400, error: "That's less than a cent — size up a little." };
+  }
 
   // CLAIM THE CURVE before the ledger moves. The fill above was priced off
   // the sentiment we read; if anyone — a person, a bot in the same second —
@@ -277,7 +283,11 @@ async function placeOrderOnce(
       ? "Not enough play money."
       : error.message.includes("insufficient shares")
         ? "You don't hold that many shares."
-        : "Trade failed.";
+        : error.message.includes("whole number")
+          ? "Whole shares only until the exchange's next update — try a round number."
+          : error.message.includes("too small")
+            ? "That's less than a cent — size up a little."
+            : "Trade failed.";
     return { ok: false, error: msg, status: 400 };
   }
 

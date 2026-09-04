@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fmtMoney, fmtPct } from "@/lib/format";
+import { fmtMoney, fmtPct, fmtShares } from "@/lib/format";
 import Link from "next/link";
 import LogoTile from "@/components/LogoTile";
 import ChangePct from "@/components/ChangePct";
@@ -511,7 +511,7 @@ export default function EquityPanel({
                   stroke="#0b111d"
                   strokeWidth="1"
                 >
-                  <title>{`${tr.side} ${tr.shares.toLocaleString("en-US")} $${tr.symbol} @ ${fmtMoney(tr.price)}`}</title>
+                  <title>{`${tr.side} ${fmtShares(tr.shares)} $${tr.symbol} @ ${fmtMoney(tr.price)}`}</title>
                 </circle>
               ))}
 
@@ -681,7 +681,7 @@ export default function EquityPanel({
                     {c.trades} prints
                   </span>
                 </td>
-                <td className="num px-3 py-2.5 text-right font-mono">{c.peakShares.toLocaleString("en-US")}</td>
+                <td className="num px-3 py-2.5 text-right font-mono">{fmtShares(c.peakShares)}</td>
                 <td className="num hidden px-3 py-2.5 text-right font-mono text-terminal-muted sm:table-cell">{fmtMoney(c.bought)}</td>
                 <td className="num hidden px-3 py-2.5 text-right font-mono text-terminal-muted sm:table-cell">{fmtMoney(c.sold)}</td>
                 <td className="num px-3 py-2.5 text-right font-mono text-terminal-muted">{heldFor(c.closedAt - c.openedAt)}</td>
@@ -740,7 +740,7 @@ export default function EquityPanel({
                 </Link>
               </td>
               <td className="num px-3 py-2.5 text-right font-mono">
-                {p.h.shares.toLocaleString("en-US")}
+                {fmtShares(p.h.shares)}
                 <span className="block text-[10px] text-terminal-muted">
                   {Math.round((p.value / bookValue) * 100)}% of book
                 </span>

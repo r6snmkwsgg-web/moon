@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import type { FeedTrade, TickerPost } from "@/lib/data";
 import { deletePost } from "@/app/t/[symbol]/actions";
-import { fmtMoney, fmtPrice } from "@/lib/format";
+import { fmtMoney, fmtPrice, fmtShares } from "@/lib/format";
 import AiChip from "@/components/AiChip";
 import Tri from "@/components/Tri";
 import LikeButton from "@/components/LikeButton";
@@ -97,7 +97,7 @@ export default function ThesesPane({
               {it.post.positionShares > 0 ? (
                 <span
                   className="num flex items-center gap-1 rounded bg-terminal-raise px-1.5 py-0.5 font-mono text-[10px]"
-                  title={`Real position, read live from holdings — ${it.post.positionShares.toLocaleString("en-US")} shs`}
+                  title={`Real position, read live from holdings — ${fmtShares(it.post.positionShares)} shs`}
                 >
                   <span className="font-semibold text-terminal-text">
                     {fmtMoney(it.post.positionValue, it.post.positionValue >= 1000 ? 0 : 2)}
@@ -169,7 +169,7 @@ export default function ThesesPane({
                     ? "bg-terminal-up/10 text-terminal-up"
                     : "bg-terminal-down/10 text-terminal-down"
                 }`}
-                title={`The trade behind this thesis — ${it.trade.shares.toLocaleString("en-US")} shs @ ${fmtPrice(it.trade.price)}, on record`}
+                title={`The trade behind this thesis — ${fmtShares(it.trade.shares)} shs @ ${fmtPrice(it.trade.price)}, on record`}
               >
                 {it.trade.buyback ? "bought back" : it.trade.side === "buy" ? "bought" : "sold"}{" "}
                 {fmtMoney(it.trade.total, it.trade.total >= 1000 ? 0 : 2)}

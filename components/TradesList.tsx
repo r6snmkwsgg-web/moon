@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { FeedTrade } from "@/lib/data";
-import { fmtMoney, fmtPrice } from "@/lib/format";
+import { fmtMoney, fmtPrice, fmtShares } from "@/lib/format";
 import CopyTradeButton from "@/components/CopyTradeButton";
 import AiChip from "@/components/AiChip";
 
@@ -75,7 +75,7 @@ export default function TradesList({
             {/* the size in money — the shares and the price sit in the tooltip */}
             <span
               className="num font-mono font-semibold"
-              title={`${t.shares.toLocaleString("en-US")} shs @ ${fmtPrice(t.price)}`}
+              title={`${fmtShares(t.shares)} shs @ ${fmtPrice(t.price)}`}
             >
               {fmtMoney(t.total, t.total >= 1000 ? 0 : 2)}
             </span>

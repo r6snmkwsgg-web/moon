@@ -7,7 +7,7 @@ import {
   getXpMap,
   TRADE_HISTORY_LIMIT,
 } from "@/lib/data";
-import { fmtMoney, fmtPrice } from "@/lib/format";
+import { fmtMoney, fmtPrice, fmtShares } from "@/lib/format";
 import { fmtMarketDateTime, MARKET_TZ_LABEL } from "@/lib/market-time";
 import { tierFor } from "@/lib/xp";
 import ChangePct from "@/components/ChangePct";
@@ -179,7 +179,7 @@ export default async function PortfolioPage() {
                           {t.side}
                         </span>
                         <span className="num">
-                          {t.shares.toLocaleString("en-US")}
+                          {fmtShares(t.shares)}
                         </span>
                         <span className="font-bold">${t.symbol}</span>
                         <span className="text-terminal-muted">@</span>

@@ -712,3 +712,31 @@ describe("the first reading after connecting", () => {
     expect(revenueShock(events, T + 3_600_000 + 1000)).toBeLessThan(-0.05);
   });
 });
+
+describe("fractional shares", () => {
+  it("sharesForDollars spends the money along the curve and never past it", async () => {
+    const { sharesForDollars, executionFillAt, roundShares } = await import("@/lib/pricing");
+    const n = sharesForDollars(100, 10_000, 0.2, 1_000, 0, 2.5, 10_000, [], 0);
+    expect(n).toBeGreaterThan(0);
+    expect(Number.isInteger(n)).toBe(false);
+    const cost = executionFillAt("", 10_000, 0.2, "buy", n, 0, 2.5, 10_000, [], 0).total;
+    expect(cost).toBeLessThanOrEqual(100);
+    const more = executionFillAt("", 10_000, 0.2, "buy", n + 0.0002, 0, 2.5, 10_000, [], 0).total;
+    expect(more).toBeGreaterThan(100);
+    expect(roundShares(n)).toBe(n);
+  });
+
+  it("caps at the room left, and buys nothing with nothing", async () => {
+    const { sharesForDollars } = await import("@/lib/pricing");
+    expect(sharesForDollars(1e9, 10_000, 0, 250, 0, 2.5, 10_000, [], 0)).toBe(250);
+    expect(sharesForDollars(0, 10_000, 0, 250)).toBe(0);
+    expect(sharesForDollars(50, 0, 0, 250)).toBe(0);
+  });
+
+  it("roundShares keeps four places", async () => {
+    const { roundShares } = await import("@/lib/pricing");
+    expect(roundShares(0.123456)).toBe(0.1235);
+    expect(roundShares(12)).toBe(12);
+    expect(roundShares(Number.NaN)).toBe(0);
+  });
+});

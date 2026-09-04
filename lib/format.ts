@@ -9,6 +9,18 @@ export function fmtMoney(value: number, decimals = 2): string {
   });
 }
 
+/**
+ * A share count: whole numbers as they were, fractions to four places with
+ * the trailing zeros dropped — 0.4551, 12.5, 1,200.
+ */
+export function fmtShares(value: number): string {
+  const whole = Math.abs(value - Math.round(value)) < 0.00005;
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: whole ? 0 : 4,
+  });
+}
+
 /** Prices under a dollar get extra precision so small caps don't read as $0.00. */
 export function fmtPrice(value: number): string {
   return fmtMoney(value, value > 0 && value < 1 ? 4 : 2);

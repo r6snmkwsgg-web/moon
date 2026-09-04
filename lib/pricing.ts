@@ -200,6 +200,49 @@ export function fairPrice(
   return (annualRevenue(mrr) * multiple) / floatOf(shares);
 }
 
+/** How finely a share divides: four decimal places, the way brokerages sell fractions. */
+export const SHARE_PRECISION = 4;
+
+/** A share count kept to SHARE_PRECISION places. */
+export function roundShares(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const k = 10 ** SHARE_PRECISION;
+  return Math.round(n * k) / k;
+}
+
+/**
+ * How many shares a sum of money buys, walking the same fill curve an
+ * order fills on, in fractions: the largest amount whose cost stays within
+ * the money, to the fourth decimal. Capped by `ceiling` — the room left in
+ * the float and the position limit.
+ */
+export function sharesForDollars(
+  dollars: number,
+  mrr: number,
+  sentiment: number,
+  ceiling: number,
+  t = Date.now(),
+  multiple = ARR_MULTIPLE,
+  outstanding = SHARES_OUTSTANDING,
+  events: RevenueEvent[] = [],
+  drift = 0
+): number {
+  if (!(dollars > 0) || !(ceiling > 0) || !(mrr > 0)) return 0;
+  const cost = (n: number) =>
+    executionFillAt("", mrr, sentiment, "buy", n, t, multiple, outstanding, events, drift).total;
+  let lo = 0;
+  let hi = ceiling;
+  if (cost(hi) <= dollars) return roundShares(hi);
+  for (let i = 0; i < 48; i++) {
+    const mid = (lo + hi) / 2;
+    if (cost(mid) <= dollars) lo = mid;
+    else hi = mid;
+  }
+  // down to the precision, never up past the money
+  const k = 10 ** SHARE_PRECISION;
+  return Math.floor(lo * k) / k;
+}
+
 /** A float is a positive integer; anything else falls back to the default. */
 export function floatOf(shares: number | null | undefined): number {
   const n = Number(shares);

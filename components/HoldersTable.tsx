@@ -13,8 +13,7 @@ import {
   fmtDuration,
   fmtMoney,
   fmtPct,
-  fmtPrice,
-} from "@/lib/format";
+  fmtPrice, fmtShares } from "@/lib/format";
 
 const FIRST_PAGE = 25;
 
@@ -230,7 +229,7 @@ export default function HoldersTable({
                     <td className="num px-3 py-1.5 text-right font-mono">
                       <div>{fmtMoney(m.value)}</div>
                       <div className="text-[11px] text-terminal-muted">
-                        {r.shares.toLocaleString("en-US")} shs
+                        {fmtShares(r.shares)} shs
                       </div>
                     </td>
                     <td

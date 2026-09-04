@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { fmtShares } from "@/lib/format";
 import { useRouter } from "next/navigation";
 import { Check, Copy } from "lucide-react";
 
@@ -69,7 +70,7 @@ export default function CopyTradeButton({
         type="button"
         onClick={copy}
         disabled={state === "pending"}
-        title={`Copy: ${side} ${shares.toLocaleString("en-US")} $${symbol} at the current price`}
+        title={`Copy: ${side} ${fmtShares(shares)} $${symbol} at the current price`}
         className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold transition-colors disabled:opacity-50 ${
           state === "done"
             ? "border-terminal-up/50 bg-terminal-up/10 text-terminal-up"
