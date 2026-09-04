@@ -992,61 +992,86 @@ export default function TradingChart({
               />
             )}
 
-            {/* real revenue changes — the only marks on this chart that are
-                news rather than price */}
-            {events.map((e) => {
+            {/* Real revenue changes — the only marks on this chart that are
+                news rather than price.
+
+                One mark per CANDLE, not per event. Every change used to get
+                its own triangle at its own timestamp, so a subscriber that
+                churned and came back five minutes later drew a red arrow and
+                a green one on the same fifteen-minute bar — and since the bar
+                closes on the net, the red arrow sat under a fat green candle
+                and read as a bug. A candle can only ever show what the market
+                saw over that candle, so that is what the mark reports: the
+                net move across the bar, with the individual changes in the
+                tooltip. Zoom in and they separate again. */}
+            {(() => {
               if (candles.length < 2) return null;
               const first = candles[0].t;
               const last = candles[candles.length - 1].t + tf.ms;
-              if (e.at < first || e.at > last) return null;
-              const i = Math.min(
-                candles.length - 1,
-                Math.max(0, Math.floor((e.at - first) / tf.ms))
-              );
-              const up = e.mrr >= e.prevMrr;
-              const x = geo.x(i);
-              const y = geo.h - geo.padB - 4;
-              // the mark is sized to the news: one small customer is a
-              // tick, a whale or a wave is a flag you can see from across
-              // the room — so a small triangle never promises a big move
-              const size = e.prevMrr > 0 ? Math.abs(e.mrr / e.prevMrr - 1) : 0;
-              const r = size >= 0.02 ? 5 : size >= 0.005 ? 4 : 2.5;
-              return (
-                <g key={`re${e.at}`} opacity="0.9">
-                  <line
-                    x1={x}
-                    x2={x}
-                    y1={geo.padT}
-                    y2={geo.h - geo.padB}
-                    stroke={up ? UP : DOWN}
-                    strokeWidth="1"
-                    strokeDasharray="1 4"
-                    opacity="0.45"
-                  />
-                  <path
-                    d={
-                      up
-                        ? `M ${x} ${y - r * 1.75} L ${x + r} ${y} L ${x - r} ${y} Z`
-                        : `M ${x} ${y} L ${x + r} ${y - r * 1.75} L ${x - r} ${y - r * 1.75} Z`
-                    }
-                    fill={up ? UP : DOWN}
-                  >
-                    <title>
-                      {`${up ? "Revenue up" : "Revenue down"} ${
-                        e.prevMrr > 0
-                          ? `${(e.mrr / e.prevMrr - 1) * 100 >= 0 ? "+" : ""}${(
-                              (e.mrr / e.prevMrr - 1) *
-                              100
-                            ).toFixed(2)}% MRR`
-                          : ""
-                      }: $${Math.round(e.prevMrr).toLocaleString("en-US")} → $${Math.round(
-                        e.mrr
-                      ).toLocaleString("en-US")}`}
-                    </title>
-                  </path>
-                </g>
-              );
-            })}
+              const byCandle = new Map<number, RevenueEvent[]>();
+              for (const e of [...events].sort((a, b) => a.at - b.at)) {
+                if (e.at < first || e.at > last) continue;
+                const i = Math.min(candles.length - 1, Math.max(0, Math.floor((e.at - first) / tf.ms)));
+                const list = byCandle.get(i);
+                if (list) list.push(e);
+                else byCandle.set(i, [e]);
+              }
+              return [...byCandle.entries()].map(([i, group]) => {
+                const from = group[0].prevMrr;
+                const to = group[group.length - 1].mrr;
+                const net = from > 0 ? to / from - 1 : 0;
+                const flat = Math.abs(net) < 0.0005;
+                const up = net >= 0;
+                const color = flat ? MUTED : up ? UP : DOWN;
+                const x = geo.x(i);
+                const y = geo.h - geo.padB - 4;
+                // sized to the news: one small customer is a tick, a whale is
+                // a flag you can see from across the room
+                const size = Math.abs(net);
+                const r = size >= 0.02 ? 5 : size >= 0.005 ? 4 : 2.5;
+                const pct = (n: number) => `${n >= 0 ? "+" : ""}${(n * 100).toFixed(2)}%`;
+                const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+                const label = flat
+                  ? `Revenue unchanged over this bar`
+                  : `${up ? "Revenue up" : "Revenue down"} ${pct(net)} MRR: ${money(from)} → ${money(to)}`;
+                const detail =
+                  group.length > 1
+                    ? `\n${group.length} changes in this bar:\n` +
+                      group
+                        .map((e) => `  ${money(e.prevMrr)} → ${money(e.mrr)} (${pct(e.prevMrr > 0 ? e.mrr / e.prevMrr - 1 : 0)})`)
+                        .join("\n")
+                    : "";
+                return (
+                  <g key={`re${i}`} opacity="0.9">
+                    <line
+                      x1={x}
+                      x2={x}
+                      y1={geo.padT}
+                      y2={geo.h - geo.padB}
+                      stroke={color}
+                      strokeWidth="1"
+                      strokeDasharray="1 4"
+                      opacity="0.45"
+                    />
+                    {flat ? (
+                      <circle cx={x} cy={y - 3} r={2.5} fill={color} />
+                    ) : (
+                      <path
+                        d={
+                          up
+                            ? `M ${x} ${y - r * 1.75} L ${x + r} ${y} L ${x - r} ${y} Z`
+                            : `M ${x} ${y} L ${x + r} ${y - r * 1.75} L ${x - r} ${y - r * 1.75} Z`
+                        }
+                        fill={color}
+                      />
+                    )}
+                    <rect x={x - 6} y={geo.padT} width={12} height={geo.h - geo.padB - geo.padT} fill="transparent">
+                      <title>{label + detail}</title>
+                    </rect>
+                  </g>
+                );
+              });
+            })()}
 
             {/* the founder spoke — a call is marked where it was made */}
             {calls.map((c) => {
@@ -1152,6 +1177,20 @@ export default function TradingChart({
           {wickOnly && mode === "candle" ? " (dense)" : ""} · play
           money
         </span>
+        {events.length > 0 && (
+          <span
+            className="flex items-center gap-1.5"
+            title="Revenue news, not price. A bar can close green on a day revenue fell — the crowd is the other half of the price."
+          >
+            <svg width="9" height="8" aria-hidden="true">
+              <path d="M 4.5 0 L 9 8 L 0 8 Z" fill={UP} />
+            </svg>
+            <svg width="9" height="8" aria-hidden="true">
+              <path d="M 4.5 8 L 9 0 L 0 0 Z" fill={DOWN} />
+            </svg>
+            revenue moved
+          </span>
+        )}
         <span className="ml-auto hidden text-terminal-muted/70 md:block">
           scroll to zoom · drag to pan
           {zoomed ? " · double-click to reset" : ""}
