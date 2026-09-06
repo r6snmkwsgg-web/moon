@@ -12,6 +12,7 @@ import {
   MAX_POSITION_FRACTION,
   positionLimit,
   settledPrice,
+  TRADE_IMPACT_FACTOR,
   SHARES_OUTSTANDING, roundShares, sharesForDollars } from "@/lib/pricing";
 import { fmtCountdown, fmtMoney, fmtPct, fmtPrice, fmtShares } from "@/lib/format";
 import LivePrice from "@/components/LivePrice";
@@ -244,6 +245,18 @@ export default function TradePanel({
   // fill. On the buy/USD path the amber line below says when those differ —
   // but a sell of more than you hold, or a share count you cannot afford,
   // used to be clamped in silence, so the ticket read 500 and sold 12.
+  /*
+    What share of the whole company this one order is, and what it will do
+    to the price. Buying n shares moves the price by e^(2n/float) - 1, so
+    5% of a float is a 10% move you pay for on the way in and give back on
+    the way out. Every violent candle on this board is one of these: on
+    CHRN, 14 prints out of 794 were 88% of the volume. The ticket said
+    "10.5% above mark" in small grey text and nobody read it.
+  */
+  const floatFraction = outstanding > 0 ? shares / outstanding : 0;
+  const movesMarket = floatFraction >= 0.01;
+  const selfMove = Math.exp(floatFraction * TRADE_IMPACT_FACTOR) - 1;
+
   const asked = tab === "buy" && unit === "usd" ? null : roundShares(amount);
   const clampedTo =
     asked !== null && asked > shares + 0.00005 ? shares : null;
@@ -545,6 +558,14 @@ export default function TradePanel({
           that is more than your cash — sized to {fmtMoney(purse)}
         </p>
       )}
+      {movesMarket && (
+        <p className="rounded border border-terminal-amber/40 bg-terminal-amber/5 px-2 py-1 font-mono text-[11px] text-terminal-amber">
+          this is {(floatFraction * 100).toFixed(1)}% of the whole float — it will
+          move ${symbol} about {(selfMove * 100).toFixed(0)}%{" "}
+          {tab === "buy" ? "up" : "down"} on its own, and you pay that on the way
+          {tab === "buy" ? " in" : " out"}. Smaller orders over time cost less.
+        </p>
+      )}
       {clampedTo !== null && (
         <p className="font-mono text-[11px] text-terminal-amber">
           {tab === "sell"
@@ -571,43 +592,59 @@ export default function TradePanel({
       )}
 
       {/* ── the book ─────────────────────────────────────────────────── */}
+      {/*
+        The headline is what the position would RETURN, not what it is
+        marked at. Those are the same number in a deep market and wildly
+        different in this one: a buy of 5% of a float moves the price about
+        10%, and marking against the last print then credits the buyer with
+        a gain they created and cannot sell into. A 2,002-share CHRN buy
+        read "+$1,220.90 (+5.0%)" at the moment it filled, while selling it
+        straight back returned $26 LESS than it cost. Both numbers are
+        still here — the marked one is just no longer the one in bold.
+      */}
       {shownHeld > 0 && (
         <div
           className={`rounded-md border border-terminal-line border-l-2 bg-terminal-raise/40 px-3 py-2 ${
-            unrealized >= 0 ? "border-l-terminal-up" : "border-l-terminal-down"
+            (exit ? exitPnl : unrealized) >= 0 ? "border-l-terminal-up" : "border-l-terminal-down"
           }`}
         >
           <div className="flex items-baseline justify-between">
-            <span className="microlabel !text-terminal-text">Your position</span>
-            <span className={`num font-mono text-sm font-bold ${tone(unrealized)}`}>
-              {fmtSigned(unrealized)}{" "}
-              <span className="text-[11px] font-semibold">({fmtPct(unrealizedPct)})</span>
+            <span className="microlabel !text-terminal-text">
+              {exitShares === shownHeld ? "Worth if you sold" : "Worth if you sold that"}
             </span>
-          </div>
-          <div className="num mt-0.5 flex flex-wrap items-baseline justify-between gap-x-3 font-mono text-[11px] text-terminal-muted">
-            <span>
-              {fmtShares(shownHeld)} shs · {fmtMoney(value)} · avg{" "}
-              {fmtPrice(shownAvg)}
-            </span>
-            {dayBasePrice > 0 && (
-              <span>
-                today <span className={tone(todayMove)}>{fmtSigned(todayMove)}</span>
+            <span className={`num font-mono text-sm font-bold ${tone(exit ? exitPnl : unrealized)}`}>
+              {fmtSigned(exit ? exitPnl : unrealized)}{" "}
+              <span className="text-[11px] font-semibold">
+                ({fmtPct(exit ? (exitCost > 0 ? exitPnl / exitCost : 0) : unrealizedPct)})
               </span>
-            )}
+            </span>
           </div>
           {exit && (
-            <div
-              className="num mt-1 flex flex-wrap items-baseline justify-between gap-x-3 border-t border-terminal-line/60 pt-1 font-mono text-[11px] text-terminal-muted"
-              title="The sell fill for these shares, walked down the hype curve — the mark above includes your own buying"
-            >
-              <span>
+            <div className="num mt-0.5 flex flex-wrap items-baseline justify-between gap-x-3 font-mono text-[11px] text-terminal-muted">
+              <span title="The sell fill for these shares, walked down the hype curve">
                 {exitLabel} → {fmtMoney(exit.total)}
               </span>
-              <span className={tone(exitPnl)}>
-                {fmtSigned(exitPnl)} ({fmtPct(exitCost > 0 ? exitPnl / exitCost : 0)})
-              </span>
+              {dayBasePrice > 0 && (
+                <span>
+                  today <span className={tone(todayMove)}>{fmtSigned(todayMove)}</span>
+                </span>
+              )}
             </div>
           )}
+          <div
+            className="num mt-1 flex flex-wrap items-baseline justify-between gap-x-3 border-t border-terminal-line/60 pt-1 font-mono text-[11px] text-terminal-muted"
+            title="Marked at the last print. If you moved the price yourself, this includes your own impact — which is why it is not the headline."
+          >
+            <span>
+              {fmtShares(shownHeld)} shs · avg {fmtPrice(shownAvg)}
+            </span>
+            <span>
+              at mark {fmtMoney(value)}{" "}
+              <span className={tone(unrealized)}>
+                {fmtSigned(unrealized)} ({fmtPct(unrealizedPct)})
+              </span>
+            </span>
+          </div>
         </div>
       )}
 
