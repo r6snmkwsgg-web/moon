@@ -123,12 +123,21 @@ export function pickCulprit(
   tickerId: string,
   float: number,
   direction: "down" | "up",
-  now: number
+  now: number,
+  /**
+   * Never blame the reader for their own print. basedllama99 sold 4.31% of
+   * $PRL, watched the price fall 27.7%, read the tape, and posted "bro one
+   * seller took $prl down 27.7%. basedllama99 you absolute menace. out" —
+   * then sold more. It could not tell that the seller was itself, because
+   * the culprit was picked once per ticker and handed to everyone.
+   */
+  excludeUserId?: string
 ): Culprit | null {
   const side: TradeSide = direction === "down" ? "sell" : "buy";
   let best: RecentPrint | null = null;
   for (const pr of prints) {
     if (pr.tickerId !== tickerId || pr.side !== side) continue;
+    if (excludeUserId && pr.userId === excludeUserId) continue;
     if (!best || pr.total > best.total) best = pr;
   }
   if (!best) return null;
@@ -185,6 +194,21 @@ const MIN_CONVICTION = 0.15;
 
 /** How much of the stake goes into one order at full conviction. */
 const STAKE_PER_ORDER = 0.35;
+
+/**
+ * The most of a company one print may be.
+ *
+ * Nobody dumps a twentieth of a business in one click and nobody real can:
+ * a big position is WORKED, over minutes, and the tape absorbs it. Without
+ * this, turbokoala69 took 10% of $CHRN's float in a single order and
+ * basedllama99 let go of 7.58% in another — 18 prints out of 928 on that
+ * ticker in three hours, and 82% of its volume. Every violent candle on the
+ * chart was one of them; the other 910 prints drew the calm parts.
+ *
+ * Conviction survives the round, so an order clipped here simply comes back
+ * next minute for the rest. The print count goes UP, not down.
+ */
+export const MAX_PRINT_FRACTION = 0.005;
 
 /** How readily each holding habit lets go. */
 const SELL_APPETITE = { paper: 1.5, swing: 1, diamond: 0.4 } as const;
@@ -369,12 +393,21 @@ export function decide(
     // to whole shares, which sidelined every account holding less than one
     // share's worth of cash — permanently, since their cash never grows
     // while they cannot trade.
-    shares = Math.min(roundShares(notional / v.price), room, left, affordable);
+    shares = Math.min(
+      roundShares(notional / v.price),
+      room,
+      left,
+      affordable,
+      roundShares(v.float * MAX_PRINT_FRACTION)
+    );
   } else {
     const appetite = SELL_APPETITE[p.hold] * (p.leader ? 0.5 : 1);
     const frac = clamp(Math.abs(c) * appetite, 0.1, 1);
     // a near-full sell is a full sell — nobody leaves seven shares behind
     shares = frac >= 0.9 ? v.held : Math.min(v.held, roundShares(v.held * frac));
+    // ...but a whale leaving is still a whale walking out one door at a time
+    const slice = roundShares(v.float * MAX_PRINT_FRACTION);
+    if (shares > slice) shares = slice;
     // nor a fraction of one worth less than a dollar
     if ((v.held - shares) * v.price < MIN_ORDER_USD) shares = v.held;
   }
@@ -696,6 +729,30 @@ export async function runBotRound(
       bot: botIds.has(String(t.user_id)) || Boolean(pr.is_bot),
     };
   });
+  /*
+    Net shares each account itself put through each name in the last quarter
+    hour and the last hour. A momentum trader big enough to be the momentum
+    reads its own wake as a signal: basedllama99 bought $MTRC eleven times in
+    a row, each one higher than the last — 44.24, 44.62, 44.75, 44.94, 45.05,
+    45.14, 45.24, 45.41 — posting "ok this is moving" while being the only
+    thing moving it. Discounting its own impact out of the move it reads is
+    the difference between chasing a trend and chasing itself.
+  */
+  const ownFlow15 = new Map<string, number>();
+  const ownFlow60 = new Map<string, number>();
+  for (const t of prints) {
+    const signed = t.side === "buy" ? t.shares : -t.shares;
+    const k = `${t.userId}/${t.tickerId}`;
+    if (t.at >= now - 3_600_000) ownFlow60.set(k, (ownFlow60.get(k) ?? 0) + signed);
+    if (t.at >= now - 15 * 60_000) ownFlow15.set(k, (ownFlow15.get(k) ?? 0) + signed);
+  }
+  /** A return with one trader's own price impact taken back out of it. */
+  const withoutMe = (change: number, ownShares: number, float: number): number => {
+    if (!ownShares || !(float > 0)) return change;
+    const mine = Math.exp((ownShares / float) * TRADE_IMPACT_FACTOR) - 1;
+    return (1 + change) / (1 + mine) - 1;
+  };
+
   // recent prints by bots, keyed by the printer's username, per ticker —
   // the herd looks at the last quarter hour only
   const printsBy = new Map<string, { tickerId: string; side: TradeSide; weight: number }[]>();
@@ -755,6 +812,7 @@ export async function runBotRound(
         change15m: ago15m && ago15m > 0 ? price / ago15m - 1 : 0,
         change24h: ago24h && ago24h > 0 ? price / ago24h - 1 : 0,
         culprit: null as Culprit | null,
+        culpritId: null as string | null,
         news: [
           ...events
             .filter((e) => !e.catchUp && e.prevMrr > 0)
@@ -767,7 +825,14 @@ export async function runBotRound(
     .filter((v) => v.price > 0);
   for (const v of board) {
     const move = Math.abs(v.change15m) >= SHAKE_MOVE ? v.change15m : Math.abs(v.change1h) >= SHAKE_MOVE * 1.6 ? v.change1h : 0;
-    if (move !== 0) v.culprit = pickCulprit(prints, v.id, v.float, move < 0 ? "down" : "up", now);
+    if (move !== 0) {
+      v.culprit = pickCulprit(prints, v.id, v.float, move < 0 ? "down" : "up", now);
+      // remember who it was, so a bot reading its own name can re-pick
+      v.culpritId =
+        prints
+          .filter((pr) => pr.tickerId === v.id && pr.side === (move < 0 ? "sell" : "buy"))
+          .sort((x, y) => y.total - x.total)[0]?.userId ?? null;
+    }
   }
 
   const viewsFor = (a: Account): TickerView[] =>
@@ -790,10 +855,13 @@ export async function runBotRound(
         fair: v.fair,
         float: v.float,
         floatHeld: v.floatHeld,
-        change1h: v.change1h,
-        change15m: v.change15m,
+        change1h: withoutMe(v.change1h, ownFlow60.get(`${a.id}/${v.id}`) ?? 0, v.float),
+        change15m: withoutMe(v.change15m, ownFlow15.get(`${a.id}/${v.id}`) ?? 0, v.float),
         change24h: v.change24h,
-        culprit: v.culprit,
+        culprit:
+          v.culprit && v.culpritId === a.id
+            ? pickCulprit(prints, v.id, v.float, v.change15m < 0 ? "down" : "up", now, a.id)
+            : v.culprit,
         news: v.news,
         held: mine0.get(`${a.id}/${v.id}`) ?? 0,
         avgCost: myAvg.get(`${a.id}/${v.id}`) ?? 0,

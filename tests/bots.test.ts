@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BOTS,
+  MAX_PRINT_FRACTION,
   MAX_TRADES_PER_ROUND,
   conviction,
   decide,
@@ -14,7 +15,7 @@ import {
 import { startingCashFor } from "@/lib/bot-roster";
 import { generatePersona, type Persona } from "@/lib/personas";
 import type { FlowRandom } from "@/lib/flow";
-import { positionLimit } from "@/lib/pricing";
+import { positionLimit, roundShares } from "@/lib/pricing";
 
 /** A generator that always says the same thing. */
 function fixed(unit: number): FlowRandom {
@@ -206,7 +207,13 @@ describe("the reflexes", () => {
     const o = decide(p, 1_000, [v], seeded(7));
     expect(o?.side).toBe("sell");
     expect(o?.reason).toBe("panic");
-    expect(o?.shares).toBe(400); // the whole position
+    // It wants the whole 400, but 400 of a 25,000 float is 1.6% of the
+    // company in one click — the size of print that drew every violent
+    // candle on the board. A panic leaves through the door like everyone
+    // else now: MAX_PRINT_FRACTION at a time, coming back each round for
+    // the rest until it is out.
+    expect(o?.shares).toBe(roundShares(v.float * MAX_PRINT_FRACTION));
+    expect(o!.shares).toBeLessThan(400);
     // a panic is worth saying out loud even for a quiet account
     expect(typeof o?.note).toBe("string");
     expect(o?.note?.length).toBeGreaterThan(10);
