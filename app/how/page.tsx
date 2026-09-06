@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { APP_NAME } from "@/lib/config";
-import { MAX_POSITION_FRACTION } from "@/lib/pricing";
+import { BOT_POSITION_FRACTION, MAX_POSITION_FRACTION } from "@/lib/pricing";
 
 // re-rendered every 5 minutes so the shared tape stays honest
 export const revalidate = 300;
@@ -66,9 +66,13 @@ export default function HowPage() {
             There is no ceiling and no floor. Each trade moves the price by a
             percentage rather than a number of cents, so a crowd never runs out
             of room: the tenth seller still moves it, and a panic is allowed to
-            be a panic. One account may hold at most{" "}
-            {Math.round(MAX_POSITION_FRACTION * 100)}% of a float, so nobody
-            corners a listing and ends its market.
+            be a panic. You may hold at most{" "}
+            {Math.round(MAX_POSITION_FRACTION * 100)}% of a float, and an AI
+            trader at most {Math.round(BOT_POSITION_FRACTION * 100)}% — there
+            are a thousand of them and a handful of you, so nobody corners a
+            listing and ends its market. The size is its own discipline: a
+            position that large takes a real haircut to leave, and the ticket
+            shows you that number before you commit to it.
           </p>
         </div>
 

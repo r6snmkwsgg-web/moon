@@ -29,6 +29,8 @@ export interface OrderInput {
   shares: number;
   /** The public thesis, up to 140 characters. */
   note?: string;
+  /** AI accounts are held to the tighter position line. */
+  isBot?: boolean;
 }
 
 export type OrderResult =
@@ -197,10 +199,10 @@ async function placeOrderOnce(
       };
     }
 
-    const limit = positionLimit(outstanding);
+    const limit = positionLimit(outstanding, input.isBot === true);
     const room = Math.max(0, limit - mine);
     if (shares > room) {
-      const pct = Math.round(MAX_POSITION_FRACTION * 100);
+      const pct = Math.round((limit / outstanding) * 100);
       return {
         ok: false,
         status: 400,

@@ -384,7 +384,7 @@ export function decide(
   let shares: number;
   if (side === "buy") {
     const notional = cash * STAKE_PER_ORDER * (0.3 + 0.7 * Math.abs(c)) * (0.6 + 0.8 * rng.unit());
-    const room = Math.max(0, positionLimit(v.float) - v.held);
+    const room = Math.max(0, positionLimit(v.float, true) - v.held);
     const left = Math.max(0, v.float - v.floatHeld);
     // slack for the fill curve: a big order pays above the mark
     const affordable = v.price > 0 ? roundShares(cash / (v.price * 1.12)) : 0;
@@ -975,7 +975,7 @@ export async function runBotRound(
           const mine = heldLeft.get(account.id) ?? (mine0.get(`${account.id}/${tickerId}`) ?? 0);
           let shares = o.shares;
           if (o.side === "buy") {
-            const room = Math.max(0, positionLimit(float) - mine);
+            const room = Math.max(0, positionLimit(float, true) - mine);
             const left = Math.max(0, float - held);
             shares = Math.min(shares, room, left);
           } else {
@@ -1041,7 +1041,7 @@ export async function runBotRound(
               if (Date.now() > deadline) break;
               const one = await placeOrder(
                 admin,
-                { userId: o.user_id, symbol, side: o.side, shares: o.shares, note: o.note ?? undefined },
+                { userId: o.user_id, symbol, side: o.side, shares: o.shares, note: o.note ?? undefined, isBot: true },
                 { now }
               );
               if (one.ok) {

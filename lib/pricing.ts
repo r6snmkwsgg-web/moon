@@ -30,8 +30,19 @@ export const TARGET_OPENING_PRICE = 25;
  * The most of one ticker's float a single account may hold. Without it a
  * $10,000 stake buys a micro-cap outright and the market ends for everyone
  * else — the float reads "fully held" and nobody can buy in.
+ *
+ * A person gets more room than a bot, and the asymmetry is the point: there
+ * are a thousand-odd AI accounts and a handful of people, so a cap that
+ * stops any one bot cornering a name is a cap that also stops the person
+ * whose market it is from taking a real swing. Conviction should be
+ * expressible. The door is what it costs: a full 25% of a float takes about
+ * a 21% haircut to leave, against 9% for a tenth, and that is a better
+ * teacher than a button that says no.
  */
-export const MAX_POSITION_FRACTION = 0.1;
+export const MAX_POSITION_FRACTION = 0.25;
+
+/** What an AI account may hold. They are many; they do not get the swing. */
+export const BOT_POSITION_FRACTION = 0.1;
 
 /** Round numbers a real cap table would use. */
 const FLOAT_STEPS = [
@@ -270,8 +281,13 @@ export function shareCountFor(mrr: number, multiple = ARR_MULTIPLE): number {
 }
 
 /** The most one account may hold of a ticker: no cornering the float. */
-export function positionLimit(shares = SHARES_OUTSTANDING): number {
-  return Math.max(1, Math.floor(floatOf(shares) * MAX_POSITION_FRACTION));
+export function positionLimit(
+  shares = SHARES_OUTSTANDING,
+  /** AI accounts are held to the tighter line — there are a thousand of them. */
+  isBot = false
+): number {
+  const fraction = isBot ? BOT_POSITION_FRACTION : MAX_POSITION_FRACTION;
+  return Math.max(1, Math.floor(floatOf(shares) * fraction));
 }
 
 /** What the ticker trades at right now: fair price stretched by sentiment. */
