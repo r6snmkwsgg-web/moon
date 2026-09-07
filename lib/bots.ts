@@ -235,6 +235,14 @@ export const MAX_SHAKEN = 200;
 /** The smallest order worth printing, in dollars. */
 export const MIN_ORDER_USD = 1;
 
+/**
+ * Rows of flow_ticks to sweep to find the price of each name an hour and a
+ * quarter of an hour ago. Every ticker writes a tick together, so the newest
+ * few dozen rows already cover the board — a thousand was pulling fifty
+ * times what it read, twice, every minute.
+ */
+export const TICK_LOOKBACK_ROWS = 200;
+
 /** A print this size is news to the trader's followers. */
 export const FOLLOW_ALERT_USD = 500;
 
@@ -499,6 +507,16 @@ interface Account {
 }
 
 /** Every bot account: the flagged population (0009), else the roster. */
+/**
+ * A persona is written once when the account is made and never changes, but
+ * it is a JSONB blob and there are a thousand of them: reading it every
+ * round was 312KB a minute, 13GB a month, of data that could not have moved.
+ * Held in module memory instead, so a warm function reads only what does
+ * move — the id, the name and the cash — and fetches personas just for ids
+ * it has not seen. A cold start pays for it once.
+ */
+const personaCache = new Map<string, Persona>();
+
 async function loadPopulation(admin: SupabaseClient): Promise<Account[]> {
   const specByName = new Map(BOTS.map((b) => [b.username, b]));
   const rows: { id: string; username: string; cash: number; persona?: unknown }[] = [];
@@ -506,8 +524,23 @@ async function loadPopulation(admin: SupabaseClient): Promise<Account[]> {
   try {
     // past the API's thousand-row page — read every page
     flagged = await pageAll<(typeof rows)[number]>((f, t) =>
-      admin.from("profiles").select("id, username, cash, persona").eq("is_bot", true).order("id").range(f, t)
+      admin.from("profiles").select("id, username, cash").eq("is_bot", true).order("id").range(f, t)
     );
+    const unseen = flagged.filter((r) => !personaCache.has(r.id)).map((r) => r.id);
+    for (let i = 0; i < unseen.length; i += 500) {
+      const { data } = await admin
+        .from("profiles")
+        .select("id, persona")
+        .in("id", unseen.slice(i, i + 500));
+      for (const r of ((data ?? []) as { id: string; persona: unknown }[])) {
+        const stored = r.persona as Persona | null | undefined;
+        if (stored && typeof stored === "object" && stored.styles) personaCache.set(r.id, stored);
+      }
+    }
+    for (const r of flagged) {
+      const cached = personaCache.get(r.id);
+      if (cached) r.persona = cached;
+    }
   } catch {
     // pre-0009: no is_bot column
   }
@@ -583,6 +616,7 @@ export async function runBotRound(
   const blameSince = new Date(now - 30 * 60_000).toISOString();
   const botIds = new Set(population.map((a) => a.id));
   const usernameOf = new Map(population.map((a) => [a.id, a.username]));
+  const botNameById = new Map(population.map((a) => [a.id, a.persona.name]));
   const [
     { data: tickers },
     { data: reports },
@@ -621,13 +655,13 @@ export async function runBotRound(
       .select("ticker_id, at, price")
       .lte("at", hourAgo)
       .order("at", { ascending: false })
-      .limit(1000),
+      .limit(TICK_LOOKBACK_ROWS),
     admin
       .from("flow_ticks")
       .select("ticker_id, at, price")
       .lte("at", quarterAgo)
       .order("at", { ascending: false })
-      .limit(1000),
+      .limit(TICK_LOOKBACK_ROWS),
     admin.from("price_snapshots").select("ticker_id, price").eq("day", dayAgo),
     // the week's closes, with the revenue behind each — the value read is
     // built from these and nothing else (lib/reference)
@@ -640,9 +674,14 @@ export async function runBotRound(
       .limit(2000),
     // what everyone printed in the last half hour — the herd signal, and
     // the name on the move
+    // Every print in the last half hour, for the herd signal and the name on
+    // the move. This used to join profiles onto all 2,000 of them — three
+    // extra strings per row, for names the round is already holding in
+    // `population`. At a print a second that join alone was ~270KB a minute,
+    // which is 11GB a month of egress for nothing.
     admin
       .from("trades")
-      .select("user_id, ticker_id, side, shares, total, created_at, profiles(display_name, username, is_bot, username)")
+      .select("user_id, ticker_id, side, shares, total, created_at")
       .gte("created_at", blameSince)
       .order("created_at", { ascending: false })
       .limit(2000),
@@ -715,18 +754,37 @@ export async function runBotRound(
     l.push({ price: Number(s.price), mrr: Number(s.mrr ?? 0) });
     closesOf.set(s.ticker_id, l);
   }
-  const prints: RecentPrint[] = ((recentPrints ?? []) as Record<string, unknown>[]).map((t) => {
-    const pr = (t.profiles ?? {}) as { display_name?: string; username?: string | null; is_bot?: boolean | null };
+  // A print's author is nearly always one of ours, and we know all of those
+  // already. Only the handful of human ids left over need a lookup, and only
+  // when one of them printed at all.
+  const printRows = (recentPrints ?? []) as Record<string, unknown>[];
+  const humanIds = [
+    ...new Set(printRows.map((t) => String(t.user_id)).filter((id) => !botIds.has(id))),
+  ];
+  const humanNames = new Map<string, { name: string; username: string | null }>();
+  if (humanIds.length > 0) {
+    const { data: people } = await admin
+      .from("profiles")
+      .select("id, display_name, username")
+      .in("id", humanIds.slice(0, 200));
+    for (const r of ((people ?? []) as { id: string; display_name: string | null; username: string | null }[])) {
+      humanNames.set(r.id, { name: r.display_name ?? "someone", username: r.username });
+    }
+  }
+  const prints: RecentPrint[] = printRows.map((t) => {
+    const id = String(t.user_id);
+    const bot = botIds.has(id);
+    const human = humanNames.get(id);
     return {
-      userId: String(t.user_id),
+      userId: id,
       tickerId: String(t.ticker_id),
       side: t.side as TradeSide,
       shares: Number(t.shares),
       total: Number(t.total),
       at: Date.parse(String(t.created_at)),
-      name: String(pr.display_name ?? "someone"),
-      username: pr.username ?? null,
-      bot: botIds.has(String(t.user_id)) || Boolean(pr.is_bot),
+      name: bot ? botNameById.get(id) ?? "someone" : human?.name ?? "someone",
+      username: bot ? usernameOf.get(id) ?? null : human?.username ?? null,
+      bot,
     };
   });
   /*
