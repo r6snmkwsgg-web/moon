@@ -52,10 +52,17 @@ export async function GET(request: Request) {
 
   // The market playing out: demo listings get their revenue pulse, then the
   // AI traders read the board and trade. Neither may take the heartbeat down
-  // with it. MARKET_BOTS=off pauses both without a deploy.
+  // with it.
+  //
+  // OFF by default. A round reads the whole board — every open position, to
+  // total each float — which is about 1.4MB, and a thousand of them a day is
+  // 2GB. That is 60GB a month against a 5GB allowance, so the floor stays
+  // quiet until it is asked for: set MARKET_BOTS=on to bring it back.
+  // Everything else here still runs, so the walk keeps stepping and real
+  // revenue still moves prices — the market breathes, nobody is trading it.
   let demo: unknown = null;
   let bots: unknown = null;
-  if (process.env.MARKET_BOTS !== "off") {
+  if (process.env.MARKET_BOTS === "on") {
     try {
       demo = await runDemoPulse(admin);
     } catch (e) {
@@ -67,5 +74,13 @@ export async function GET(request: Request) {
       bots = { error: e instanceof Error ? e.message : String(e) };
     }
   }
-  return NextResponse.json({ ok: true, flow, ...result, splits, demo, bots });
+  return NextResponse.json({
+    ok: true,
+    flow,
+    ...result,
+    splits,
+    demo,
+    bots,
+    market: process.env.MARKET_BOTS === "on" ? "live" : "bots paused",
+  });
 }
